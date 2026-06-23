@@ -131,8 +131,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .mtable th, .mtable td { text-align:left; padding:13px 16px;
     border-bottom:1px solid var(--line); vertical-align:top; }
   .mtable thead th { color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase;
-    letter-spacing:.06em; white-space:nowrap; background:var(--panel);
-    position:sticky; top:60px; z-index:2; }
+    letter-spacing:.06em; white-space:nowrap; }
   .mtable th.sortable { cursor:pointer; user-select:none; }
   .mtable th.sortable:hover { color:var(--fg); }
   .mtable th.sortable .arr { opacity:0; margin-left:5px; font-size:10px; transition:opacity .15s; }
@@ -153,6 +152,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .c-InProgress { background:var(--info-bg); color:var(--info-fg); border-color:var(--info-bd); }
   .c-Error, .c-Failed { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
   .c-NoArtifact, .c-empty { background:var(--neutral-bg); color:var(--neutral-fg); border-color:var(--neutral-bd); }
+  .c-Uploading, .c-Unzipping, .c-Processing { background:var(--info-bg); color:var(--info-fg); border-color:var(--info-bd); }
+  .c-Uploading::before, .c-Unzipping::before, .c-Processing::before { animation:pulse 1.1s ease-in-out infinite; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.25} }
+  .upinfo { margin-top:6px; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
+  .uprog { margin-top:6px; height:5px; width:170px; max-width:100%; background:var(--state);
+    border-radius:3px; overflow:hidden; }
+  .uprog > div { height:100%; background:var(--accent); border-radius:3px; transition:width .15s; }
+  .uprog.indet > div { width:40%; animation:indet 1.15s ease-in-out infinite; }
+  @keyframes indet { 0%{margin-left:-42%} 100%{margin-left:102%} }
   .reason { color:var(--err-fg); font-size:12px; margin-top:5px; }
   .empty { color:var(--muted); padding:34px 16px; text-align:center; }
 
@@ -207,14 +215,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     border-radius:8px; padding:8px 16px; margin-right:12px; cursor:pointer; font-weight:600;
     font-size:12.5px; transition:background .15s; }
   .filebox input[type=file]::file-selector-button:hover { background:var(--accent2); }
-
-  /* ---------- linear progress ---------- */
-  .progwrap { display:none; margin-top:18px; }
-  .progress { height:6px; background:var(--state); border-radius:3px; overflow:hidden; }
-  .progress > div { height:100%; width:0; background:var(--accent); border-radius:3px;
-    transition:width .15s; }
-  .progtext { font-size:12px; color:var(--muted); margin-top:7px;
-    font-family:ui-monospace,SFMono-Regular,Menlo,monospace; }
 
   /* ---------- snackbar ---------- */
   .snackbar { position:fixed; left:50%; bottom:26px; transform:translate(-50%,140%);
@@ -313,11 +313,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <label for="imageName">Image name (artifact name + URL)</label>
       <div class="helper">SR Linux images are auto-named <span class="mono">SRLinux-&lt;version&gt;</span>; edit if needed.</div>
     </div>
-
-    <div class="progwrap" id="progwrap">
-      <div class="progress"><div id="progressBar"></div></div>
-      <div class="progtext" id="progText"></div>
-    </div>
   </div>
   <div class="dialog-actions">
     <button class="btn text subtle ripple" id="cancelUpload">Cancel</button>
@@ -352,7 +347,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var el = function(id){ return document.getElementById(id); };
   var binFile=el("binFile"), md5Hash=el("md5Hash"), md5Note=el("md5Note"),
       ns=el("namespace"), imageName=el("imageName"), btn=el("uploadBtn"),
-      progwrap=el("progwrap"), bar=el("progressBar"), progText=el("progText"),
       binHint=el("binHint"), rows=el("rows");
   md5Note.textContent = MD5_DEFAULT_NOTE;
   var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
@@ -460,49 +454,106 @@ INDEX_HTML = r"""<!DOCTYPE html>
       : MD5_DEFAULT_NOTE;
   });
 
-  // ---------- upload ----------
+  // ---------- upload (closes dialog; progress shown as a live table row) ----------
+  function resetUploadForm(){
+    binFile.value=""; md5Hash.value=""; md5Hash.disabled=false;
+    md5Note.textContent=MD5_DEFAULT_NOTE; imageName.value="";
+    binHint.textContent="Maximum upload size: "+Math.round(maxBytes/1048576)+" MiB.";
+  }
+  function paintPendingCell(p){
+    var c=document.getElementById("upstat-"+p.key);
+    if(c) c.innerHTML=pendStatusHtml(p); else render();
+  }
+
   btn.addEventListener("click", function(){
     var f=binFile.files[0];
+    // Validate first; on failure keep the dialog open so the user can fix it.
     if(!f){ snack("err","Select a .bin or .zip file first."); return; }
     if(f.size>maxBytes){ snack("err","File is "+fmtBytes(f.size)+", over the "+fmtBytes(maxBytes)+" limit."); return; }
     var zip=isZip(f.name);
-    var qs=new URLSearchParams({ filename:f.name,
-      namespace:(ns.value||ns.placeholder||"").trim()||"eda", name:imageName.value||deriveName(f.name) });
+    var namespace=(ns.value||ns.placeholder||"").trim()||"eda";
+    var name=(imageName.value||deriveName(f.name)).trim();
+    var qs=new URLSearchParams({ filename:f.name, namespace:namespace, name:name });
     var mh=(md5Hash.value||"").trim().toLowerCase();
     if(mh && !zip) qs.set("md5", mh);
+
+    // Create the live row, then close the dialog right away.
+    var key="u"+(++uploadSeq);
+    var p={ key:key, displayName:name, namespace:namespace, total:f.size, isZip:zip,
+            phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0 };
+    pendingUploads[key]=p;
+    closeModal();
+    resetUploadForm();
+    render();
+
     var xhr=new XMLHttpRequest();
     xhr.open("POST", api("/api/upload")+"?"+qs.toString());
-    btn.disabled=true; el("cancelUpload").disabled=true;
-    progwrap.style.display="block"; bar.style.width="0"; progText.textContent="";
     var startT=Date.now();
     xhr.upload.onprogress=function(e){
       if(!e.lengthComputable) return;
-      var pct=e.loaded/e.total*100;
-      bar.style.width=pct.toFixed(1)+"%";
-      var elapsed=(Date.now()-startT)/1000;
-      var speed=elapsed>0 ? (e.loaded/1048576/elapsed) : 0;
-      progText.textContent=fmtBytes(e.loaded)+" / "+fmtBytes(e.total)+
-        "  ("+pct.toFixed(0)+"%)  ·  "+speed.toFixed(1)+" MB/s"+(zip?"  ·  extracting after upload":"");
+      p.loaded=e.loaded; p.total=e.total||p.total;
+      p.pct=p.total ? (e.loaded/p.total*100) : 0;
+      p.elapsed=(Date.now()-startT)/1000;
+      p.speed=p.elapsed>0 ? (e.loaded/1048576/p.elapsed) : 0;
+      paintPendingCell(p);
     };
+    // Body fully uploaded; the server is now extracting (zip) / creating the Artifact.
+    xhr.upload.onload=function(){ p.phase = p.isZip ? "Unzipping" : "Processing"; paintPendingCell(p); };
     xhr.onload=function(){
-      btn.disabled=false; el("cancelUpload").disabled=false; progwrap.style.display="none";
       var r={}; try{ r=JSON.parse(xhr.responseText);}catch(e){}
       if(xhr.status>=200 && xhr.status<300 && r.ok){
         var from = r.fromZip ? (" Extracted "+(r.filename||"image")+" from the zip.") : "";
         var note = r.md5 ? (" The artifact server will verify it against MD5 "+r.md5+".") : "";
-        snack("ok","Uploaded "+f.name+"."+from+" Artifact "+r.namespace+"/"+r.artifactName+" created."+note);
-        binFile.value=""; md5Hash.value=""; md5Hash.disabled=false; md5Note.textContent=MD5_DEFAULT_NOTE;
-        binHint.textContent="Maximum upload size: "+Math.round(maxBytes/1048576)+" MiB.";
-        closeModal(); refresh();
-      } else { snack("err", (r.error||("HTTP "+xhr.status)), true); if(r.uploadId) refresh(); }
+        snack("ok","Uploaded "+(r.filename||name)+"."+from+" Artifact "+r.namespace+"/"+r.artifactName+" created."+note);
+        // Leave the pending row up until the real artifact appears; refresh() swaps it in.
+        refresh();
+      } else {
+        delete pendingUploads[key]; render();
+        snack("err", (r.error||("HTTP "+xhr.status)), true);
+        if(r.uploadId) refresh();
+      }
     };
-    xhr.onerror=function(){ btn.disabled=false; el("cancelUpload").disabled=false;
-      progwrap.style.display="none"; snack("err","Network error during upload.", true); };
+    xhr.onerror=function(){ delete pendingUploads[key]; render();
+      snack("err","Network error during upload.", true); };
     xhr.send(f);
   });
 
   // ---------- artifacts table ----------
+  var pendingUploads={}, uploadSeq=0;   // in-flight browser->controller uploads (client-side)
   function chip(s){ var c=s||"NoArtifact"; return '<span class="chip c-'+c+'">'+esc(c)+'</span>'; }
+  function fmtElapsed(sec){ sec=Math.max(0,Math.floor(sec)); var m=Math.floor(sec/60), s=sec%60;
+    return m+":"+(s<10?"0":"")+s; }
+
+  function pendStatusHtml(p){
+    if(p.phase==="Uploading"){
+      var line=p.pct.toFixed(0)+"%  ·  "+fmtBytes(p.loaded)+" / "+fmtBytes(p.total)+
+               "  ·  "+p.speed.toFixed(1)+" MB/s  ·  "+fmtElapsed(p.elapsed);
+      return '<span class="chip c-Uploading">Uploading</span>'+
+             '<div class="uprog"><div style="width:'+p.pct.toFixed(1)+'%"></div></div>'+
+             '<div class="upinfo">'+esc(line)+'</div>';
+    }
+    var label = p.phase==="Unzipping" ? "Un-zipping" : "Finalizing";
+    var sub   = p.phase==="Unzipping" ? "extracting image + reading md5" : "creating Artifact";
+    return '<span class="chip c-'+p.phase+'">'+label+'</span>'+
+           '<div class="uprog indet"><div></div></div>'+
+           '<div class="upinfo">'+esc(sub)+'</div>';
+  }
+  function pendingRowHtml(p){
+    return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td>'+esc(p.namespace)+
+      '</td><td class="num">'+fmtBytes(p.total)+'</td><td id="upstat-'+p.key+'">'+pendStatusHtml(p)+
+      '</td><td><span class="mono pending">— ready when Available</span></td><td></td></tr>';
+  }
+  function serverRowHtml(t){
+    var snip=t.imagePath?("images:\n  - image: "+t.imagePath+(t.md5Path?("\n    imageMd5: "+t.md5Path):"")):"";
+    var np=snip
+      ?('<div class="snippet-cell"><button class="iconbtn ripple" data-act="copysnip" data-snip="'+esc(snip)+'">copy</button><pre class="snippet">'+esc(snip)+'</pre></div>')
+      :'<span class="mono pending">— ready when Available</span>';
+    var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
+    var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">delete</button>';
+    return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+'</td><td>'+esc(t.namespace)+
+      '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
+      '</td><td>'+np+'</td><td>'+del+'</td></tr>';
+  }
 
   function imDelete(uid, nsv, name){
     askConfirm('Delete "'+name+'"? This removes it from EDA and the artifact server, and deletes the local copy.', function(){
@@ -567,24 +618,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
   paintHeaders();
 
   function render(){
-    var a=sortData(currentData);
-    if(!a.length){
+    var serverRows=sortData(currentData);
+    var seen={};
+    currentData.forEach(function(t){ seen[(t.displayName||t.name)+"|"+t.namespace]=true; });
+    var pend=[];
+    Object.keys(pendingUploads).forEach(function(k){
+      var p=pendingUploads[k];
+      if(!seen[p.displayName+"|"+p.namespace]) pend.push(p);  // hide once the real artifact appears
+    });
+    if(!(pend.length+serverRows.length)){
       rows.innerHTML='<tr><td colspan="6" class="empty">No images yet. Click <b>Upload image</b> to add one.</td></tr>';
       el("refreshNote").style.display="none"; return;
     }
-    rows.innerHTML=a.map(function(t){
-      var snip=t.imagePath?("images:\n  - image: "+t.imagePath+(t.md5Path?("\n    imageMd5: "+t.md5Path):"")):"";
-      var np=snip
-        ?('<div class="snippet-cell"><button class="iconbtn ripple" data-act="copysnip" data-snip="'+esc(snip)+'">copy</button><pre class="snippet">'+esc(snip)+'</pre></div>')
-        :'<span class="mono pending">— ready when Available</span>';
-      var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
-      var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">delete</button>';
-      return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+'</td><td>'+esc(t.namespace)+
-        '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
-        '</td><td>'+np+'</td><td>'+del+'</td></tr>';
-    }).join("");
+    rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
     el("refreshNote").style.display="inline-block";
-    el("refreshNote").textContent=a.length;
+    el("refreshNote").textContent=pend.length+serverRows.length;
   }
 
   function refresh(){
@@ -594,6 +642,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }).then(function(d){
       if(!d) return;
       currentData=d.artifacts||[];
+      // drop any in-flight upload that the controller has now turned into an Artifact
+      Object.keys(pendingUploads).forEach(function(k){
+        var p=pendingUploads[k];
+        if(currentData.some(function(t){ return (t.displayName||t.name)===p.displayName && t.namespace===p.namespace; }))
+          delete pendingUploads[k];
+      });
       render();
     }).catch(function(){});
   }
