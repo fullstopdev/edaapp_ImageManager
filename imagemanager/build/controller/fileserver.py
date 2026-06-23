@@ -49,6 +49,26 @@ CONFIG = {
 }
 POD_NAMESPACE = os.environ.get("POD_NAMESPACE", "eda-system")
 
+# Material-styled standalone message page (sign-out / access-denied). Mirrors the
+# EDA palette + the saved Light/Dark preference used by the main UI.
+_MSG_PAGE = """<!doctype html><html lang=en><head><meta charset=utf-8>
+<meta name=viewport content="width=device-width, initial-scale=1"><title>{title}</title>
+<script>try{{document.documentElement.setAttribute("data-theme",localStorage.getItem("imagemanager-theme")||"light");}}catch(e){{}}</script>
+<style>
+ :root{{--bg:#f7f9fd;--panel:#fff;--fg:#2b2b2b;--muted:#687282;--accent:#005aff;--accent2:#0a44ad;--line:#d9dee7;--elev:0 11px 18px rgba(20,30,50,.18),0 22px 44px rgba(20,30,50,.22);}}
+ html[data-theme=dark]{{--bg:#101824;--panel:#1a222e;--fg:#e6edf3;--muted:#8b98a6;--accent:#4d8dff;--accent2:#6aa4ff;--line:#2c3644;--elev:0 22px 48px rgba(0,0,0,.7);}}
+ *{{box-sizing:border-box}}
+ body{{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;background:var(--bg);color:var(--fg);font:14px/1.55 "Nokia Pure Text","Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;padding:24px}}
+ .card{{background:var(--panel);border-radius:16px;box-shadow:var(--elev);padding:30px 32px;max-width:460px;width:100%}}
+ .mark{{width:18px;height:18px;border-radius:5px;background:var(--accent);box-shadow:0 0 0 4px color-mix(in srgb,var(--accent) 20%,transparent);display:inline-block;vertical-align:-2px;margin-right:9px}}
+ h2{{margin:0 0 12px;font-size:19px;font-weight:600}}
+ p{{margin:8px 0;color:var(--fg)}} p.muted{{color:var(--muted);font-size:13px}}
+ .imbtn{{display:inline-block;margin-top:16px;background:var(--accent);color:#fff;text-decoration:none;border-radius:8px;padding:10px 20px;font-weight:600;font-size:13.5px}}
+ .imbtn:hover{{background:var(--accent2)}}
+ .imbtn.ghost{{background:transparent;color:var(--accent);border:1px solid var(--line)}}
+ .imbtn.ghost:hover{{background:color-mix(in srgb,var(--accent) 8%,transparent)}}
+</style></head><body><div class="card"><h2><span class="mark"></span>{heading}</h2>{body}{action}</div></body></html>"""
+
 
 def set_config(cfg):
     global CONFIG
@@ -164,12 +184,11 @@ class Handler(BaseHTTPRequestHandler):
     def _handle_logout(self):
         # Local logout: clear our session only; the EDA Keycloak session stays.
         link = auth.APP_PROXY_PREFIX + "/oauth/login"
-        body = (
-            "<!doctype html><meta charset=utf-8><title>Signed out</title>"
-            "<body style='font:14px -apple-system,Segoe UI,sans-serif;padding:48px;color:#2b2b2b'>"
-            "<h2>Signed out of Image Manager</h2>"
-            "<p>You're still logged into EDA.</p>"
-            f"<p><a href='{link}'>Sign in again</a></p></body>"
+        body = _MSG_PAGE.format(
+            title="Signed out",
+            heading="Signed out of Image Manager",
+            body="<p>You're still logged into EDA.</p>",
+            action=f"<a class='imbtn' href='{link}'>Sign in again</a>",
         ).encode("utf-8")
         self.send_response(200)
         self._set_cookie(auth.SESSION_COOKIE, "", 0)
@@ -182,12 +201,15 @@ class Handler(BaseHTTPRequestHandler):
         roles = ", ".join(auth.allowed_roles())
         link = auth.APP_PROXY_PREFIX + "/oauth/logout"
         self._send_text(
-            "<!doctype html><meta charset=utf-8><title>Access denied</title>"
-            "<body style='font:14px -apple-system,Segoe UI,sans-serif;padding:48px;color:#2b2b2b'>"
-            "<h2>Access denied</h2>"
-            f"<p>You're signed in to EDA as <b>{html.escape(user)}</b>, but Image Manager is "
-            f"restricted to users with the role: <b>{html.escape(roles)}</b>.</p>"
-            f"<p>Ask an administrator for the role, or <a href='{link}'>sign out</a>.</p></body>",
+            _MSG_PAGE.format(
+                title="Access denied",
+                heading="Access denied",
+                body=(f"<p>You're signed in to EDA as <b>{html.escape(user)}</b>, but Image "
+                      f"Manager is restricted to users with the role: "
+                      f"<b>{html.escape(roles)}</b>.</p>"
+                      f"<p class='muted'>Ask an administrator for the role.</p>"),
+                action=f"<a class='imbtn ghost' href='{link}'>Sign out</a>",
+            ),
             403, ctype="text/html; charset=utf-8")
 
     # --------------------------- GET / HEAD ---------------------------
