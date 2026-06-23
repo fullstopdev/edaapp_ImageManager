@@ -42,8 +42,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     box-shadow:0 0 0 3px color-mix(in srgb,var(--accent) 20%,transparent); }
   .brand-name { font-size:16px; font-weight:600; letter-spacing:.01em; }
   header .sub { color:var(--muted); font-size:12.5px; }
-  .ghostbtn { margin-left:auto; background:transparent; border:1px solid var(--line);
-    color:var(--muted); border-radius:4px; padding:6px 12px; font-size:12.5px; cursor:pointer; }
+  .headright { margin-left:auto; display:flex; align-items:center; gap:10px; }
+  .ghostbtn { background:transparent; border:1px solid var(--line);
+    color:var(--muted); border-radius:4px; padding:6px 12px; font-size:12.5px; cursor:pointer;
+    text-decoration:none; }
   .ghostbtn:hover { background:var(--panel2); color:var(--fg); }
   main { max-width:1180px; margin:0 auto; padding:24px 20px 40px; }
   .card { background:var(--panel); border:1px solid var(--line); border-radius:8px;
@@ -107,7 +109,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <header>
   <div class="brand"><span class="brand-mark"></span><span class="brand-name">EDA Image Manager</span></div>
   <span class="sub">Upload a NOS image &rarr; hosted in-cluster &rarr; Artifact created &rarr; eda-asvr re-hosts it</span>
-  <button id="themeBtn" class="ghostbtn" title="Toggle light / dark appearance">Dark mode</button>
+  <div class="headright">
+    <span id="userInfo" class="sub"></span>
+    <a id="signoutLink" class="ghostbtn" title="Sign out of Image Manager">Sign out</a>
+    <button id="themeBtn" class="ghostbtn" title="Toggle light / dark appearance">Dark mode</button>
+  </div>
 </header>
 <main>
   <div class="card">
@@ -170,6 +176,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       progwrap=el("progwrap"), bar=el("progressBar"), progText=el("progText"),
       msg=el("msg"), binHint=el("binHint"), rows=el("rows");
   md5Note.textContent = MD5_DEFAULT_NOTE;
+  var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
 
   function fmtBytes(n){
     if(n==null) return "";
@@ -195,6 +202,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(c.defaultArtifactNamespace){ ns.placeholder=c.defaultArtifactNamespace; ns.value=ns.value||c.defaultArtifactNamespace; }
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+c.maxUploadMiB+" MiB.";
+    var ui=el("userInfo"); if(ui && c.user) ui.textContent="Signed in as "+c.user;
   }).catch(function(){});
 
   fetch(api("/api/namespaces")).then(function(r){return r.json();}).then(function(d){
@@ -278,7 +286,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   });
 
   function refresh(){
-    fetch(api("/api/artifacts")).then(function(r){return r.json();}).then(function(d){
+    fetch(api("/api/artifacts")).then(function(r){
+      if(r.status===401){ location.reload(); return null; }  // session expired -> re-login
+      return r.json();
+    }).then(function(d){
+      if(!d) return;
       var a=d.artifacts||[];
       if(!a.length){ rows.innerHTML='<tr><td colspan="6" class="empty">No uploads yet.</td></tr>'; el("refreshNote").textContent=""; return; }
       rows.innerHTML=a.map(function(t){

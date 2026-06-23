@@ -42,3 +42,31 @@ roleRef:
   kind: ClusterRole
   name: eda-imagemanager
   apiGroup: rbac.authorization.k8s.io
+---
+# Read ONLY the two secrets needed for EDA single sign-on (scoped by name):
+#   keycloak-admin-secret -> fetch the "eda" Keycloak client secret (OIDC code exchange)
+#   eda-api-ca            -> trust the in-cluster eda-api/Keycloak TLS cert (gotcha 3)
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: eda-imagemanager-auth
+  namespace: eda-system
+rules:
+  - apiGroups: [""]
+    resources: ["secrets"]
+    resourceNames: ["keycloak-admin-secret", "eda-api-ca"]
+    verbs: ["get"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: eda-imagemanager-auth
+  namespace: eda-system
+subjects:
+  - kind: ServiceAccount
+    name: eda-imagemanager
+    namespace: eda-system
+roleRef:
+  kind: Role
+  name: eda-imagemanager-auth
+  apiGroup: rbac.authorization.k8s.io

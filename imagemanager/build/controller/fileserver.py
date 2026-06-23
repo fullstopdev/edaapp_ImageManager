@@ -15,6 +15,7 @@ TLS: serving cert from the cert-manager CSI mount (issuer eda-internal-issuer),
 which eda-asvr trusts via the internal CA.
 """
 
+import html
 import json
 import logging
 import os
@@ -22,10 +23,12 @@ import shutil
 import ssl
 import threading
 import urllib.error
+from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlsplit
 
 import artifact
+import auth
 import uploads
 import webui
 
@@ -84,23 +87,146 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    # --------------------------- auth (EDA SSO) ---------------------------
+
+    def _cookie(self, name):
+        raw = self.headers.get("Cookie")
+        if not raw:
+            return ""
+        c = SimpleCookie()
+        try:
+            c.load(raw)
+        except Exception:
+            return ""
+        m = c.get(name)
+        return m.value if m else ""
+
+    def _authed_user(self):
+        """Username if the request carries a valid session, else None.
+        With auth disabled (local dev), returns a placeholder user."""
+        if not auth.enabled():
+            return "local"
+        return auth.verify_session(self._cookie(auth.SESSION_COOKIE))
+
+    def _set_cookie(self, name, value, max_age):
+        parts = [f"{name}={value}", f"Path={auth.APP_PROXY_PREFIX}",
+                 "HttpOnly", "Secure", "SameSite=Lax"]
+        if max_age is not None:
+            parts.append(f"Max-Age={max_age}")
+        self.send_header("Set-Cookie", "; ".join(parts))
+
+    def _redirect(self, location, cookies=None):
+        self.send_response(302)
+        for (n, v, a) in (cookies or []):
+            self._set_cookie(n, v, a)
+        self.send_header("Location", location)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+
+    def _redirect_to_login(self):
+        state = auth.new_state()
+        try:
+            url = auth.authorize_url(self.headers, state)
+        except Exception as e:
+            logger.error("Cannot build authorize URL: %s", e)
+            self._send_text("Sign-in is unavailable: cannot reach EDA Keycloak.", 503)
+            return
+        self._redirect(url, cookies=[(auth.STATE_COOKIE, state, 600)])
+
+    def _handle_oauth_callback(self, q):
+        code = (q.get("code") or [None])[0]
+        state = (q.get("state") or [None])[0]
+        expected = self._cookie(auth.STATE_COOKIE)
+        if not code or not state or not expected or state != expected:
+            self._send_text("Sign-in failed (invalid state). Please retry.", 400)
+            return
+        try:
+            tok = auth.exchange_code(code, self.headers)
+        except Exception as e:
+            logger.error("OIDC code exchange failed: %s", e)
+            self._send_text("Sign-in failed: could not complete authentication.", 502)
+            return
+        user, roles = auth.token_identity(tok)
+        if not user:
+            self._send_text("Sign-in failed: invalid token.", 502)
+            return
+        if not auth.is_allowed(roles):
+            logger.info("Access denied: %s lacks an allowed role (have=%s need-any-of=%s)",
+                        user, sorted(roles), auth.allowed_roles())
+            self._deny_page(user)
+            return
+        logger.info("Sign-in OK: %s", user)
+        self._redirect(auth.APP_PROXY_PREFIX + "/", cookies=[
+            (auth.SESSION_COOKIE, auth.make_session(user), auth.SESSION_TTL),
+            (auth.STATE_COOKIE, "", 0),
+        ])
+
+    def _handle_logout(self):
+        # Local logout: clear our session only; the EDA Keycloak session stays.
+        link = auth.APP_PROXY_PREFIX + "/oauth/login"
+        body = (
+            "<!doctype html><meta charset=utf-8><title>Signed out</title>"
+            "<body style='font:14px -apple-system,Segoe UI,sans-serif;padding:48px;color:#2b2b2b'>"
+            "<h2>Signed out of Image Manager</h2>"
+            "<p>You're still logged into EDA.</p>"
+            f"<p><a href='{link}'>Sign in again</a></p></body>"
+        ).encode("utf-8")
+        self.send_response(200)
+        self._set_cookie(auth.SESSION_COOKIE, "", 0)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def _deny_page(self, user):
+        roles = ", ".join(auth.allowed_roles())
+        link = auth.APP_PROXY_PREFIX + "/oauth/logout"
+        self._send_text(
+            "<!doctype html><meta charset=utf-8><title>Access denied</title>"
+            "<body style='font:14px -apple-system,Segoe UI,sans-serif;padding:48px;color:#2b2b2b'>"
+            "<h2>Access denied</h2>"
+            f"<p>You're signed in to EDA as <b>{html.escape(user)}</b>, but Image Manager is "
+            f"restricted to users with the role: <b>{html.escape(roles)}</b>.</p>"
+            f"<p>Ask an administrator for the role, or <a href='{link}'>sign out</a>.</p></body>",
+            403, ctype="text/html; charset=utf-8")
+
     # --------------------------- GET / HEAD ---------------------------
 
     def do_GET(self):
         path, q = self._route()
         try:
+            # Machine endpoints — never gated (kubelet probes; eda-asvr file pulls).
+            if path == "/healthz":
+                self._serve_healthz()
+                return
+            if path.startswith("/files/"):
+                self._serve_file(path[len("/files/"):], head_only=False)
+                return
+            # OIDC endpoints.
+            if path == "/oauth/callback":
+                self._handle_oauth_callback(q)
+                return
+            if path == "/oauth/logout":
+                self._handle_logout()
+                return
+            if path == "/oauth/login":
+                self._redirect_to_login()
+                return
+            # Everything else requires a valid EDA session.
+            if auth.enabled() and not self._authed_user():
+                if path.startswith("/api/"):
+                    self._send_json({"ok": False, "error": "not authenticated"}, 401)
+                else:
+                    self._redirect_to_login()
+                return
             if path == "/":
                 self._send_text(webui.INDEX_HTML, ctype="text/html; charset=utf-8")
-            elif path == "/healthz":
-                self._serve_healthz()
             elif path == "/api/config":
                 self._serve_config()
             elif path == "/api/namespaces":
                 self._serve_namespaces()
             elif path == "/api/artifacts":
                 self._serve_artifacts()
-            elif path.startswith("/files/"):
-                self._serve_file(path[len("/files/"):], head_only=False)
             else:
                 self.send_error(404, "Not Found")
         except BrokenPipeError:
@@ -140,6 +266,7 @@ class Handler(BaseHTTPRequestHandler):
             "defaultArtifactNamespace": c.get("defaultArtifactNamespace", "eda"),
             "defaultRepo": c.get("defaultRepo", "images"),
             "maxUploadMiB": c.get("maxUploadMiB", 4096),
+            "user": self._authed_user() or "",
         })
 
     def _serve_namespaces(self):
@@ -194,6 +321,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, q = self._route()
         try:
+            # All POSTs are user actions — require a valid EDA session.
+            if auth.enabled() and not self._authed_user():
+                self._send_json({"ok": False, "error": "not authenticated"}, 401)
+                return
             if path == "/api/upload":
                 self._handle_upload(q)
             elif path == "/api/delete":

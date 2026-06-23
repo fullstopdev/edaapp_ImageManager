@@ -150,3 +150,14 @@ def namespace_exists(name):
         if e.code == 404:
             return False
         raise
+
+
+def read_secret(name, namespace):
+    """Read a Secret's .data (base64 values). Returns dict or None (404)."""
+    path = f"/api/v1/namespaces/{quote(namespace, safe='')}/secrets/{quote(name, safe='')}"
+    try:
+        return _request("GET", path)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise

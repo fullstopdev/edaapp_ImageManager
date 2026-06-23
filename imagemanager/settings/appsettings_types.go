@@ -22,6 +22,14 @@ type AppSettingsSpec struct {
 	// +kubebuilder:default="20Gi"
 	// +eda:ui:title="Upload storage size"
 	UploadStorageSize string `json:"uploadStorageSize,omitempty"`
+
+	// EDA role(s) allowed to use Image Manager, comma-separated (a user is allowed
+	// if they hold ANY listed role). Names match EDA's Roles screen; the internal
+	// "edarole_" prefix is handled automatically. Defaults to the system
+	// administrator role. The whole UI (view, upload, delete) requires one of these.
+	// +kubebuilder:default="system-administrator"
+	// +eda:ui:title="Allowed EDA role(s)"
+	AllowedRoles string `json:"allowedRoles,omitempty"`
 }
 
 // +kubebuilder:object:root=true
