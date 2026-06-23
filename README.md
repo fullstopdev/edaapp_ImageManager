@@ -80,6 +80,8 @@ Open that URL in the same browser where you're logged into the EDA UI (the EDA l
 
 **Using it:**
 
+Click **Upload image** (top right) to open the upload dialog, then:
+
 1. **Pick the image file** — either the raw `.bin`, or the **vendor `.zip`** (e.g. `Nokia-7220_IXR_SR_Linux-<hw>-26.3.2.zip`). For a zip, the app extracts the `.bin` and reads the packaged `.md5` automatically. The **Image name** fills in automatically (SR Linux images become `SRLinux-<version>`) — edit it if you like; it becomes the artifact's name and its artifact‑server path.
 2. *(Optional, raw `.bin` only)* **Paste the vendor's MD5 hash** so EDA can verify the download, and change the **Namespace** if it shouldn't be `eda`. When you upload a zip, the MD5 field is ignored — the trusted checksum packaged inside the zip is used instead.
 3. **Click Upload.** A progress bar shows size, percentage, and speed.
