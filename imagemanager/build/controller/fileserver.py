@@ -478,7 +478,9 @@ class Handler(BaseHTTPRequestHandler):
         """SR Linux: extract the .bin (+ its packaged md5) from the temp zip into
         the image dir, create the image (+md5) Artifact, then resolve the YANG."""
         repo = (CONFIG.get("defaultRepo") or "images").strip()
-        display_name = name_override or uploads.derive_name(filename)
+        # Lowercase everywhere: this name becomes the Artifact name, the served
+        # filePath and the NodeProfile name, so capitals must never get through.
+        display_name = (name_override or uploads.derive_name(filename)).strip().lower()
         artifact_name = uploads.to_k8s_name(display_name)
         if not artifact_name:
             self._send_json({"ok": False, "error": "could not derive a valid image name"}, 400)
@@ -598,7 +600,8 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": f"not a 7750 SR OS image: {e}"}, 400)
             return
         version = version_disp.lower()
-        display_name = name_override or ("SROS-" + version_disp)
+        # Lowercase everywhere (Artifact names, served filePaths, NodeProfile name).
+        display_name = (name_override or ("sros-" + version)).strip().lower()
         group_id = uploads.to_k8s_name(display_name)
         if not group_id:
             self._send_json({"ok": False, "error": "could not derive a valid image name"}, 400)

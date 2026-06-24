@@ -89,7 +89,7 @@ Click **Upload Image From File** (top right) to open the upload dialog, then:
 
 1. **Pick the vendor `.zip`** — either an SR Linux zip (e.g. `Nokia-7220_IXR_SR_Linux-<hw>-26.3.2.zip`) or a 7750 SR OS TiMOS zip (e.g. `Nokia-7750_SR-TiMOS-26.3.R3.zip`). Only `.zip` is accepted; the type is **detected automatically** from the contents. Everything else is handled for you: the **md5** comes from inside the zip, and the **YANG schema profile** is obtained automatically (fetched from `nokia-eda/schema-profiles`, or for unpublished SR OS versions built from `nokia/7x50_YangModels`).
 2. **Choose the Namespace** — pick the target EDA namespace from the dropdown. There's no default; you must select one before uploading.
-3. *(Optional)* edit the **auto‑generated name** (`SRLinux-<version>` / `SROS-<version>`).
+3. *(Optional)* edit the **auto‑generated name** (`srlinux-<version>` / `sros-<version>`). Names are always lowercase (the field lowercases as you type), so the Artifact name, the served path and the NodeProfile name are uniformly small letters.
 4. **Click Upload.** The dialog closes and the image appears in the table as **Uploading**, then **Un‑zipping**.
 5. The row turns **`InProgress`** and finally **`Available`** once `eda-asvr` has fetched every part. The list stays compact — **Name, Namespace, Size, Status** and actions. Click **node profile** on a row to open a popup with both the copy‑paste `spec.images` **snippet** (`image` + `imageMd5` per file, plus the `yang:` URL) and a **complete NodeProfile example**, or **delete** to remove the image and all its Artifacts (also dropping `eda-asvr`'s hosted copies).
 
@@ -113,8 +113,8 @@ SR Linux (`imageMd5` appears only if you supplied an MD5):
 
 ```yaml
 images:
-  - image: eda/images/srlinux-26.3.9/SRLinux-26.3.9
-    imageMd5: eda/images/srlinux-26.3.9-md5/SRLinux-26.3.9-md5
+  - image: eda/images/srlinux-26.3.9/srlinux-26.3.9
+    imageMd5: eda/images/srlinux-26.3.9-md5/srlinux-26.3.9-md5
 ```
 
 SR OS — every boot file is its own image entry, and the schema profile is the `yang:`:

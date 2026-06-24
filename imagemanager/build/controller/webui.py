@@ -404,16 +404,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]; }); }
   // Suggest a name from the filename; the NOS is detected server-side from the
   // zip contents, so this is just a friendly default the user may edit.
+  // Names are always lowercase (Artifact + served path + NodeProfile name), so
+  // capitals can never sneak into an EDA object name.
   function deriveName(fn){
     var base=(fn||"").split(/[\\/]/).pop();
     var stem=base.replace(/\.[A-Za-z0-9]+$/,"");
     if(/sr[ _-]?linux/i.test(base)){
       var m=base.match(/(\d+\.\d+\.\d+(?:-\d+)?)/);
-      if(m) return "SRLinux-"+m[1];
+      if(m) return ("srlinux-"+m[1]).toLowerCase();
     }
     var s=base.match(/(\d+\.\d+\.[Rr]\d+)/);   // SR OS style, e.g. 26.3.R3
-    if(s) return "SROS-"+s[1];
-    return stem||"image";
+    if(s) return ("sros-"+s[1]).toLowerCase();
+    return (stem||"image").toLowerCase();
   }
 
   // ---------- snackbar ----------
@@ -478,6 +480,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     imageName.value = deriveName(f.name);
     binHint.textContent=f.name+"  ·  "+fmtBytes(f.size);
   });
+  // Names are lowercased everywhere; keep the field lowercase as the user edits.
+  imageName.addEventListener("input", function(ev){
+    if(ev && ev.isComposing) return;   // don't disturb a mid-IME composition
+    var s=imageName.selectionStart, e=imageName.selectionEnd, lo=imageName.value.toLowerCase();
+    if(lo!==imageName.value){ imageName.value=lo; try{ imageName.setSelectionRange(s,e); }catch(_){} }
+  });
 
   // ---------- upload (closes dialog; progress shown as a live table row) ----------
   function resetUploadForm(){
@@ -513,7 +521,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   // Single upload path. The NOS is auto-detected server-side from the zip; md5
   // and the YANG schema profile are handled automatically.
   function doUpload(f, namespace){
-    var name=(imageName.value||deriveName(f.name)).trim();
+    // Lowercase unconditionally here (the authoritative client-side point), so the
+    // query param and the live pending row match the server's lowercased name
+    // regardless of how text reached the field — the input listener is then cosmetic.
+    var name=(imageName.value||deriveName(f.name)).trim().toLowerCase();
     var qs=new URLSearchParams({ filename:f.name, namespace:namespace, name:name });
     var key="u"+(++uploadSeq);
     var p={ key:key, displayName:name, namespace:namespace, total:f.size, isZip:true,

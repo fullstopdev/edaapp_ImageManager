@@ -69,16 +69,17 @@ def sanitize_filename(name):
 
 
 def derive_name(filename):
-    """Suggest a clean image name from an upload filename.
-    Nokia SR Linux images -> 'SRLinux-<version>' (e.g. SRLinux-26.3.2);
-    otherwise the filename with its extension stripped."""
+    """Suggest a clean image name from an upload filename. Always lowercase, so
+    the Artifact name, served filePath and NodeProfile name are uniformly small
+    letters. Nokia SR Linux images -> 'srlinux-<version>' (e.g. srlinux-26.3.2);
+    otherwise the filename with its extension stripped (lowercased)."""
     base = os.path.basename((filename or "").replace("\\", "/").strip())
     stem = re.sub(r"\.[A-Za-z0-9]+$", "", base)
     if _SRLINUX_RE.search(base):
         m = _VERSION_RE.search(base)
         if m:
-            return "SRLinux-" + m.group(1)
-    return stem or "image"
+            return "srlinux-" + m.group(1)
+    return (stem or "image").lower()
 
 
 def to_k8s_name(name):

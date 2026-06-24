@@ -140,8 +140,8 @@ def artifact_status(namespace, name):
 def asvr_path(internal_url):
     """Convert an Artifact status.internalUrl into the artifact-server path used
     in a NodeProfile's spec.images[].image (host stripped). e.g.
-    https://eda-asvr.eda-system.svc/eda/images/srlinux-26.3.2/SRLinux-26.3.2
-    -> eda/images/srlinux-26.3.2/SRLinux-26.3.2 . Returns "" if not available."""
+    https://eda-asvr.eda-system.svc/eda/images/srlinux-26.3.2/srlinux-26.3.2
+    -> eda/images/srlinux-26.3.2/srlinux-26.3.2 . Returns "" if not available."""
     if not internal_url:
         return ""
     try:
