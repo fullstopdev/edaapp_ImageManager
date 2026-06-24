@@ -112,6 +112,58 @@ def parse_md5_text(text):
     return m.group(1).lower() if m else None
 
 
+_MD5SUMS_LINE = re.compile(r"^([0-9a-fA-F]{32})\s+\*?(.+?)\s*$")
+
+
+def _norm_md5_path(p):
+    """Normalize a md5sums path so it aligns with zip member paths: drop a leading
+    './' and a leading 'cflash/' (md5sums.txt lists paths relative to cflash/,
+    while zip members carry the cflash/ prefix)."""
+    p = (p or "").strip().lstrip("/")
+    if p.startswith("./"):
+        p = p[2:]
+    if p.startswith("cflash/"):
+        p = p[len("cflash/"):]
+    return p
+
+
+def parse_md5sums(text):
+    """Parse a coreutils md5sums file ('<md5>  <path>' per line) into
+    ({normalized_path: md5}, {basename: md5}). The path map is preferred so the
+    versioned TiMOS-SR-<ver>/<file> md5 wins over the cflash-root duplicate;
+    basename is a fallback for zips that list bare names."""
+    by_path, by_base = {}, {}
+    for line in (text or "").splitlines():
+        m = _MD5SUMS_LINE.match(line.strip())
+        if not m:
+            continue
+        md5 = m.group(1).lower()
+        path = _norm_md5_path(m.group(2))
+        by_path[path] = md5
+        by_base.setdefault(os.path.basename(path), md5)
+    return by_path, by_base
+
+
+def detect_nos_from_zip(zip_path):
+    """Classify a vendor zip by its contents: 'sros' (a 7750 TiMOS boot set under
+    cflash/TiMOS-<x>-<ver>/), 'srl' (an SR Linux .bin), or None (unrecognized).
+    The TiMOS rules require a cflash/ ancestor so a stray .bin zip can't misfire."""
+    try:
+        zf = zipfile.ZipFile(zip_path)
+    except (zipfile.BadZipFile, OSError):
+        return None
+    with zf:
+        names = [m.filename for m in zf.infolist() if not m.is_dir()]
+    if any("cflash/" in n and _SROS_DIR_RE.search(n) and os.path.basename(n) == "both.tim"
+           for n in names):
+        return "sros"
+    if any(os.path.basename(n).lower().endswith(".bin") for n in names):
+        return "srl"
+    if any("cflash/" in n and _SROS_DIR_RE.search(n) for n in names):  # TiMOS dir, no both.tim
+        return "sros"
+    return None
+
+
 def extract_image_from_zip(zip_path, dest_dir):
     """Extract the NOS image (.bin) and its md5 from a vendor zip.
 
@@ -200,6 +252,17 @@ def extract_sros_images(zip_path, dest_dir):
                 by_base[base] = m
         if "both.tim" not in by_base:
             raise BadZip("not a 7750 SR OS image (both.tim not found)")
+        # per-file md5 from the packaged md5sums.txt, if present. Look up by the
+        # member's versioned path (not basename) so the served versioned boot.ldr
+        # gets ITS md5, never the cflash-root duplicate's.
+        md5_by_path, md5_by_base = {}, {}
+        for m in members:
+            if os.path.basename(m.filename).lower() == "md5sums.txt":
+                try:
+                    md5_by_path, md5_by_base = parse_md5sums(zf.read(m).decode("utf-8", "replace"))
+                except Exception:  # noqa: BLE001
+                    md5_by_path, md5_by_base = {}, {}
+                break
         for base in SROS_TIM_FILES:
             m = by_base.get(base)
             if not m:
@@ -208,12 +271,15 @@ def extract_sros_images(zip_path, dest_dir):
             out_path = os.path.join(dest_dir, safe)
             with zf.open(m, "r") as src, open(out_path, "wb") as out:
                 shutil.copyfileobj(src, out, _CHUNK)
-            extracted.append({"filename": safe, "size": m.file_size})
+            md5 = md5_by_path.get(_norm_md5_path(m.filename)) or md5_by_base.get(base)
+            extracted.append({"filename": safe, "size": m.file_size, "md5": md5})
     try:
         os.remove(zip_path)
     except OSError:
         pass
-    logger.info("Extracted %d SR OS image file(s) for version %s", len(extracted), version)
+    n_md5 = sum(1 for e in extracted if e.get("md5"))
+    logger.info("Extracted %d SR OS image file(s) for version %s (%d with md5)",
+                len(extracted), version, n_md5)
     return version, extracted
 
 

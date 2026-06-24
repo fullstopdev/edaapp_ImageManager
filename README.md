@@ -87,15 +87,11 @@ Open that URL in the same browser where you're logged into the EDA UI (the EDA l
 
 Click **Upload Image From File** (top right) to open the upload dialog, then:
 
-1. **Pick the image type** — *SR Linux* (`.bin` / vendor `.zip`) or *SR OS — 7750 (TiMOS `.zip`)*.
-2. **Pick the image file.**
-   - **SR Linux:** the raw `.bin`, or the **vendor `.zip`** (e.g. `Nokia-7220_IXR_SR_Linux-<hw>-26.3.2.zip`). For a zip, the app extracts the `.bin` and reads the packaged `.md5` automatically. The **Image name** auto‑fills as `SRLinux-<version>` — editable.
-   - **SR OS:** the 7750 **TiMOS `.zip`** (e.g. `Nokia-7750_SR-TiMOS-26.3.R3.zip`). The app extracts the boot‑image set and creates one Artifact per file. The name is fixed to `SROS-<version>` (read from the image).
-   - *(Either NOS, optional)* attach a **YANG schema profile `.zip`** — if you don't, it's obtained automatically (fetched from `nokia-eda/schema-profiles`, or for unpublished SR OS versions built from `nokia/7x50_YangModels`). Your uploaded file always takes priority.
-3. **Choose the Namespace** — pick the target EDA namespace from the dropdown. There's no default; you must select one before uploading.
-4. *(SR Linux raw `.bin` only)* **Paste the vendor's MD5 hash** so EDA can verify the download. (Vendor zips use the packaged checksum; SR OS images carry no per‑file MD5, matching the reference NodeProfiles.)
-5. **Click Upload.** The dialog closes and the image appears in the table right away as **Uploading**, then **Un‑zipping**.
-6. The row turns **`InProgress`** and finally **`Available`** once `eda-asvr` has fetched every part. The list stays compact — **Name, Namespace, Size, Status** and actions. Click **node profile** on a row to open a popup with both the copy‑paste `spec.images` **snippet** and a **complete NodeProfile example** (filled with this image's real paths, version, OS and `yang:`), or **delete** to remove the image and all its Artifacts (also dropping `eda-asvr`'s hosted copies).
+1. **Pick the vendor `.zip`** — either an SR Linux zip (e.g. `Nokia-7220_IXR_SR_Linux-<hw>-26.3.2.zip`) or a 7750 SR OS TiMOS zip (e.g. `Nokia-7750_SR-TiMOS-26.3.R3.zip`). Only `.zip` is accepted; the type is **detected automatically** from the contents. Everything else is handled for you: the **md5** comes from inside the zip, and the **YANG schema profile** is obtained automatically (fetched from `nokia-eda/schema-profiles`, or for unpublished SR OS versions built from `nokia/7x50_YangModels`).
+2. **Choose the Namespace** — pick the target EDA namespace from the dropdown. There's no default; you must select one before uploading.
+3. *(Optional)* edit the **auto‑generated name** (`SRLinux-<version>` / `SROS-<version>`).
+4. **Click Upload.** The dialog closes and the image appears in the table as **Uploading**, then **Un‑zipping**.
+5. The row turns **`InProgress`** and finally **`Available`** once `eda-asvr` has fetched every part. The list stays compact — **Name, Namespace, Size, Status** and actions. Click **node profile** on a row to open a popup with both the copy‑paste `spec.images` **snippet** (`image` + `imageMd5` per file, plus the `yang:` URL) and a **complete NodeProfile example**, or **delete** to remove the image and all its Artifacts (also dropping `eda-asvr`'s hosted copies).
 
 Image names are unique — to replace an image, delete the old one first.
 
