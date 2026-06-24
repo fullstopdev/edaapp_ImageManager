@@ -92,7 +92,7 @@ Click **Upload Image From File** (top right) to open the upload dialog, then:
 3. **Choose the Namespace** — pick the target EDA namespace from the dropdown. There's no default; you must select one before uploading.
 4. *(SR Linux raw `.bin` only)* **Paste the vendor's MD5 hash** so EDA can verify the download. (Vendor zips use the packaged checksum; SR OS images carry no per‑file MD5, matching the reference NodeProfiles.)
 5. **Click Upload.** The dialog closes and the image appears in the table right away as **Uploading**, then **Un‑zipping**.
-6. The row turns **`InProgress`** and finally **`Available`** once `eda-asvr` has fetched every part. Each row shows a ready‑to‑paste **NodeProfile** snippet (for SR OS it lists all image paths plus the `yang:` URL) — click **copy** to grab it, or **delete** to remove the image and all its Artifacts (also dropping `eda-asvr`'s hosted copies).
+6. The row turns **`InProgress`** and finally **`Available`** once `eda-asvr` has fetched every part. The list stays compact — **Name, Namespace, Size, Status** and actions. Click **node profile** on a row to open a popup with both the copy‑paste `spec.images` **snippet** and a **complete NodeProfile example** (filled with this image's real paths, version, OS and `yang:`), or **delete** to remove the image and all its Artifacts (also dropping `eda-asvr`'s hosted copies).
 
 Image names are unique — to replace an image, delete the old one first.
 
@@ -108,7 +108,7 @@ Image names are unique — to replace an image, delete the old one first.
 
 **Using an image in a NodeProfile**
 
-Once a row is `Available`, copy its snippet straight into a `NodeProfile`'s `spec.images`. The paths are where `eda-asvr` serves the file(s).
+Once a row is `Available`, click **node profile** to open the popup. The **snippet** drops straight into an existing `NodeProfile`'s `spec.images`; the **complete example** is a ready‑to‑edit NodeProfile (the image paths/version/OS/`yang:` are filled in; `<…>` values like the management pool and DNS are yours to set). The paths are where `eda-asvr` serves the file(s).
 
 SR Linux (`imageMd5` appears only if you supplied an MD5):
 

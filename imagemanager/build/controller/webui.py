@@ -164,7 +164,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .reason { color:var(--err-fg); font-size:12px; margin-top:5px; }
   .empty { color:var(--muted); padding:34px 16px; text-align:center; }
 
-  .snippet-cell .iconbtn { margin-bottom:6px; }
   pre.snippet { margin:0; padding:9px 11px; background:var(--panel2); border:1px solid var(--line);
     border-radius:6px; font:12px ui-monospace,SFMono-Regular,Menlo,monospace; white-space:pre;
     overflow-x:auto; color:var(--fg); }
@@ -187,6 +186,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     transition:opacity .2s, transform .2s; }
   .dialog.open { transform:translate(-50%,-50%) scale(1); opacity:1; visibility:visible; }
   .dialog.confirm { width:min(420px,calc(100vw - 32px)); }
+  .dialog.wide { width:min(780px,calc(100vw - 32px)); }
+  .np-sec { margin-top:14px; }
+  .np-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
+  .np-label { font-size:12px; font-weight:600; color:var(--muted); }
+  .dialog .snippet { max-height:46vh; overflow:auto; }
   .dialog-title { margin:0; padding:22px 24px 6px; font-size:18px; font-weight:600; }
   .dialog-body { padding:8px 24px 4px; }
   .dialog-body p { margin:6px 0 4px; color:var(--muted); font-size:13.5px; }
@@ -267,7 +271,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <div class="page-head">
     <div>
       <h1 class="page-title">Images <span class="count" id="refreshNote" style="display:none"></span></h1>
-      <p class="page-sub">Each image becomes a NodeProfile snippet once <span class="mono">eda-asvr</span> reports it <span class="mono">Available</span>.</p>
+      <p class="page-sub">Once <span class="mono">eda-asvr</span> reports an image <span class="mono">Available</span>, open its <b>node profile</b> for a ready-to-use NodeProfile.</p>
     </div>
     <div class="grow"></div>
     <button class="btn contained ripple" id="openUpload">
@@ -284,10 +288,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
           <th class="sortable" data-sort="namespace">Namespace <span class="arr"></span></th>
           <th class="sortable num" data-sort="sizeBytes">Size <span class="arr"></span></th>
           <th class="sortable" data-sort="downloadStatus">Status <span class="arr"></span></th>
-          <th>NodeProfile image</th>
           <th></th>
         </tr></thead>
-        <tbody id="rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
+        <tbody id="rows"><tr><td colspan="5" class="empty">Loading&hellip;</td></tr></tbody>
       </table>
     </div>
   </div>
@@ -348,6 +351,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <div class="dialog-actions">
     <button class="btn text subtle ripple" id="cancelUpload">Cancel</button>
     <button class="btn contained ripple" id="uploadBtn">Upload &amp; create Artifact</button>
+  </div>
+</div>
+
+<!-- nodeprofile dialog -->
+<div class="dialog wide" id="npDialog" role="dialog" aria-modal="true" aria-labelledby="npTitle">
+  <h2 class="dialog-title" id="npTitle">NodeProfile</h2>
+  <div class="dialog-body">
+    <p>Paste the <b>snippet</b> into an existing <span class="mono">NodeProfile</span>'s <span class="mono">spec.images</span>, or copy the <b>complete example</b> as a starting point. The image path(s), version, OS and <span class="mono">yang</span> are filled from this image; <span class="mono">&lt;…&gt;</span> values are for you to set.</p>
+    <div class="np-sec">
+      <div class="np-head"><span class="np-label">Snippet &mdash; <span class="mono">spec.images</span></span><button class="iconbtn ripple" id="npCopySnip">copy</button></div>
+      <pre class="snippet" id="npSnippet"></pre>
+    </div>
+    <div class="np-sec">
+      <div class="np-head"><span class="np-label">Complete NodeProfile example</span><button class="iconbtn ripple" id="npCopyFull">copy</button></div>
+      <pre class="snippet" id="npFull"></pre>
+    </div>
+  </div>
+  <div class="dialog-actions">
+    <button class="btn text subtle ripple" id="npClose">Close</button>
   </div>
 </div>
 
@@ -643,19 +665,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function pendingRowHtml(p){
     return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td>'+esc(p.namespace)+
       '</td><td class="num">'+fmtBytes(p.total)+'</td><td id="upstat-'+p.key+'">'+pendStatusHtml(p)+
-      '</td><td><span class="mono pending">— ready when Available</span></td><td></td></tr>';
+      '</td><td></td></tr>';
   }
   function serverRowHtml(t){
-    var snip=t.snippet||"";
-    var np=snip
-      ?('<div class="snippet-cell"><button class="iconbtn ripple" data-act="copysnip" data-snip="'+esc(snip)+'">copy</button><pre class="snippet">'+esc(snip)+'</pre></div>')
-      :'<span class="mono pending">— ready when Available</span>';
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
+    var view=t.snippet
+      ?('<button class="iconbtn ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'">node profile</button> ')
+      :'';
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">delete</button>';
     return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+'</td><td>'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
-      '</td><td>'+np+'</td><td>'+del+'</td></tr>';
+      '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
   }
 
   function imDelete(uid, nsv, name){
@@ -669,13 +690,30 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   }
 
+  // ---------- NodeProfile dialog (snippet + complete example) ----------
+  var npSnippet=el("npSnippet"), npFull=el("npFull");
+  function copyBtn(btn, text){
+    if(navigator.clipboard) navigator.clipboard.writeText(text||"");
+    var t0=btn.textContent; btn.textContent="copied"; setTimeout(function(){ btn.textContent=t0; }, 1200);
+  }
+  function openNodeProfile(uid){
+    var t=null;
+    for(var i=0;i<currentData.length;i++){ if(currentData[i].uploadId===uid){ t=currentData[i]; break; } }
+    if(!t) return;
+    el("npTitle").textContent = "NodeProfile — " + (t.displayName||t.name||"");
+    npSnippet.textContent = t.snippet || "(not ready yet)";
+    npFull.textContent = t.nodeProfileExample || "(ready once the image is Available)";
+    openModal(el("npDialog"));
+  }
+  el("npClose").addEventListener("click", closeModal);
+  el("npCopySnip").addEventListener("click", function(){ copyBtn(this, npSnippet.textContent); });
+  el("npCopyFull").addEventListener("click", function(){ copyBtn(this, npFull.textContent); });
+
   rows.addEventListener("click", function(e){
     var b = e.target.closest("button[data-act]");
     if(!b) return;
-    if(b.getAttribute("data-act")==="copysnip"){
-      var s=b.getAttribute("data-snip")||"";
-      if(navigator.clipboard) navigator.clipboard.writeText(s);
-      var t0=b.textContent; b.textContent="copied"; setTimeout(function(){ b.textContent=t0; }, 1200);
+    if(b.getAttribute("data-act")==="view"){
+      openNodeProfile(b.getAttribute("data-uid"));
     } else if(b.getAttribute("data-act")==="del"){
       imDelete(b.getAttribute("data-uid"), b.getAttribute("data-ns"), b.getAttribute("data-name"));
     }
@@ -730,7 +768,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(!seen[p.displayName+"|"+p.namespace]) pend.push(p);  // hide once the real artifact appears
     });
     if(!(pend.length+serverRows.length)){
-      rows.innerHTML='<tr><td colspan="6" class="empty">No images yet. Click <b>Upload Image From File</b> to add one.</td></tr>';
+      rows.innerHTML='<tr><td colspan="5" class="empty">No images yet. Click <b>Upload Image From File</b> to add one.</td></tr>';
       el("refreshNote").style.display="none"; return;
     }
     rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");

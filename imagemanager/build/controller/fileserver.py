@@ -19,6 +19,7 @@ import html
 import json
 import logging
 import os
+import re
 import shutil
 import ssl
 import tempfile
@@ -774,6 +775,59 @@ class Handler(BaseHTTPRequestHandler):
                          "displayName": meta.get("displayName") or group_id})
 
 
+_VER_RE = re.compile(r"(\d+\.\d+\.[A-Za-z]?\d+(?:-\d+)?)")
+
+
+def _nodeprofile_yaml(nos, version, namespace, prof_name, image_paths, md5_path, yang_url):
+    """A complete, copy-ready NodeProfile example for an Available image. The
+    image path(s), version, operatingSystem and yang are filled from the real
+    artifact(s); environment-specific fields are left as <placeholders>. Mirrors
+    the reference NodeProfile shape (SR Linux single image+imageMd5; SR OS the
+    full boot-file set + yang)."""
+    L = [
+        "apiVersion: core.eda.nokia.com/v1",
+        "kind: NodeProfile",
+        "metadata:",
+        f"  name: {prof_name}",
+        f"  namespace: {namespace}",
+        "  labels:",
+        '    eda.nokia.com/bootstrap: "true"',
+        "spec:",
+        "  annotate: false",
+        f"  operatingSystem: {nos}",
+        f"  version: {version}",
+        "  port: 57400",
+        "  # image(s) registered by EDA Image Manager:",
+        "  images:",
+    ]
+    for i, p in enumerate(image_paths):
+        L.append(f"  - image: {p}")
+        if md5_path and i == 0:
+            L.append(f"    imageMd5: {md5_path}")
+    if yang_url:
+        L.append(f"  yang: {yang_url}")
+    else:
+        L.append(f"  # yang: https://eda-asvr.eda-system.svc/{namespace}/schemaprofiles/"
+                 "<profile>/<profile>.zip   # add the matching schema profile")
+    L += [
+        "  # llmDb: https://eda-asvr.eda-system.svc/<ns>/llm-dbs/<db>/<db>.tar.gz"
+        "   # optional, EDA-provided per version",
+        "  nodeUser: admin",
+        "  onboardingUsername: admin",
+        "  onboardingPassword: NokiaSrl1!",
+        "  dhcp:",
+        "    managementPoolv4: <your-ipv4-mgmt-pool>",
+        "    dhcp4Options:",
+        "    - option: 6-DomainNameServer",
+        "      value:",
+        "      - <dns-server-ip>",
+        "    - option: 42-NTPServers",
+        "      value:",
+        "      - <ntp-server-ip>",
+    ]
+    return "\n".join(L)
+
+
 def _single_row(m, status_by_key):
     """Tracked-list row for a one-file image (SR Linux .bin / raw upload)."""
     ns = m.get("namespace")
@@ -785,15 +839,22 @@ def _single_row(m, status_by_key):
                   if st.get("downloadStatus") == "Available" else "")
     md5_path = (artifact.asvr_path(md5_st.get("internalUrl", ""))
                 if md5_st.get("downloadStatus") == "Available" else "")
+    display = m.get("displayName") or m.get("artifactName") or ""
+    nos = m.get("nos") or "srl"
     snippet = ""
+    example = ""
     if image_path:
         snippet = "images:\n  - image: " + image_path
         if md5_path:
             snippet += "\n    imageMd5: " + md5_path
+        vm = _VER_RE.search(display)
+        example = _nodeprofile_yaml(nos, vm.group(1) if vm else "<version>", ns,
+                                    uploads.to_k8s_name(display) or "my-nodeprofile",
+                                    [image_path], md5_path, "")
     return {
         "uploadId": m.get("uploadId"),
         "name": m.get("artifactName"),
-        "displayName": m.get("displayName") or m.get("artifactName"),
+        "displayName": display,
         "namespace": ns,
         "repo": m.get("repo"),
         "filePath": m.get("filePath"),
@@ -806,7 +867,8 @@ def _single_row(m, status_by_key):
         "imagePath": image_path,
         "md5Path": md5_path,
         "snippet": snippet,
-        "nos": m.get("nos") or "srl",
+        "nodeProfileExample": example,
+        "nos": nos,
     }
 
 
@@ -817,7 +879,7 @@ def _group_row(m, status_by_key):
     ns = m.get("namespace")
     arts = m.get("artifacts") or []
     yang = m.get("yang") or None
-    statuses, image_lines, reasons = [], [], []
+    statuses, image_lines, image_paths, reasons = [], [], [], []
     all_images_available = bool(arts)
     for a in arts:
         st = status_by_key.get((ns, a.get("artifactName")), {})
@@ -827,6 +889,7 @@ def _group_row(m, status_by_key):
             p = artifact.asvr_path(st.get("internalUrl", ""))
             if p:
                 image_lines.append("  - image: " + p)
+                image_paths.append(p)
             else:
                 all_images_available = False
         else:
@@ -854,10 +917,14 @@ def _group_row(m, status_by_key):
         agg = "NoArtifact"
 
     snippet = ""
+    example = ""
     if all_images_available and image_lines:
         snippet = "images:\n" + "\n".join(image_lines)
         if yang_url:
             snippet += "\nyang: " + yang_url
+        example = _nodeprofile_yaml("sros", m.get("version") or "<version>", ns,
+                                    m.get("uploadId") or "my-nodeprofile",
+                                    image_paths, None, yang_url)
     return {
         "uploadId": m.get("uploadId"),
         "name": m.get("uploadId"),
@@ -870,6 +937,7 @@ def _group_row(m, status_by_key):
         "downloadStatus": agg,
         "statusReason": "; ".join(reasons[:4]),
         "snippet": snippet,
+        "nodeProfileExample": example,
         "nos": "sros",
         "fileCount": len(arts),
         "yangStatus": yang_status,
