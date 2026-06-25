@@ -26,6 +26,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --ok-fg:#00822b; --ok-bg:#e3fcec; --ok-bd:#24d45e;
     --info-fg:#0a44ad; --info-bg:#ecf3ff; --info-bd:#0a44ad;
     --err-fg:#911a1a; --err-bg:#ffeded; --err-bd:#d32f2f;
+    --danger:#d32f2f; --danger-strong:#a31515; --on-danger:#ffffff;
     --neutral-fg:#687282; --neutral-bg:#eef0f3; --neutral-bd:#cfcfcf;
     --snack-bg:#2b303a; --snack-fg:#f3f5f8; --snack-action:#9cc0ff;
     --scrim:rgba(16,24,36,.46);
@@ -43,6 +44,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --ok-fg:#5ee58b; --ok-bg:rgba(36,212,94,.14); --ok-bd:#24d45e;
     --info-fg:#90b7ff; --info-bg:rgba(144,183,255,.13); --info-bd:#4d8dff;
     --err-fg:#ff9b9b; --err-bg:rgba(211,47,47,.18); --err-bd:#d32f2f;
+    --danger:#e5484d; --danger-strong:#ff5c61; --on-danger:#ffffff;
     --neutral-fg:#abb4c2; --neutral-bg:rgba(171,180,194,.12); --neutral-bd:#3a4452;
     --snack-bg:#e8edf4; --snack-fg:#1a222e; --snack-action:#0a44ad;
     --scrim:rgba(0,0,0,.6);
@@ -170,10 +172,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .pending { color:var(--muted); }
   .iconbtn { background:var(--panel2); border:1px solid var(--line); color:var(--fg);
     border-radius:7px; padding:5px 12px; font-size:11.5px; font-weight:500; cursor:pointer;
-    transition:background .12s,border-color .12s,color .12s; }
+    transition:background .12s,border-color .12s,color .12s,box-shadow .12s,transform .04s; }
   .iconbtn:hover { border-color:var(--accent); color:var(--accent); }
-  .iconbtn.del { border-color:transparent; color:var(--err-fg); background:transparent; }
-  .iconbtn.del:hover { background:var(--err-bg); border-color:var(--err-bd); }
+  /* row action buttons: prominent, filled (Details = accent, Delete = red) */
+  .iconbtn.primary { background:var(--accent); border-color:var(--accent); color:#fff;
+    font-weight:600; padding:6px 15px; box-shadow:var(--elev1); }
+  .iconbtn.primary:hover { background:var(--accent2); border-color:var(--accent2); color:#fff;
+    box-shadow:var(--elev4); }
+  .iconbtn.del { background:var(--danger); border-color:var(--danger); color:var(--on-danger);
+    font-weight:600; padding:6px 15px; box-shadow:var(--elev1); }
+  .iconbtn.del:hover { background:var(--danger-strong); border-color:var(--danger-strong);
+    color:var(--on-danger); box-shadow:var(--elev4); }
+  .iconbtn.primary:active, .iconbtn.del:active { transform:translateY(1px); box-shadow:var(--elev1); }
 
   /* ---------- scrim + dialog ---------- */
   .scrim { position:fixed; inset:0; background:var(--scrim); opacity:0; visibility:hidden;
@@ -611,9 +621,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var view=t.snippet
-      ?('<button class="iconbtn ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'">node profile</button> ')
+      ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'">Details</button> ')
       :'';
-    var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">delete</button>';
+    var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
     return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+'</td><td>'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
       '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
