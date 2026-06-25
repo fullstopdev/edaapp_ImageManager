@@ -313,7 +313,8 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"namespaces": names})
 
     def _serve_artifacts(self):
-        self._send_json({"artifacts": build_tracked_list()})
+        self._send_json({"artifacts": build_tracked_list(),
+                         "storage": uploads.disk_usage()})
 
     def _serve_file(self, rest, head_only):
         # rest = "<uploadId>/<filename>" (filename may end with .md5)

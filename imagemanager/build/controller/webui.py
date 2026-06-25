@@ -124,6 +124,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .page-sub { margin:5px 0 0; color:var(--muted); font-size:13px; }
   .page-head .grow { flex:1; }
 
+  /* ---------- app-storage bar ---------- */
+  .storage-card { padding:14px 18px 15px; margin-bottom:20px; }
+  .storage-row { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:9px; }
+  .storage-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
+  .storage-stat { font-size:13px; color:var(--muted); }
+  .storage-stat .mono { color:var(--fg); font-weight:600; }
+  .storage-track { height:10px; border-radius:6px; background:var(--panel2); overflow:hidden; }
+  .storage-fill { height:100%; width:0; border-radius:6px; background:var(--accent);
+    transition:width .45s ease, background .3s; }
+  .storage-fill.warn { background:#e0a800; }
+  .storage-fill.crit { background:var(--danger); }
+
   .card { background:var(--panel); border-radius:14px; box-shadow:var(--elev2);
     margin-bottom:20px; overflow:hidden; }
 
@@ -184,6 +196,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .iconbtn.del:hover { background:var(--danger-strong); border-color:var(--danger-strong);
     color:var(--on-danger); box-shadow:var(--elev4); }
   .iconbtn.primary:active, .iconbtn.del:active { transform:translateY(1px); box-shadow:var(--elev1); }
+  .iconbtn + .iconbtn { margin-left:10px; }   /* space between Details and Delete */
+  /* dialog "copy" buttons: tinted + accent border so they stand out */
+  .copybtn { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); font-weight:600; }
+  .copybtn:hover { background:var(--accent); border-color:var(--accent); color:#fff; }
 
   /* ---------- scrim + dialog ---------- */
   .scrim { position:fixed; inset:0; background:var(--scrim); opacity:0; visibility:hidden;
@@ -299,6 +315,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </button>
   </div>
 
+  <div class="card storage-card">
+    <div class="storage-row">
+      <span class="storage-label">App storage</span>
+      <span class="storage-stat" id="storageStat">&mdash;</span>
+    </div>
+    <div class="storage-track"><div class="storage-fill" id="storageFill"></div></div>
+  </div>
+
   <div class="card">
     <div class="table-wrap">
       <table class="mtable">
@@ -356,11 +380,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <div class="dialog-body">
     <p>Paste the <b>snippet</b> into an existing <span class="mono">NodeProfile</span>'s <span class="mono">spec.images</span>, or copy the <b>complete example</b> as a starting point. The image path(s), version, OS and <span class="mono">yang</span> are filled from this image; <span class="mono">&lt;…&gt;</span> values are for you to set.</p>
     <div class="np-sec">
-      <div class="np-head"><span class="np-label">Snippet &mdash; <span class="mono">spec.images</span></span><button class="iconbtn ripple" id="npCopySnip">copy</button></div>
+      <div class="np-head"><span class="np-label">Snippet &mdash; <span class="mono">spec.images</span></span><button class="iconbtn copybtn ripple" id="npCopySnip">Copy</button></div>
       <pre class="snippet" id="npSnippet"></pre>
     </div>
     <div class="np-sec">
-      <div class="np-head"><span class="np-label">Complete NodeProfile example</span><button class="iconbtn ripple" id="npCopyFull">copy</button></div>
+      <div class="np-head"><span class="np-label">Complete NodeProfile example</span><button class="iconbtn copybtn ripple" id="npCopyFull">Copy</button></div>
       <pre class="snippet" id="npFull"></pre>
     </div>
   </div>
@@ -661,7 +685,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var npSnippet=el("npSnippet"), npFull=el("npFull");
   function copyBtn(btn, text){
     if(navigator.clipboard) navigator.clipboard.writeText(text||"");
-    var t0=btn.textContent; btn.textContent="copied"; setTimeout(function(){ btn.textContent=t0; }, 1200);
+    var t0=btn.textContent; btn.textContent="Copied"; setTimeout(function(){ btn.textContent=t0; }, 1200);
   }
   function openNodeProfile(uid){
     var t=null;
@@ -743,6 +767,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
     el("refreshNote").textContent=pend.length+serverRows.length;
   }
 
+  function fmtGB(b){ return ((b||0)/1073741824).toFixed(1)+" GB"; }
+  function updateStorage(s){
+    if(!s) return;
+    var pct=(typeof s.usedPercent==="number")?s.usedPercent:0;
+    var fill=el("storageFill");
+    fill.style.width=Math.max(0,Math.min(100,pct))+"%";
+    fill.className="storage-fill"+(pct>=90?" crit":(pct>=75?" warn":""));
+    el("storageStat").innerHTML='<span class="mono">'+pct+'%</span> used &middot; <span class="mono">'+
+      fmtGB(s.freeBytes)+'</span> free of <span class="mono">'+fmtGB(s.totalBytes)+'</span>';
+  }
+
   function refresh(){
     fetch(api("/api/artifacts")).then(function(r){
       if(r.status===401){ location.reload(); return null; }  // session expired -> re-login
@@ -750,6 +785,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }).then(function(d){
       if(!d) return;
       currentData=d.artifacts||[];
+      updateStorage(d.storage);
       // drop any in-flight upload that the controller has now turned into an Artifact
       Object.keys(pendingUploads).forEach(function(k){
         var p=pendingUploads[k];

@@ -424,3 +424,18 @@ def storage_stats():
     except FileNotFoundError:
         pass
     return len(metas), total
+
+
+def disk_usage(path=DATA_DIR):
+    """df-style capacity stats for the PVC backing the uploads dir:
+    {totalBytes, usedBytes, freeBytes, usedPercent}. freeBytes/usedPercent use the
+    space available to the (unprivileged) pod user. Zeros if the path is missing."""
+    try:
+        s = os.statvfs(path)
+    except OSError:
+        return {"totalBytes": 0, "usedBytes": 0, "freeBytes": 0, "usedPercent": 0.0}
+    total = s.f_frsize * s.f_blocks
+    free = s.f_frsize * s.f_bavail
+    used = total - free if total > free else 0
+    pct = round(used / total * 100, 1) if total else 0.0
+    return {"totalBytes": total, "usedBytes": used, "freeBytes": free, "usedPercent": pct}
