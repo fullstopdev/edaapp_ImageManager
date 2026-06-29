@@ -22,7 +22,7 @@ spec:
     central image store or data lake; this app is a self-contained alternative for
     labs and PoCs where standing up that external store is unnecessary friction.
   author: EDACommunity
-  image: ghcr.io/kkayhan/edaapp_imagemanager/imagemanager-app:v26.4.2-25
+  image: ghcr.io/kkayhan/edaapp_imagemanager/imagemanager-app:v26.4.2-26
   supportedCoreVersions:
     - "v5.0.0-0"
   appInfo:
@@ -56,6 +56,8 @@ spec:
         path: imagemanager/manifests/httpproxy.yaml
     - cr:
         path: imagemanager/manifests/rbac.yaml
+    - cr:
+        path: imagemanager/manifests/daemonset.yaml
   dependencies:
     - file:
         path: utils
