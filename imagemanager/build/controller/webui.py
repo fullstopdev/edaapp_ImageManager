@@ -579,7 +579,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     xhr.onload=function(){ var r={}; try{ r=JSON.parse(xhr.responseText); }catch(e){}
       if(xhr.status>=200 && xhr.status<300 && r.ok){
         var warn=r.mismatch?(" Note: that key looks like a "+(r.licenseNos||"different")+
-                 " license but the image is "+(r.imageNos||"")+"; using it anyway.":"");
+                 " license but the image is "+(r.imageNos||"")+"; using it anyway."):"";
         snack("ok", pre+"License attached."+warn, !!r.mismatch);
       } else {
         snack("err", pre+"But the license could not be attached: "+
