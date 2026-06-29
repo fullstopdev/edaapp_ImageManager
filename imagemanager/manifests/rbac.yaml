@@ -4,6 +4,18 @@ metadata:
   name: eda-imagemanager
   namespace: eda-system
 ---
+# Dedicated ServiceAccount for the node-agent DaemonSet, intentionally with NO
+# Role/ClusterRole binding: the node-agent makes zero Kubernetes API calls (it
+# learns the Service ClusterIP from in-cluster DNS), so it must NOT carry the
+# controller SA's cluster-wide Artifact/ConfigMap write + Keycloak-secret-read
+# powers onto every node. Token auto-mount is also disabled here and on the pod.
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: eda-imagemanager-node-agent
+  namespace: eda-system
+automountServiceAccountToken: false
+---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRole
 metadata:

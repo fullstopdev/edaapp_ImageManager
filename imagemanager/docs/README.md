@@ -25,7 +25,7 @@ don't need an external file server or hand‑written resources just to try a NOS
    `srlinux-<version>` / `sros-<version>` / `srsim-<version>`); choose the namespace and upload.
 4. Watch the status table: file images move `InProgress → Available`; SR‑SIM shows `Ready`.
    Each row's **Details** popup gives the copy‑paste **NodeProfile** (a `spec.images` snippet
-   for file images, or a `containerImage` sim NodeProfile + one‑time setup for SR‑SIM) and a
+   for file images, or a `containerImage` sim NodeProfile for SR‑SIM) and a
    **delete** action.
 
 ## Configuration

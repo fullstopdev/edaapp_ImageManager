@@ -1,0 +1,89 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: eda-imagemanager-node-agent
+  namespace: eda-system
+  labels:
+    eda.nokia.com/app: eda-imagemanager
+    eda.nokia.com/app-group: control-plane
+spec:
+  selector:
+    matchLabels:
+      eda.nokia.com/app: eda-imagemanager-node-agent
+  updateStrategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+  template:
+    metadata:
+      labels:
+        eda.nokia.com/app: eda-imagemanager-node-agent
+        eda.nokia.com/app-group: control-plane
+    spec:
+      # Dedicated SA with no RBAC binding; the agent makes zero API calls, so no
+      # token is mounted (defence-in-depth: nothing to steal from a node pod).
+      serviceAccountName: eda-imagemanager-node-agent
+      automountServiceAccountToken: false
+      imagePullSecrets:
+        - name: ghcr-imagemanager
+      # Sim pods schedule on any node, including control-plane in single-node
+      # labs, so the redirect must exist on every node.
+      tolerations:
+        - operator: Exists
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: node-agent
+          image: ghcr.io/kkayhan/edaapp_imagemanager/imagemanager-controller:v26.4.2-26
+          imagePullPolicy: IfNotPresent
+          command: ["python3", "nodeagent.py"]
+          env:
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: PYTHONDONTWRITEBYTECODE   # don't try to write .pyc to the read-only root fs
+              value: "1"
+          # Root (to write the root-owned containerd config dir) but otherwise
+          # unprivileged: read-only root fs, no privilege escalation, all caps dropped.
+          securityContext:
+            runAsUser: 0
+            runAsGroup: 0
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+              # The containerd config dir can be mode 0644 (no dir-execute bit;
+              # observed on Kind nodes), so even uid 0 needs DAC_OVERRIDE to
+              # traverse it to read config.toml and write under certs.d. One
+              # capability; far short of privileged.
+              add: ["DAC_OVERRIDE"]
+            seccompProfile:
+              type: RuntimeDefault
+          volumeMounts:
+            - name: containerd-conf
+              mountPath: /host/etc/containerd
+            - name: tmp
+              mountPath: /tmp
+          # Freshness, not existence: a wedged loop stops refreshing the heartbeat
+          # mtime, so the probe fails and kubelet restarts the pod -- which
+          # re-resolves DNS and restores the self-heal guarantee.
+          livenessProbe:
+            exec:
+              command: ["sh", "-c", "find /tmp/.heartbeat -mmin -3 | grep -q ."]
+            initialDelaySeconds: 20
+            periodSeconds: 30
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: "10m"
+              memory: "32Mi"
+            limits:
+              cpu: "100m"
+              memory: "128Mi"
+      volumes:
+        - name: containerd-conf
+          hostPath:
+            path: /etc/containerd
+            type: DirectoryOrCreate
+        - name: tmp
+          emptyDir: {}

@@ -22,8 +22,9 @@ automatically. Three kinds are supported:
   `Artifact` resources.
 * **SR‑SIM** (the SR OS *simulator* for EDA's Digital Twin) is a **container image**: the app
   unpacks it and serves it from a built‑in OCI registry endpoint, and gives you a ready‑to‑paste
-  sim **NodeProfile** (`containerImage`). A small one‑time, per‑cluster registry‑mirror setup
-  lets the node pull it.
+  sim **NodeProfile** (`containerImage`). The app makes the node able to pull it
+  automatically — a bundled node‑agent DaemonSet configures the node's containerd
+  (Talos immutable nodes need a one‑time machine‑config registry mirror instead).
 * **Licenses (optional)** — **paste a Nokia simulator/node license key** into the upload dialog
   (extra spaces/labels are parsed out for you). The app stores it as a `license.key` **ConfigMap**
   in `eda-system` and wires `spec.license: <image>-license` into the generated NodeProfile. A sim
