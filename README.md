@@ -10,6 +10,8 @@ For the two **file** kinds (SR Linux, SR OS HW), the matching **YANG schema prof
 
 So a single SR Linux / SR OS HW upload becomes **several** Artifacts — the image(s), their md5(s), and the YANG profile — all created, tracked, and deleted together; an SR‑SIM upload becomes a **served container image** plus its YANG profile.
 
+**Licenses (optional).** With any image you can also attach a **license key file** (the small `.txt` Nokia ships for SR OS / SR Linux simulators). Image Manager stores it as a **ConfigMap** (`license.key`) in `eda-system` — where EDA's Digital Twin resolves it — and wires `spec.license: <image>-license` into the generated NodeProfile, so the licensed node/sim comes up with the key already in place. It's deleted with the image. A sim boots fine **without** a license (the free SR Linux sim and SR‑SIM run on an empty key); attach one only to unlock licensed scale/features. See **[Licenses, below](#licenses)**.
+
 ---
 
 ## What it's for
@@ -178,7 +180,8 @@ spec:
   version: 26.3.r3
   containerImage: eda-imagemanager.eda-system.svc/srsim-26.3.r3:26.3.R3
   imagePullSecret: core          # a Secret in eda-system; this registry is anonymous
-  license: sros-sim-license      # ConfigMap with license.key:"" (a sim boots on an empty license)
+  license: srsim-26.3.r3-license # ConfigMap Image Manager created from your uploaded key
+                                 #   (or an empty dummy if you didn't attach one — a sim boots either way)
   yang: <auto-filled, or a placeholder to set>
   nodeUser: admin
   onboardingUsername: admin
@@ -186,7 +189,21 @@ spec:
   dhcp: { managementPoolv4: <your-ipv4-mgmt-pool> }
 ```
 
-Create that NodeProfile (plus the license ConfigMap, and a `NodeUser` named `admin` in the namespace), then a `NetworkTopology` referencing it (`platform: "7750 SR-1"`) — the Digital Twin pulls the image from Image Manager and boots the simulated SR OS node.
+Create that NodeProfile (plus a `NodeUser` named `admin` in the namespace — the license ConfigMap is already created for you if you attached a key), then a `NetworkTopology` referencing it (`platform: "7750 SR-1"`) — the Digital Twin pulls the image from Image Manager and boots the simulated SR OS node.
+
+---
+
+## Licenses
+
+Nokia ships small **license key files** for the SR OS and SR Linux **simulators** (a single line, `<node-uuid> <base64-key>  # label`). EDA models a node/sim license as a **ConfigMap** with one key, `license.key`, that a `NodeProfile`/`SimNode`/`TopoNode` references by name. Image Manager turns your key file into exactly that:
+
+- **Attach at upload.** In the upload dialog, pick the image `.zip` and (optionally) a **License key `.txt`** in the same step. After the image is stored, the app writes a ConfigMap named **`<image>-license`** in **`eda-system`** with `license.key` set to your key, and records it on the image.
+- **It's wired in for you.** The generated NodeProfile (Details popup) gets `spec.license: <image>-license` automatically — for SR Linux, SR OS HW, **and** SR‑SIM. For SR‑SIM, the dummy empty‑license ConfigMap is replaced by your real one (nothing extra to apply).
+- **Why `eda-system`?** That's where EDA keeps its own license ConfigMaps and where the Digital Twin (`eda-cx`) resolves them — a NodeProfile in a user namespace references the ConfigMap **by name**, and the consumer reads it from `eda-system`. So the license lives there regardless of the image's artifact namespace.
+- **Lifecycle.** Re‑attaching replaces the key in place; deleting the image deletes its license ConfigMap too.
+- **No license needed to boot a sim.** The free SR Linux sim and SR‑SIM run on an empty `license.key`; attach a real key only to unlock licensed scale/features.
+
+> **Notes.** The key is stored in a **ConfigMap** (not a Secret) because that's the resource EDA's `spec.license` consumes — treat namespace read access accordingly. The simulator path (SR‑SIM / SR Linux sim) is the verified one; hardware‑node license delivery uses the same `spec.license` field and is expected to work the same way, but isn't lab‑verified here.
 
 ---
 

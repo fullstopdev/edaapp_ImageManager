@@ -17,11 +17,13 @@ rules:
   - apiGroups: [""]
     resources: ["namespaces"]
     verbs: ["get", "list"]
-  # Create the per-namespace trust-bundle ConfigMap that eda-asvr uses to trust
-  # our internal-CA HTTPS file-serve endpoint when pulling artifacts.
+  # ConfigMaps: the per-namespace trust-bundle (eda-asvr trusts our internal-CA
+  # HTTPS pull endpoint) and per-image license ConfigMaps (license.key, in
+  # eda-system, referenced by the generated NodeProfiles). delete: remove a
+  # license ConfigMap when its image is deleted.
   - apiGroups: [""]
     resources: ["configmaps"]
-    verbs: ["get", "list", "create", "update", "patch"]
+    verbs: ["get", "list", "create", "update", "patch", "delete"]
   # Manage this app's own cluster-scoped config + write its status.
   - apiGroups: ["imagemanager.eda.edacommunity.com"]
     resources: ["imagemanagerconfigs"]

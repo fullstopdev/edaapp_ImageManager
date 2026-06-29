@@ -535,6 +535,76 @@ def srsim_meta(artifact_name):
     return m, os.path.join(DATA_DIR, artifact_name, "blobs", "sha256")
 
 
+# ----------------------------- License (key) handling -----------------------------
+# A NOS license is a small text key file (one or more lines of
+# "<node-uuid> <base64-key>", '#' comments allowed). EDA models it as a ConfigMap
+# with a single key "license.key" that NodeProfile/SimNode/TopoNode reference; the
+# Digital Twin (eda-cx) feeds that value to the simulator. (A sim boots on an
+# empty license; a real key unlocks licensed scale/features.) The license ConfigMap
+# lives in eda-system -- where all of EDA's own license ConfigMaps live and where
+# eda-cx resolves it -- regardless of the image's artifact namespace.
+LICENSE_KEY = "license.key"
+_LICENSE_MAX = 256 * 1024  # a key file is < 2 KiB; cap well above any real one
+# The vendor labels each key with an inline "# ..." comment naming the product /
+# version family: SR Linux -> "# SRL_26_3_*", SR OS -> "# NOKIA BELL NV(*)".
+_LIC_SRL_RE = re.compile(r"\bSRL[ _-]?\d", re.I)
+_LIC_SROS_RE = re.compile(r"NOKIA\s+BELL|\bTiMOS\b", re.I)
+
+
+def license_cm_name(artifact_name):
+    """The license ConfigMap name for an image: '<image>-license'."""
+    return to_k8s_name((artifact_name or "") + "-license")
+
+
+def normalize_license(raw):
+    """Decode + trim a raw uploaded license file to the string stored in the
+    ConfigMap's license.key. Kept verbatim apart from surrounding whitespace so the
+    exact vendor key (incl. its inline '# ...' label, which the device tolerates)
+    reaches the node. Returns "" for an empty/blank file."""
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", "replace")
+    return (raw or "").strip()
+
+
+def detect_license_nos(content, filename=""):
+    """Best-effort classify a license key as 'srl' or 'sros' from its inline label
+    (and the filename as a hint), or None if unclear. Used only to warn when a
+    license is attached to an image of a different NOS -- never to block."""
+    fn = (filename or "").lower()
+    t = content or ""
+    if "srlinux" in fn or "srl_" in fn or _LIC_SRL_RE.search(t):
+        return "srl"
+    if "sros" in fn or "timos" in fn or "srsim" in fn or _LIC_SROS_RE.search(t):
+        return "sros"
+    return None
+
+
+def set_license_meta(upload_id, license_rec):
+    """Record an attached license on an image's meta.json. Returns the new meta,
+    or None if the image is unknown."""
+    m = read_meta(upload_id)
+    if m is None:
+        return None
+    m["license"] = license_rec
+    return rewrite_meta(upload_id, m)
+
+
+def store_license_file(upload_id, content):
+    """Keep a copy of the raw license text on the PVC next to the image, so the
+    upload dir is self-describing and the ConfigMap can be reconstructed. Returns
+    the path written, or None on failure (best-effort; the ConfigMap is the
+    source of truth)."""
+    d = os.path.join(DATA_DIR, upload_id)
+    try:
+        os.makedirs(d, exist_ok=True)
+        p = os.path.join(d, "license.key")
+        with open(p, "w") as f:
+            f.write(content)
+        return p
+    except OSError:
+        return None
+
+
 def stream_upload(rfile, content_length, dest_path, max_bytes):
     """
     Stream `content_length` bytes from rfile into dest_path in fixed-size chunks

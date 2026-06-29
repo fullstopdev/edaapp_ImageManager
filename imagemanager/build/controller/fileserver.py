@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
 import artifact
 import auth
+import k8s
 import schemaprofile
 import uploads
 import webui
@@ -53,6 +54,10 @@ CONFIG = {
 }
 POD_NAMESPACE = os.environ.get("POD_NAMESPACE", "eda-system")
 SERVICE_NAME = "eda-imagemanager"
+# License ConfigMaps live where eda-cx resolves them (and where EDA keeps its own):
+# the EDA system namespace, which is also where this app runs. A NodeProfile in a
+# user namespace references the ConfigMap by name; the consumer reads it here.
+LICENSE_NS = POD_NAMESPACE
 
 # OCI distribution (registry v2) path patterns. `name` may contain '/'.
 _V2_MANIFEST_RE = re.compile(r"^/v2/(.+)/manifests/(.+)$")
@@ -505,6 +510,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/upload":
                 self._handle_upload(q)
+            elif path == "/api/license":
+                self._handle_license(q)
             elif path == "/api/delete":
                 self._handle_delete(q)
             else:
@@ -517,6 +524,118 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "error": str(e)}, code=500)
             except Exception:
                 pass
+
+    def _handle_license(self, q):
+        """Attach a NOS license key to an already-uploaded image. The request body
+        is the raw license file (a small text key file); we create/replace a
+        ConfigMap (license.key) in eda-system that the image's NodeProfile
+        references, and record it on the image's meta.json. Additive: never touches
+        the image's own Artifacts. The image NOS comes from meta; a detected
+        NOS-mismatch is surfaced as a non-blocking warning."""
+        def one(name, default=None):
+            v = q.get(name, [default])
+            return v[0] if v else default
+
+        upload_id = (one("uploadId") or "").strip()
+        raw_lic_fn = (one("licenseFilename", "") or "").strip()
+        # Only sanitize a real filename; sanitize_filename("") returns the
+        # "upload.bin" fallback, which we don't want recorded as the source.
+        src_filename = uploads.sanitize_filename(raw_lic_fn) if raw_lic_fn else ""
+        if not upload_id or any(c in upload_id for c in ("/", "\\", "..")):
+            self._send_json({"ok": False, "error": "valid uploadId query param required"}, 400)
+            return
+        meta = uploads.read_meta(upload_id)
+        if not meta:
+            self._send_json({"ok": False, "error": f"no image named '{upload_id}'"}, 404)
+            return
+        try:
+            content_length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            content_length = 0
+        if content_length <= 0:
+            self._send_json({"ok": False, "error": "Content-Length required"}, 411)
+            return
+        if content_length > uploads._LICENSE_MAX:  # noqa: SLF001
+            self._send_json({"ok": False,
+                             "error": "license file too large (expected a small key file)"}, 413)
+            return
+        raw = self.rfile.read(content_length)
+        key = uploads.normalize_license(raw)
+        if not key:
+            self._send_json({"ok": False, "error": "the license file is empty"}, 400)
+            return
+        image_nos = meta.get("nos") or "srl"
+        expect = "srl" if image_nos == "srl" else "sros"   # srsim is an SR OS license
+        lic_nos = uploads.detect_license_nos(key, src_filename)
+        mismatch = bool(lic_nos and lic_nos != expect)
+        cm_name = uploads.license_cm_name(upload_id)
+        labels = {artifact.MANAGED_LABEL: "true"}
+        data = {uploads.LICENSE_KEY: key}
+        # OWNERSHIP GUARD: the derived name "<image>-license" could collide with a
+        # ConfigMap this app does NOT own -- e.g. EDA ships its own license CMs in
+        # eda-system (cx-srl-<ver>-ghcr-license, sros-ghcr-<ver>-dummy-license). NEVER
+        # overwrite or adopt one of those. Only create a new CM, or replace one that
+        # already carries our managed label. Refuse otherwise (and never delete a
+        # non-managed CM later, see _handle_delete).
+        try:
+            existing = k8s.read_configmap(cm_name, LICENSE_NS)
+        except Exception as e:  # noqa: BLE001
+            self._send_json({"ok": False, "error": f"could not read existing ConfigMap: {e}"}, 502)
+            return
+        if existing is not None and \
+                ((existing.get("metadata") or {}).get("labels") or {}).get(
+                    artifact.MANAGED_LABEL) != "true":
+            self._send_json({"ok": False,
+                             "error": f"a ConfigMap named '{cm_name}' already exists in "
+                                      f"{LICENSE_NS} and is not managed by Image Manager (it may "
+                                      f"be an EDA-owned license). Rename the image and retry."}, 409)
+            return
+        fresh = existing is None
+        try:
+            if fresh:
+                k8s.create_configmap(cm_name, LICENSE_NS, data, labels)
+            else:
+                k8s.replace_configmap(cm_name, LICENSE_NS, data, labels)
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", "replace")[:200]
+            except Exception:  # noqa: BLE001
+                pass
+            self._send_json({"ok": False,
+                             "error": f"license ConfigMap write failed (HTTP {e.code}): "
+                                      f"{detail}"}, 502)
+            return
+        except Exception as e:  # noqa: BLE001
+            self._send_json({"ok": False, "error": f"license ConfigMap write failed: {e}"}, 502)
+            return
+        uploads.store_license_file(upload_id, key)
+        lic_rec = {"configMap": cm_name, "namespace": LICENSE_NS, "key": uploads.LICENSE_KEY,
+                   "nos": lic_nos or expect, "sourceFilename": src_filename or None,
+                   "sizeBytes": len(key)}
+        # Record the license on the image. If this fails -- meta write error (PVC
+        # full) or the image was deleted between our read and now -- don't leak a CM
+        # we just freshly created: compensate by deleting it, so it can't orphan.
+        recorded = None
+        try:
+            recorded = uploads.set_license_meta(upload_id, lic_rec)
+        except OSError as e:
+            logger.warning("license meta write failed for %s: %s", upload_id, e)
+        if recorded is None:
+            if fresh:
+                try:
+                    k8s.delete_configmap(cm_name, LICENSE_NS)
+                except Exception:  # noqa: BLE001
+                    pass
+            self._send_json({"ok": False,
+                             "error": "could not record the license on the image (it may have "
+                                      "been deleted, or storage is full)"}, 409)
+            return
+        logger.info("License attached to %s -> ConfigMap %s/%s (%d bytes, nos=%s, mismatch=%s)",
+                    upload_id, LICENSE_NS, cm_name, len(key), lic_nos, mismatch)
+        self._send_json({"ok": True, "uploadId": upload_id, "configMap": cm_name,
+                         "namespace": LICENSE_NS, "licenseNos": lic_nos,
+                         "imageNos": image_nos, "mismatch": mismatch})
 
     def _handle_delete(self, q):
         def one(name):
@@ -556,6 +675,25 @@ class Handler(BaseHTTPRequestHandler):
                                          "error": f"Artifact delete failed (HTTP {e.code})"}, 502)
                         return
                     artifact_deleted = True  # already gone
+        # Also drop the image's license ConfigMap (if one was attached). It lives in
+        # eda-system, not the image's artifact namespace. Guard on the managed label
+        # so we never delete an EDA-owned (or otherwise foreign) ConfigMap even if
+        # meta somehow points at one.
+        lic = (meta or {}).get("license") or {}
+        lic_cm = lic.get("configMap")
+        if lic_cm:
+            lic_ns = lic.get("namespace") or LICENSE_NS
+            try:
+                ex = k8s.read_configmap(lic_cm, lic_ns)
+                owned = ((ex or {}).get("metadata", {}).get("labels", {}) or {}).get(
+                    artifact.MANAGED_LABEL) == "true"
+                if ex is not None and owned:
+                    k8s.delete_configmap(lic_cm, lic_ns)
+                elif ex is not None:
+                    logger.warning("refusing to delete non-managed ConfigMap %s/%s referenced "
+                                   "by %s", lic_ns, lic_cm, upload_id)
+            except Exception as e:  # noqa: BLE001 - best-effort; image delete still succeeds
+                logger.warning("license ConfigMap %s delete failed: %s", lic_cm, e)
         local_removed = uploads.delete_upload(upload_id) if upload_id else False
         logger.info("Delete %s/%s (%d artifact(s)) (artifactDeleted=%s localRemoved=%s)",
                     namespace, upload_id, len(names), artifact_deleted, local_removed)
@@ -925,11 +1063,14 @@ class Handler(BaseHTTPRequestHandler):
 _VER_RE = re.compile(r"(\d+\.\d+\.[A-Za-z]?\d+(?:-\d+)?)")
 
 
-def _nodeprofile_yaml(nos, version, namespace, prof_name, image_entries, yang_url):
+def _nodeprofile_yaml(nos, version, namespace, prof_name, image_entries, yang_url,
+                      license_cm=None):
     """A complete, copy-ready NodeProfile example for an Available image. The
     image path(s)+imageMd5, version, operatingSystem and yang are filled from the
     real artifact(s); environment-specific fields are left as <placeholders>.
-    image_entries = [(image_path, md5_path_or_empty), ...]."""
+    image_entries = [(image_path, md5_path_or_empty), ...]. When `license_cm` is
+    set (a license was attached to this image), spec.license references the
+    ConfigMap Image Manager created for it in eda-system."""
     L = [
         "apiVersion: core.eda.nokia.com/v1",
         "kind: NodeProfile",
@@ -955,6 +1096,9 @@ def _nodeprofile_yaml(nos, version, namespace, prof_name, image_entries, yang_ur
     else:
         L.append(f"  # yang: https://eda-asvr.eda-system.svc/{namespace}/schemaprofiles/"
                  "<profile>/<profile>.zip   # add the matching schema profile")
+    if license_cm:
+        L.append(f"  license: {license_cm}   # ConfigMap (in eda-system) created by Image "
+                 "Manager from your uploaded license key")
     L += [
         "  # llmDb: https://eda-asvr.eda-system.svc/<ns>/llm-dbs/<db>/<db>.tar.gz"
         "   # optional, EDA-provided per version",
@@ -991,6 +1135,8 @@ def _single_row(m, status_by_key):
     yang = m.get("yang") or {}
     yst = status_by_key.get((ns, yang.get("artifactName")), {}) if yang.get("artifactName") else {}
     yang_url = yst.get("internalUrl", "") if yst.get("downloadStatus") == "Available" else ""
+    lic = m.get("license") or {}
+    license_cm = lic.get("configMap") or ""
     snippet = ""
     example = ""
     if image_path:
@@ -999,10 +1145,12 @@ def _single_row(m, status_by_key):
             snippet += "\n    imageMd5: " + md5_path
         if yang_url:
             snippet += "\nyang: " + yang_url
+        if license_cm:
+            snippet += "\nlicense: " + license_cm
         vm = _VER_RE.search(display)
         example = _nodeprofile_yaml(nos, vm.group(1) if vm else "<version>", ns,
                                     uploads.to_k8s_name(display) or "my-nodeprofile",
-                                    [(image_path, md5_path)], yang_url)
+                                    [(image_path, md5_path)], yang_url, license_cm or None)
     return {
         "uploadId": m.get("uploadId"),
         "name": m.get("artifactName"),
@@ -1022,6 +1170,8 @@ def _single_row(m, status_by_key):
         "nodeProfileExample": example,
         "nos": nos,
         "yangStatus": (yst.get("downloadStatus") if yang.get("artifactName") else None),
+        "license": license_cm or None,
+        "licenseNos": lic.get("nos"),
     }
 
 
@@ -1081,15 +1231,19 @@ def _group_row(m, status_by_key):
     else:
         agg = "NoArtifact"
 
+    lic = m.get("license") or {}
+    license_cm = lic.get("configMap") or ""
     snippet = ""
     example = ""
     if all_images_available and image_lines:
         snippet = "images:\n" + "\n".join(image_lines)
         if yang_url:
             snippet += "\nyang: " + yang_url
+        if license_cm:
+            snippet += "\nlicense: " + license_cm
         example = _nodeprofile_yaml("sros", m.get("version") or "<version>", ns,
                                     m.get("uploadId") or "my-nodeprofile",
-                                    image_entries, yang_url)
+                                    image_entries, yang_url, license_cm or None)
     return {
         "uploadId": m.get("uploadId"),
         "name": m.get("uploadId"),
@@ -1106,14 +1260,21 @@ def _group_row(m, status_by_key):
         "nos": "sros",
         "fileCount": len(arts),
         "yangStatus": yang_status,
+        "license": license_cm or None,
+        "licenseNos": lic.get("nos"),
     }
 
 
-def _sim_nodeprofile_yaml(version, namespace, prof_name, container_image, yang_url):
+def _sim_nodeprofile_yaml(version, namespace, prof_name, container_image, yang_url,
+                          license_cm=None):
     """A complete, copy-ready SR OS *simulator* NodeProfile: containerImage points
-    at this app's /v2 endpoint, plus a dummy license ConfigMap. <…> values are for
-    the operator to set."""
-    license_cm = "sros-sim-license"
+    at this app's /v2 endpoint, plus a license ConfigMap. When `license_cm` is set
+    (a real license was uploaded with this image), spec.license references the
+    ConfigMap Image Manager already created in eda-system -- no extra YAML to apply.
+    Otherwise a dummy empty-license ConfigMap is included inline (a sim boots on an
+    empty license). <…> values are for the operator to set."""
+    real = bool(license_cm)
+    cm = license_cm or "sros-sim-license"
     L = [
         "apiVersion: core.eda.nokia.com/v1",
         "kind: NodeProfile",
@@ -1128,7 +1289,10 @@ def _sim_nodeprofile_yaml(version, namespace, prof_name, container_image, yang_u
         f"  containerImage: {container_image}",
         "  imagePullSecret: core      # a Secret in eda-system (where sims run); 'core' exists "
         "and works — this registry is anonymous, so its contents are unused",
-        f"  license: {license_cm}      # ConfigMap below (an SR-SIM sim boots on an empty license)",
+        (f"  license: {cm}      # ConfigMap (eda-system) created by Image Manager from your "
+         "uploaded license key — already applied"
+         if real else
+         f"  license: {cm}      # ConfigMap below (an SR-SIM sim boots on an empty license)"),
     ]
     if yang_url:
         L.append(f"  yang: {yang_url}")
@@ -1141,17 +1305,21 @@ def _sim_nodeprofile_yaml(version, namespace, prof_name, container_image, yang_u
         "  onboardingPassword: NokiaSrl1!",
         "  dhcp:",
         "    managementPoolv4: <your-ipv4-mgmt-pool>",
-        "---",
-        "# License ConfigMap referenced above. The Digital Twin SR-SIM accepts an",
-        "# empty dummy license; supply a real key only if your image requires one.",
-        "apiVersion: v1",
-        "kind: ConfigMap",
-        "metadata:",
-        f"  name: {license_cm}",
-        "  namespace: eda-system",
-        "data:",
-        '  license.key: ""',
     ]
+    if not real:
+        L += [
+            "---",
+            "# License ConfigMap referenced above. The Digital Twin SR-SIM accepts an",
+            "# empty dummy license; upload a real key with the image to have Image",
+            "# Manager create it for you.",
+            "apiVersion: v1",
+            "kind: ConfigMap",
+            "metadata:",
+            f"  name: {cm}",
+            "  namespace: eda-system",
+            "data:",
+            '  license.key: ""',
+        ]
     return "\n".join(L)
 
 
@@ -1223,11 +1391,14 @@ def _srsim_row(m, status_by_key):
     yang = m.get("yang") or {}
     yst = status_by_key.get((ns, yang.get("artifactName")), {}) if yang.get("artifactName") else {}
     yang_url = yst.get("internalUrl", "") if yst.get("downloadStatus") == "Available" else ""
+    lic = m.get("license") or {}
+    license_cm = lic.get("configMap") or ""
     snippet = ("operatingSystem: sros\nversion: " + version
                + "\ncontainerImage: " + container_image
-               + "\nimagePullSecret: core")
+               + "\nimagePullSecret: core"
+               + ("\nlicense: " + license_cm if license_cm else ""))
     example = _sim_nodeprofile_yaml(version, ns, artifact_name or "my-sim-nodeprofile",
-                                    container_image, yang_url)
+                                    container_image, yang_url, license_cm or None)
     setup = _sim_setup_note(container_image, ns, artifact_name or "my-sim-nodeprofile")
     return {
         "uploadId": m.get("uploadId"),
@@ -1247,6 +1418,8 @@ def _srsim_row(m, status_by_key):
         "containerImage": container_image,
         "imageTag": tag,
         "yangStatus": (yst.get("downloadStatus") if yang.get("artifactName") else None),
+        "license": license_cm or None,
+        "licenseNos": lic.get("nos"),
     }
 
 

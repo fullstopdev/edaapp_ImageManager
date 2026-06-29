@@ -131,15 +131,46 @@ def read_configmap(name, namespace):
         raise
 
 
-def create_configmap(name, namespace, data):
+def create_configmap(name, namespace, data, labels=None):
     path = f"/api/v1/namespaces/{quote(namespace, safe='')}/configmaps"
+    meta = {"name": name, "namespace": namespace}
+    if labels:
+        meta["labels"] = labels
     body = {
         "apiVersion": "v1",
         "kind": "ConfigMap",
-        "metadata": {"name": name, "namespace": namespace},
+        "metadata": meta,
         "data": data,
     }
     return _request("POST", path, body)
+
+
+def replace_configmap(name, namespace, data, labels=None):
+    """PUT (replace) a ConfigMap's data. Used to update a license ConfigMap when a
+    license is re-attached to an existing image (create returned 409)."""
+    path = f"/api/v1/namespaces/{quote(namespace, safe='')}/configmaps/{quote(name, safe='')}"
+    meta = {"name": name, "namespace": namespace}
+    if labels:
+        meta["labels"] = labels
+    body = {
+        "apiVersion": "v1",
+        "kind": "ConfigMap",
+        "metadata": meta,
+        "data": data,
+    }
+    return _request("PUT", path, body)
+
+
+def delete_configmap(name, namespace):
+    """Delete a ConfigMap (e.g. an image's license ConfigMap on image delete).
+    404 -> None."""
+    path = f"/api/v1/namespaces/{quote(namespace, safe='')}/configmaps/{quote(name, safe='')}"
+    try:
+        return _request("DELETE", path)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
 
 
 def namespace_exists(name):

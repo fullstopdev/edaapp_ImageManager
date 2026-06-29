@@ -367,6 +367,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <label for="imageName">Image name (auto-generated &mdash; edit if you like)</label>
       <div class="helper" id="nameHint">SR Linux, SR OS (7750 TiMOS) or SR-SIM (SR OS simulator) is detected automatically from the zip; the md5 and YANG schema profile are handled for you.</div>
     </div>
+
+    <div class="filefield" style="margin-top:18px">
+      <span class="lbl">License key &mdash; <span class="mono">.txt</span> (optional)</span>
+      <div class="filebox">
+        <input type="file" id="licFile" accept=".txt,.lic,.key,.license">
+      </div>
+      <div class="helper" id="licHint">If this image needs a simulator/node license, attach the key file. Image Manager stores it as a ConfigMap in <span class="mono">eda-system</span> and wires <span class="mono">spec.license</span> into the generated NodeProfile. The free SR Linux sim and SR-SIM boot without one.</div>
+    </div>
   </div>
   <div class="dialog-actions">
     <button class="btn text subtle ripple" id="cancelUpload">Cancel</button>
@@ -426,7 +434,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   var el = function(id){ return document.getElementById(id); };
   var binFile=el("binFile"), ns=el("namespace"), imageName=el("imageName"),
-      btn=el("uploadBtn"), binHint=el("binHint"), rows=el("rows");
+      btn=el("uploadBtn"), binHint=el("binHint"), rows=el("rows"), licFile=el("licFile");
   var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
 
   // ---------- ripple ----------
@@ -554,8 +562,33 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // ---------- upload (closes dialog; progress shown as a live table row) ----------
   function resetUploadForm(){
-    binFile.value=""; imageName.value=""; ns.selectedIndex=0;
+    binFile.value=""; imageName.value=""; ns.selectedIndex=0; licFile.value="";
     binHint.textContent="Maximum upload size: "+Math.round(maxBytes/1048576)+" MiB.";
+  }
+
+  // Attach a license to a freshly-uploaded image: POST the raw key file to
+  // /api/license. Additive — a failure here never undoes the image upload. baseMsg
+  // is the image-upload snack text, folded in so the user sees one coherent result
+  // (no green flash that's instantly overwritten).
+  function attachLicense(uploadId, what, file, baseMsg){
+    var pre=baseMsg?(baseMsg+" "):"";
+    if(!uploadId || !file) { if(baseMsg) snack("ok", baseMsg); refresh(); return; }
+    var qs=new URLSearchParams({uploadId:uploadId, licenseFilename:file.name});
+    var xhr=new XMLHttpRequest();
+    xhr.open("POST", api("/api/license")+"?"+qs.toString());
+    xhr.onload=function(){ var r={}; try{ r=JSON.parse(xhr.responseText); }catch(e){}
+      if(xhr.status>=200 && xhr.status<300 && r.ok){
+        var warn=r.mismatch?(" Note: that key looks like a "+(r.licenseNos||"different")+
+                 " license but the image is "+(r.imageNos||"")+"; using it anyway.":"");
+        snack("ok", pre+"License attached."+warn, !!r.mismatch);
+      } else {
+        snack("err", pre+"But the license could not be attached: "+
+              ((r&&r.error)||("HTTP "+xhr.status)), true);
+      }
+      refresh();
+    };
+    xhr.onerror=function(){ snack("err", pre+"But attaching the license failed (network).", true); refresh(); };
+    xhr.send(file);
   }
   function paintPendingCell(p){
     var c=document.getElementById("upstat-"+p.key);
@@ -585,7 +618,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // Single upload path. The NOS is auto-detected server-side from the zip; md5
   // and the YANG schema profile are handled automatically.
-  function doUpload(f, namespace){
+  function doUpload(f, namespace, lic){
     // Lowercase unconditionally here (the authoritative client-side point), so the
     // query param and the live pending row match the server's lowercased name
     // regardless of how text reached the field — the input listener is then cosmetic.
@@ -605,7 +638,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
           if(r.nos==="srsim") msg="Uploaded "+what+" — SR-SIM image ready. Open Details for the sim NodeProfile and one-time setup."+(r.yangCreated?" YANG profile attached.":"");
           else if(r.nos==="sros") msg="Uploaded "+what+" — "+(r.fileCount||0)+" image files. "+(r.note||"");
           else msg="Uploaded "+what+"."+(r.md5?(" md5 "+r.md5+"."):"")+(r.yangCreated?" YANG profile attached.":"");
-          snack("ok", msg); refresh();
+          if(lic){ attachLicense(r.artifactName||r.uploadId||name, what, lic, msg); }
+          else { snack("ok", msg); refresh(); }
         } else { delete pendingUploads[key]; render();
           snack("err",(r.error||("HTTP "+status)), true); if(r.uploadId) refresh(); }
       },
@@ -622,7 +656,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(f.size>maxBytes){ snack("err","File is "+fmtBytes(f.size)+", over the "+fmtBytes(maxBytes)+" limit."); return; }
     var namespace=(ns.value||"").trim();
     if(!namespace){ snack("err","Choose a namespace first."); return; }
-    doUpload(f, namespace);
+    var lic=(licFile.files&&licFile.files[0])||null;
+    if(lic && lic.size>262144){ snack("err","License file is too large (expected a small key file)."); return; }
+    doUpload(f, namespace, lic);
   });
 
   // ---------- artifacts table ----------
@@ -653,11 +689,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function serverRowHtml(t){
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
+    var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
     var view=t.snippet
       ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'">Details</button> ')
       :'';
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
-    return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+'</td><td>'+esc(t.namespace)+
+    return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
       '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
   }
@@ -681,13 +718,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
       : '<span class="mono">eda-asvr</span> stops hosting it — the served image URLs will return 404.';
     var lead='Permanently delete <b class="mono">'+esc(label)+'</b>'
              +(nsv?(' in <span class="mono">'+esc(nsv)+'</span>'):'')+'?';
-    askDelete(lead, [
+    var bullets=[
       removes,
       hostBullet,
       'Any NodeProfile, node bootstrap (ZTP) or image upgrade that points at this image will fail until you re-add a valid image.',
       'This app holds the only durable copy, so its local file is deleted too — to restore it you must re-upload the vendor .zip.',
       'This cannot be undone.'
-    ], function(){
+    ];
+    if(t && t.license){ bullets.splice(1, 0, 'Also deletes the license ConfigMap <span class="mono">'+esc(t.license)+'</span> from <span class="mono">eda-system</span>.'); }
+    askDelete(lead, bullets, function(){
       var qs=new URLSearchParams({uploadId:uid||"", namespace:nsv||"", name:name||""});
       fetch(api("/api/delete")+"?"+qs.toString(), {method:"POST"})
         .then(function(r){return r.json();})
@@ -714,6 +753,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     el("npIntro").innerHTML = isSim
       ? 'Copy the <b>complete sim NodeProfile</b> below (it sets <span class="mono">containerImage</span> + a license), or paste the <b>snippet</b> fields into an existing <span class="mono">NodeProfile</span>. Then follow the <b>one-time setup</b> so the node can pull the image.'
       : 'Paste the <b>snippet</b> into an existing <span class="mono">NodeProfile</span>\'s <span class="mono">spec.images</span>, or copy the <b>complete example</b> as a starting point. The image path(s), version, OS and <span class="mono">yang</span> are filled from this image; <span class="mono">&lt;…&gt;</span> values are for you to set.';
+    if(t.license){
+      el("npIntro").innerHTML += ' <b>License:</b> Image Manager created the ConfigMap '+
+        '<span class="mono">'+esc(t.license)+'</span> in <span class="mono">eda-system</span> '+
+        'from your uploaded key and referenced it in <span class="mono">spec.license</span> below.';
+    }
     el("npSnipLabel").innerHTML = isSim
       ? 'Snippet &mdash; sim NodeProfile <span class="mono">spec</span>'
       : 'Snippet &mdash; <span class="mono">spec.images</span>';
