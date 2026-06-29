@@ -243,6 +243,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .tf input:not(:placeholder-shown) ~ label { top:-8px; font-size:11.5px; }
   .tf input:focus ~ label { color:var(--accent); }
   .tf input:disabled ~ label { opacity:.55; }
+  /* multiline (license paste) — same outlined/floating-label treatment, monospace */
+  .tf textarea { width:100%; padding:14px 13px; border:1px solid var(--line); border-radius:8px;
+    background:var(--input-bg); color:var(--fg);
+    font:12.5px/1.5 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
+    resize:vertical; min-height:80px; transition:border-color .15s,box-shadow .15s; }
+  .tf textarea:focus { outline:none; border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+  .tf textarea ~ label { background:var(--panel); }
+  .tf textarea:focus ~ label,
+  .tf textarea:not(:placeholder-shown) ~ label { top:-8px; font-size:11.5px; }
+  .tf textarea:focus ~ label { color:var(--accent); }
   /* outlined select (namespace) — label stays floated; native arrow replaced by a chevron */
   .tf.select select { width:100%; padding:14px 38px 14px 13px; border:1px solid var(--line);
     border-radius:8px; background:var(--input-bg); color:var(--fg); font:14px inherit;
@@ -368,12 +378,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="helper" id="nameHint">SR Linux, SR OS (7750 TiMOS) or SR-SIM (SR OS simulator) is detected automatically from the zip; the md5 and YANG schema profile are handled for you.</div>
     </div>
 
-    <div class="filefield" style="margin-top:18px">
-      <span class="lbl">License key &mdash; <span class="mono">.txt</span> (optional)</span>
-      <div class="filebox">
-        <input type="file" id="licFile" accept=".txt,.lic,.key,.license">
-      </div>
-      <div class="helper" id="licHint">If this image needs a simulator/node license, attach the key file. Image Manager stores it as a ConfigMap in <span class="mono">eda-system</span> and wires <span class="mono">spec.license</span> into the generated NodeProfile. The free SR Linux sim and SR-SIM boot without one.</div>
+    <div class="tf" style="margin-top:18px">
+      <textarea id="licText" placeholder=" " rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+      <label for="licText">License key (optional) &mdash; paste it here</label>
+      <div class="helper" id="licHint">Paste the SR OS / SR Linux <b>simulator license key</b> if this image needs one. Extra spaces, quotes or a leading label are fine &mdash; Image Manager parses out the key, stores it as a <span class="mono">license.key</span> ConfigMap in <span class="mono">eda-system</span>, and wires <span class="mono">spec.license</span> into the generated NodeProfile. The free SR Linux sim and SR-SIM boot without one.</div>
     </div>
   </div>
   <div class="dialog-actions">
@@ -434,7 +442,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   var el = function(id){ return document.getElementById(id); };
   var binFile=el("binFile"), ns=el("namespace"), imageName=el("imageName"),
-      btn=el("uploadBtn"), binHint=el("binHint"), rows=el("rows"), licFile=el("licFile");
+      btn=el("uploadBtn"), binHint=el("binHint"), rows=el("rows"), licText=el("licText");
+
+  // Lenient structure check: does ANY single line contain a "<node-id> <key>"
+  // entry? Surrounding labels / quotes / blank lines don't matter. Tested per-line
+  // to mirror the server parser exactly (which iterates lines), so the GUI never
+  // accepts a paste the server would then reject.
+  function looksLikeLicense(t){
+    var RE=/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\s+[A-Za-z0-9+/=]{16,}/;
+    return (t||"").split(/\r?\n/).some(function(l){ return RE.test(l); });
+  }
   var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
 
   // ---------- ripple ----------
@@ -562,7 +579,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // ---------- upload (closes dialog; progress shown as a live table row) ----------
   function resetUploadForm(){
-    binFile.value=""; imageName.value=""; ns.selectedIndex=0; licFile.value="";
+    binFile.value=""; imageName.value=""; ns.selectedIndex=0; licText.value="";
     binHint.textContent="Maximum upload size: "+Math.round(maxBytes/1048576)+" MiB.";
   }
 
@@ -570,12 +587,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   // /api/license. Additive — a failure here never undoes the image upload. baseMsg
   // is the image-upload snack text, folded in so the user sees one coherent result
   // (no green flash that's instantly overwritten).
-  function attachLicense(uploadId, what, file, baseMsg){
+  function attachLicense(uploadId, what, licStr, baseMsg){
     var pre=baseMsg?(baseMsg+" "):"";
-    if(!uploadId || !file) { if(baseMsg) snack("ok", baseMsg); refresh(); return; }
-    var qs=new URLSearchParams({uploadId:uploadId, licenseFilename:file.name});
+    if(!uploadId || !licStr) { if(baseMsg) snack("ok", baseMsg); refresh(); return; }
+    var qs=new URLSearchParams({uploadId:uploadId});
     var xhr=new XMLHttpRequest();
     xhr.open("POST", api("/api/license")+"?"+qs.toString());
+    xhr.setRequestHeader("Content-Type","text/plain; charset=utf-8");
     xhr.onload=function(){ var r={}; try{ r=JSON.parse(xhr.responseText); }catch(e){}
       if(xhr.status>=200 && xhr.status<300 && r.ok){
         var warn=r.mismatch?(" Note: that key looks like a "+(r.licenseNos||"different")+
@@ -588,7 +606,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       refresh();
     };
     xhr.onerror=function(){ snack("err", pre+"But attaching the license failed (network).", true); refresh(); };
-    xhr.send(file);
+    xhr.send(licStr);
   }
   function paintPendingCell(p){
     var c=document.getElementById("upstat-"+p.key);
@@ -656,8 +674,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(f.size>maxBytes){ snack("err","File is "+fmtBytes(f.size)+", over the "+fmtBytes(maxBytes)+" limit."); return; }
     var namespace=(ns.value||"").trim();
     if(!namespace){ snack("err","Choose a namespace first."); return; }
-    var lic=(licFile.files&&licFile.files[0])||null;
-    if(lic && lic.size>262144){ snack("err","License file is too large (expected a small key file)."); return; }
+    var lic=(licText.value||"").trim();   // optional pasted license key
+    if(lic && lic.length>262144){ snack("err","License text is too large (expected a small key)."); return; }
+    if(lic && !looksLikeLicense(lic)){ snack("err","That doesn't look like a license key — paste the full “<node-id> <key>” line (extra spaces, quotes or a label are fine)."); return; }
     doUpload(f, namespace, lic);
   });
 

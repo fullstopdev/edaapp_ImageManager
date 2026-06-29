@@ -549,6 +549,12 @@ _LICENSE_MAX = 256 * 1024  # a key file is < 2 KiB; cap well above any real one
 # version family: SR Linux -> "# SRL_26_3_*", SR OS -> "# NOKIA BELL NV(*)".
 _LIC_SRL_RE = re.compile(r"\bSRL[ _-]?\d", re.I)
 _LIC_SROS_RE = re.compile(r"NOKIA\s+BELL|\bTiMOS\b", re.I)
+# A license entry = a node-id UUID then whitespace then the base64 key. This is
+# the anchor used to pull the real key out of pasted text that may carry a label
+# prefix ("license: ..."), surrounding quotes, or stray leading/trailing lines.
+_LIC_ENTRY_RE = re.compile(
+    r"[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}"
+    r"\s+[A-Za-z0-9+/=]{16,}")
 
 
 def license_cm_name(artifact_name):
@@ -557,13 +563,40 @@ def license_cm_name(artifact_name):
 
 
 def normalize_license(raw):
-    """Decode + trim a raw uploaded license file to the string stored in the
-    ConfigMap's license.key. Kept verbatim apart from surrounding whitespace so the
-    exact vendor key (incl. its inline '# ...' label, which the device tolerates)
-    reaches the node. Returns "" for an empty/blank file."""
+    """Robustly extract the license key(s) from pasted/typed/uploaded text and
+    return the string stored in the ConfigMap's license.key.
+
+    Tolerant by design: the user may paste with a leading label ('license: ...'),
+    surrounding quotes, or extra blank/junk lines and whitespace. We anchor on each
+    '<node-uuid> <base64-key>' entry, drop everything before the UUID and trim
+    surrounding quotes/whitespace, and keep the rest of the line VERBATIM (incl. the
+    vendor's inline '# ...' label, which eda-cx writes byte-for-byte to the sim's
+    TiMOS license file). Multiple entries (one per line) are preserved. Returns ""
+    when no valid license entry is present."""
     if isinstance(raw, bytes):
         raw = raw.decode("utf-8", "replace")
-    return (raw or "").strip()
+    entries = []
+    for line in (raw or "").splitlines():
+        s = line.strip()
+        # Drop ONE surrounding matching quote/backtick pair around the whole line
+        # (a user may wrap the pasted entry in quotes). Done on the full line, BEFORE
+        # slicing from the UUID, so a label that genuinely ends in a quote is kept
+        # verbatim (it has no matching leading quote to pair with).
+        if len(s) >= 2 and s[0] == s[-1] and s[0] in "\"'`":
+            s = s[1:-1].strip()
+        m = _LIC_ENTRY_RE.search(s)
+        if not m:
+            continue                       # skip blank / comment-only / junk lines
+        entry = s[m.start():].strip()      # from the UUID to end-of-line, kept verbatim
+        if entry:
+            entries.append(entry)
+    return "\n".join(entries)
+
+
+def is_valid_license(raw):
+    """True if at least one parseable license entry is present (used for a lenient
+    structure check). Surrounding junk/whitespace does not make it invalid."""
+    return bool(normalize_license(raw))
 
 
 def detect_license_nos(content, filename=""):

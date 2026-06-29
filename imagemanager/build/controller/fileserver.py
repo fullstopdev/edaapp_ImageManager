@@ -560,9 +560,11 @@ class Handler(BaseHTTPRequestHandler):
                              "error": "license file too large (expected a small key file)"}, 413)
             return
         raw = self.rfile.read(content_length)
-        key = uploads.normalize_license(raw)
+        key = uploads.normalize_license(raw)   # robust parse: tolerates surrounding junk
         if not key:
-            self._send_json({"ok": False, "error": "the license file is empty"}, 400)
+            self._send_json({"ok": False,
+                             "error": "could not find a valid license key in the text "
+                                      "(expected a line like '<node-id> <key>')"}, 400)
             return
         image_nos = meta.get("nos") or "srl"
         expect = "srl" if image_nos == "srl" else "sros"   # srsim is an SR OS license
