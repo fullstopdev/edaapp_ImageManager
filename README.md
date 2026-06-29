@@ -1,13 +1,14 @@
 # EDA Image Manager
 
-A Nokia EDA application that lets you **upload network OS images through a web page** and turns each upload into proper EDA **Artifact(s)** automatically, ready for Zero‑Touch Provisioning (ZTP) and software upgrades. It supports:
+A Nokia EDA application that lets you **upload network OS images through a web page** and makes each upload ready for EDA automatically — for Zero‑Touch Provisioning (ZTP), software upgrades, and the **Digital Twin** simulator. It supports three kinds of image:
 
 - **SR Linux** — a vendor **`.zip`** (e.g. `Nokia-7220_IXR_SR_Linux-…-26.3.2.zip`). The app extracts the `.bin` and its packaged `.md5` and creates, in the `images` repo, an **image** Artifact **plus a separate `md5` Artifact** that the image references as its `imageMd5`.
-- **SR OS — Nokia 7750 (TiMOS)** — a vendor **`.zip`**. The app extracts the boot‑image set (`boot.ldr`, `both.tim`, `cpm.tim`, `iom.tim`, `kernel.tim`, `support.tim`) and creates, in the `srosimages` repo, **one image Artifact per file plus a matching `md5` Artifact for each** (the md5s come from the zip's `md5sums.txt`).
+- **SR OS — Nokia 7750 (TiMOS), hardware** — a vendor **`.zip`**. The app extracts the boot‑image set (`boot.ldr`, `both.tim`, `cpm.tim`, `iom.tim`, `kernel.tim`, `support.tim`) and creates, in the `srosimages` repo, **one image Artifact per file plus a matching `md5` Artifact for each** (the md5s come from the zip's `md5sums.txt`).
+- **SR‑SIM — SR OS simulator (for the EDA Digital Twin)** — a vendor **`.zip`** (e.g. `Nokia-SR-SIM-26.3.R3.zip`). Its payload is a **container image** (`vm/SR-Simulator/srsim.tar.xz`), not a node‑bootable file, because EDA's Digital Twin (`eda-cx`) runs SR OS as a **simulator container**. The app unpacks the image onto its volume and **serves it from a built‑in container registry** (an OCI `/v2` endpoint); you get a ready‑to‑paste sim **NodeProfile** (`containerImage`) instead of file Artifacts. See **[SR‑SIM, below](#sr-sim--sr-os-simulator-for-the-digital-twin)** — it needs a small one‑time per‑cluster setup so the node can pull from the app. (SR Linux simulators come from public `ghcr.io/nokia/srlinux` and need no upload.)
 
-On top of those, the matching **YANG schema profile** (the NodeProfile `yang:`) is obtained automatically and hosted in the `schemaprofiles` repo — you don't upload it. It's fetched from `nokia-eda/schema-profiles` when published; for SR OS versions not yet published there, it's **built on the fly from `nokia/7x50_YangModels`** (byte‑identical to the official profile).
+For the two **file** kinds (SR Linux, SR OS HW), the matching **YANG schema profile** (the NodeProfile `yang:`) is obtained automatically and hosted in the `schemaprofiles` repo — you don't upload it. It's fetched from `nokia-eda/schema-profiles` when published; for SR OS versions not yet published there, it's **built on the fly from `nokia/7x50_YangModels`** (byte‑identical to the official profile). SR‑SIM uploads also get a best‑effort schema profile this way.
 
-So a single upload becomes **several** Artifacts — the image(s), their md5(s), and the YANG profile — all created, tracked, and deleted together.
+So a single SR Linux / SR OS HW upload becomes **several** Artifacts — the image(s), their md5(s), and the YANG profile — all created, tracked, and deleted together; an SR‑SIM upload becomes a **served container image** plus its YANG profile.
 
 ---
 
@@ -91,7 +92,7 @@ Open that URL in the same browser where you're logged into the EDA UI (the EDA l
 
 Click **Upload Image From File** (top right) to open the upload dialog, then:
 
-1. **Pick the vendor `.zip`** — either an SR Linux zip (e.g. `Nokia-7220_IXR_SR_Linux-<hw>-26.3.2.zip`) or a 7750 SR OS TiMOS zip (e.g. `Nokia-7750_SR-TiMOS-26.3.R3.zip`). Only `.zip` is accepted; the type is **detected automatically** from the contents. Everything else is handled for you: the **md5** comes from inside the zip, and the **YANG schema profile** is obtained automatically (fetched from `nokia-eda/schema-profiles`, or for unpublished SR OS versions built from `nokia/7x50_YangModels`).
+1. **Pick the vendor `.zip`** — an SR Linux zip (e.g. `Nokia-7220_IXR_SR_Linux-<hw>-26.3.2.zip`), a 7750 SR OS TiMOS hardware zip (e.g. `Nokia-7750_SR-TiMOS-26.3.R3.zip`), or an SR‑SIM simulator zip (e.g. `Nokia-SR-SIM-26.3.R3.zip`). Only `.zip` is accepted; the type is **detected automatically** from the contents. Everything else is handled for you: the **md5** comes from inside the zip, and the **YANG schema profile** is obtained automatically (fetched from `nokia-eda/schema-profiles`, or for unpublished SR OS versions built from `nokia/7x50_YangModels`). SR‑SIM is a container image served from the app's own registry — see **[SR‑SIM](#sr-sim--sr-os-simulator-for-the-digital-twin)**.
 2. **Choose the Namespace** — pick the target EDA namespace from the dropdown. There's no default; you must select one before uploading.
 3. *(Optional)* edit the **auto‑generated name** (`srlinux-<version>` / `sros-<version>`). Names are always lowercase (the field lowercases as you type), so the Artifact name, the served path and the NodeProfile name are uniformly small letters.
 4. **Click Upload.** The dialog closes and the image appears in the table as **Uploading**, then **Un‑zipping**.
@@ -105,6 +106,7 @@ Image names are unique — to replace an image, delete the old one first.
 |---|---|
 | `InProgress` | `eda-asvr` is downloading the file(s) and validating each MD5. |
 | `Available` | Downloaded, validated, and re‑hosted — the row's NodeProfile snippet is ready to copy. |
+| `Ready` | (SR‑SIM only) the container image is unpacked and served from the app's built‑in registry — ready to reference from a sim NodeProfile. |
 | `Failed` | `eda-asvr` rejected the image (for example, the MD5 doesn't match). The reason is shown in the row. |
 | `Error` | `eda-asvr` hit a problem fetching or processing the image. The reason is shown in the row. |
 | `NoArtifact` | The file is stored in the app but has no matching Artifact (for example, it was deleted). |
@@ -139,6 +141,52 @@ images:
     imageMd5: eda/srosimages/sros-26.3.r3-support.tim-md5/support.tim.md5
 yang: https://eda-asvr.eda-system.svc/eda/schemaprofiles/sros-26.3.r3/sros-26.3.r3.zip
 ```
+
+### SR‑SIM — SR OS simulator (for the Digital Twin)
+
+SR‑SIM is different from the file images above: it's a **container image** that EDA's Digital Twin (`eda-cx`) runs as the simulator pod, pulling it **by tag from a registry**. SR Linux sims use the public `ghcr.io/nokia/srlinux` image; SR OS's `srsim` is **not** public, so you upload it here and Image Manager **becomes the registry** that serves it in‑cluster (no eda‑asvr Artifact for the image — it's served from a built‑in OCI `/v2` endpoint).
+
+Upload the SR‑SIM `.zip` exactly like the others — it's auto‑detected. The row shows **Ready** as soon as the image is unpacked and served; click **Details** for a complete sim **NodeProfile** (its `containerImage` points at this app) plus the **one‑time setup** below.
+
+**One‑time, per‑cluster setup — let the node pull from the app.** Container images are pulled by the node's container runtime (containerd), which by default can't reach or trust the app's in‑cluster endpoint. Add a Talos **registry mirror** that maps the app's Service name to its ClusterIP, and skip‑verify the in‑cluster serving cert **on the endpoint** (it has no IP SAN, so verifying it against the ClusterIP would fail):
+
+```yaml
+machine:
+  registries:
+    mirrors:
+      eda-imagemanager.eda-system.svc:
+        endpoints:
+          - https://<ClusterIP>:8443
+    config:
+      "<ClusterIP>:8443":          # key on the ENDPOINT the node connects to, not the host
+        tls:
+          insecureSkipVerify: true
+```
+
+- `<ClusterIP>` → `kubectl -n eda-system get svc eda-imagemanager -o jsonpath='{.spec.clusterIP}'`
+- apply with no reboot → `talosctl -n <node> patch mc -p @mirror.json --mode=no-reboot`
+- re‑apply after a reinstall — the ClusterIP can change.
+
+The sim **NodeProfile** (from the Details popup) then looks like:
+
+```yaml
+apiVersion: core.eda.nokia.com/v1
+kind: NodeProfile
+metadata: { name: srsim-26.3.r3, namespace: eda, labels: { eda.nokia.com/bootstrap: "true" } }
+spec:
+  operatingSystem: sros
+  version: 26.3.r3
+  containerImage: eda-imagemanager.eda-system.svc/srsim-26.3.r3:26.3.R3
+  imagePullSecret: core          # a Secret in eda-system; this registry is anonymous
+  license: sros-sim-license      # ConfigMap with license.key:"" (a sim boots on an empty license)
+  yang: <auto-filled, or a placeholder to set>
+  nodeUser: admin
+  onboardingUsername: admin
+  onboardingPassword: NokiaSrl1!
+  dhcp: { managementPoolv4: <your-ipv4-mgmt-pool> }
+```
+
+Create that NodeProfile (plus the license ConfigMap, and a `NodeUser` named `admin` in the namespace), then a `NetworkTopology` referencing it (`platform: "7750 SR-1"`) — the Digital Twin pulls the image from Image Manager and boots the simulated SR OS node.
 
 ---
 
