@@ -4,25 +4,28 @@ resource_name_plural: imagemanagerconfigs
 resource_name_plural_title: Image Manager Configs
 resource_name_acronym: IM
 crd_path: docs/imagemanager.eda.edacommunity.com/crds/imagemanager.eda.edacommunity.com_imagemanagerconfigs.yaml
-# 'auto-crd' will automatically select between the normal resource and workflow icon
 icon: auto-crd
 ---
 
 # Image Manager Config
 
--{{% import 'icons.html' as icons %}}-
+Cluster-wide settings and live status for EDA Image Manager. The controller
+auto-creates a single instance named `default` on first boot.
 
--{{ category(resource_name_plural) }}- → -{{ icons.circle(letter=resource_name_acronym, text=resource_name_plural_title) }}-
+## What to edit (spec)
 
-A description of this resource should go here.
+| Field | Default | Effect |
+|-------|---------|--------|
+| `defaultArtifactNamespace` | `eda` | Pre-selects this namespace in the upload UI dropdown |
+| `defaultRepo` | `images` | Default artifact repo for SR Linux uploads |
+| `maxUploadMiB` | `4096` | Rejects browser and API uploads larger than this |
+| `filePullBaseUrl` | _(auto)_ | Advanced: override the URL eda-asvr uses to pull files |
 
-## Dependencies
+## What to read (status)
 
-..
-
-## Referenced resources
-
-..
+`status` is written by the controller each reconcile cycle: overall `health`,
+PVC `uploadsStored` / `bytesStored`, and a denormalized `artifacts` list with
+each Artifact's live `downloadStatus` from eda-asvr.
 
 ## Examples
 

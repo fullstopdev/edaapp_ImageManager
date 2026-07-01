@@ -215,7 +215,7 @@ App behavior is controlled by a single cluster‑scoped resource, **`ImageManage
 
 | Setting | Default | Meaning |
 |---|---|---|
-| `defaultArtifactNamespace` | `eda` | _Deprecated / no longer applied._ The upload form now requires you to pick a namespace from a dropdown each time, so nothing is pre‑filled or defaulted. |
+| `defaultArtifactNamespace` | `eda` | Pre-selects this namespace in the upload UI dropdown (you can still pick another EDA user namespace). |
 | `defaultRepo` | `images` | The repo for **SR Linux** image and md5 Artifacts. (SR OS boot images always go to `srosimages` and YANG schema profiles to `schemaprofiles` — those are fixed; not shown in the upload form.) |
 | `maxUploadMiB` | `4096` | Reject uploads larger than this (MiB). |
 | `filePullBaseUrl` | _(auto)_ | Advanced: override the in‑cluster URL `eda-asvr` uses to pull from this app. |

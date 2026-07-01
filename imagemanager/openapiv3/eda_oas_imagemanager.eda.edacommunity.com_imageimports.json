@@ -63,7 +63,7 @@
           }
         },
         "sourceUrl": {
-          "description": "SourceUrl is the HTTP(S) URL of the vendor .zip to import (SR Linux,\nSR OS 7750 TiMOS hardware, or SR-SIM). Must be reachable from inside\nthe cluster. The image type is auto-detected from the zip contents,\nexactly like a manual upload.",
+          "description": "SourceUrl is the HTTP(S) URL of the vendor .zip to import (SR Linux,\nSR OS 7750 TiMOS hardware, or SR-SIM). Must be reachable from inside\nthe cluster. The image type is auto-detected from the zip contents,\nexactly like a manual upload.\n\nTo upload a file from your laptop, use the Image Manager dashboard\n(Image Manager nav entry) — this CR cannot browse local files.",
           "type": "string",
           "title": "Source URL",
           "pattern": "^https?://.+",

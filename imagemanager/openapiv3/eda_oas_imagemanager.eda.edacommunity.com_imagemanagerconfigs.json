@@ -14,12 +14,12 @@
       "type": "object"
     },
     "spec": {
-      "description": "ImageManagerConfigSpec defines the desired state of ImageManagerConfig.\nA single cluster-scoped instance named \"default\" is auto-created by the\ncontroller on first boot and holds operator-tunable defaults for the\nupload UI and the Artifact CRs it creates.",
+      "description": "ImageManagerConfigSpec defines the desired state of ImageManagerConfig.\nA single cluster-scoped instance named \"default\" is auto-created by the\ncontroller on first boot. Tune upload limits and artifact defaults here;\nlive health, storage usage, and the tracked artifact list are in status\n(read-only, updated every reconcile cycle).",
       "type": "object",
       "title": "Specification",
       "properties": {
         "defaultArtifactNamespace": {
-          "description": "DefaultArtifactNamespace is the namespace where new Artifact CRs are\ncreated when the upload form does not specify one. The built-in EDA\nartifact server (eda-asvr) re-hosts the file under this namespace.",
+          "description": "DefaultArtifactNamespace pre-selects the namespace in the upload UI\nnamespace dropdown (the user can still pick another EDA user namespace).\nArtifact CRs are created in whichever namespace the user chooses at\nupload time.",
           "type": "string",
           "title": "Default artifact namespace",
           "default": "eda",

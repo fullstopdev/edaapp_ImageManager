@@ -30,7 +30,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v26.4.2-27"
+VERSION = "v26.4.2-28"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -103,11 +103,12 @@ def _ensure_default_cr():
     try:
         if k8s.read_cr(CRD_GROUP, CRD_VERSION, CRD_PLURAL, CRD_NAME):
             return
+        spec = {k: v for k, v in DEFAULTS.items() if v not in (None, "")}
         body = {
             "apiVersion": f"{CRD_GROUP}/{CRD_VERSION}",
             "kind": CRD_KIND,
             "metadata": {"name": CRD_NAME},
-            "spec": {},
+            "spec": spec,
         }
         k8s.create_cr(CRD_GROUP, CRD_VERSION, CRD_PLURAL, body)
         logger.info("Created default %s CR", CRD_KIND)

@@ -447,7 +447,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
 <script>
 (function(){
+  var API_PROXY_PREFIX = "/core/httpproxy/v1/imagemanager";
   var apiBase = location.pathname.replace(/\/+$/, "");
+  if (!apiBase || apiBase === "/") apiBase = API_PROXY_PREFIX;
   function api(p){ return apiBase + p; }
   var maxBytes = 4096*1024*1024;
   var embedded = window.self !== window.top;
@@ -482,15 +484,36 @@ INDEX_HTML = r"""<!DOCTYPE html>
       });
     }).finally(function(){ document.documentElement.classList.remove("auth-pending"); });
   }
+  function authErrorMessage(ex){
+    if(ex && ex.status === 403 && ex.body){
+      var roles = (ex.body.allowedRoles || []).join(", ");
+      return "Access denied"+(ex.body.user ? (" for "+ex.body.user) : "")+
+        (roles ? (": Image Manager requires one of: "+roles+".") : ".");
+    }
+    if(ex && ex.body && ex.body.error === "not authenticated")
+      return "Sign-in required. Reload this page or open Image Manager in a new browser tab.";
+    return "Sign-in failed inside EDA. Reload this page or open Image Manager in a new tab.";
+  }
+  function showFatal(msg){
+    rows.innerHTML = '<tr><td colspan="5" class="empty">'+esc(msg)+'</td></tr>';
+    snack("err", msg, true);
+  }
   function ensureAuth(){
     if(authReady) return Promise.resolve();
     return fetch(api("/api/config")).then(function(r){
       if(r.status === 200){ authReady = true; return r.json(); }
-      if(r.status !== 401) throw new Error("config unavailable");
+      if(r.status === 401 && !embedded){
+        window.location = apiBase + "/oauth/login";
+        throw new Error("redirect");
+      }
+      if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
       if(embedded){
         return silentSso().then(function(ex){
-          if(!ex || ex.status < 200 || ex.status >= 300 || !ex.body.ok)
-            throw new Error("sso failed");
+          if(!ex || ex.status < 200 || ex.status >= 300 || !ex.body.ok){
+            var err = new Error("sso failed");
+            err.exchange = ex;
+            throw err;
+          }
           authReady = true;
           return fetch(api("/api/config")).then(function(r2){
             if(r2.status !== 200) throw new Error("config after sso");
@@ -498,8 +521,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
           });
         });
       }
-      window.location = apiBase + "/oauth/login";
-      throw new Error("redirect");
+      throw new Error("sso failed");
     });
   }
 
@@ -610,14 +632,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // ---------- config + namespaces ----------
   ensureAuth().then(function(c){
-    // No default namespace: the user must pick one from the dropdown.
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
-    binHint.textContent="Maximum upload size: "+c.maxUploadMiB+" MiB.";
+    binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
     if(c.user){
       var ui=el("userInfo"); ui.style.display="inline-flex";
       el("uname").textContent=c.user;
       el("avatar").textContent=(c.user||"?").slice(0,1);
     }
+    var defaultNs=(c.defaultArtifactNamespace||"").trim();
     fetch(api("/api/namespaces")).then(function(r){
       if(r.status===401) return null;
       return r.json();
@@ -626,10 +648,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
       (d.namespaces||[]).forEach(function(n){
         var o=document.createElement("option"); o.value=n; o.textContent=n; ns.appendChild(o);
       });
+      if(defaultNs){
+        for(var i=0;i<ns.options.length;i++){
+          if(ns.options[i].value===defaultNs){ ns.selectedIndex=i; break; }
+        }
+      }
     }).catch(function(){});
     refresh();
-  }).catch(function(){
-    if(!embedded) snack("err","Sign-in required to use Image Manager.", true);
+  }).catch(function(err){
+    var msg = (err && err.exchange) ? authErrorMessage(err.exchange)
+            : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
+            : authErrorMessage(null);
+    showFatal(msg);
   });
 
   // ---------- file selection ----------

@@ -29,6 +29,9 @@ type ImageImportSpec struct {
 	// SR OS 7750 TiMOS hardware, or SR-SIM). Must be reachable from inside
 	// the cluster. The image type is auto-detected from the zip contents,
 	// exactly like a manual upload.
+	//
+	// To upload a file from your laptop, use the Image Manager dashboard
+	// (Image Manager nav entry) — this CR cannot browse local files.
 	// +kubebuilder:validation:Required
 	// +kubebuilder:validation:Pattern=`^https?://.+`
 	// +eda:ui:title="Source URL"

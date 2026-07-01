@@ -18,12 +18,14 @@ package v1alpha1
 
 // ImageManagerConfigSpec defines the desired state of ImageManagerConfig.
 // A single cluster-scoped instance named "default" is auto-created by the
-// controller on first boot and holds operator-tunable defaults for the
-// upload UI and the Artifact CRs it creates.
+// controller on first boot. Tune upload limits and artifact defaults here;
+// live health, storage usage, and the tracked artifact list are in status
+// (read-only, updated every reconcile cycle).
 type ImageManagerConfigSpec struct {
-	// DefaultArtifactNamespace is the namespace where new Artifact CRs are
-	// created when the upload form does not specify one. The built-in EDA
-	// artifact server (eda-asvr) re-hosts the file under this namespace.
+	// DefaultArtifactNamespace pre-selects the namespace in the upload UI
+	// namespace dropdown (the user can still pick another EDA user namespace).
+	// Artifact CRs are created in whichever namespace the user chooses at
+	// upload time.
 	// +kubebuilder:default="eda"
 	// +eda:ui:title="Default artifact namespace"
 	// +eda:ui:orderpriority=100

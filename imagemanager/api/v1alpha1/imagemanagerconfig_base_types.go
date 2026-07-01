@@ -24,6 +24,10 @@ import (
 // +kubebuilder:object:root=true
 // +kubebuilder:subresource:status
 // +kubebuilder:resource:path=imagemanagerconfigs,scope=Cluster
+// +kubebuilder:printcolumn:name="Health",type=string,JSONPath=`.status.health`
+// +kubebuilder:printcolumn:name="Uploads",type=integer,JSONPath=`.status.uploadsStored`
+// +kubebuilder:printcolumn:name="Bytes",type=integer,JSONPath=`.status.bytesStored`
+// +kubebuilder:printcolumn:name="Last reconcile",type=date,JSONPath=`.status.lastReconcileTime`
 type ImageManagerConfig struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`

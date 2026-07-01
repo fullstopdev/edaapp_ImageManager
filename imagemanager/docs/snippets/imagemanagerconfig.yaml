@@ -1,1 +1,9 @@
-# Add an example
+apiVersion: imagemanager.eda.edacommunity.com/v1alpha1
+kind: ImageManagerConfig
+metadata:
+  name: default
+spec:
+  defaultArtifactNamespace: eda
+  defaultRepo: images
+  maxUploadMiB: 4096
+  # filePullBaseUrl: ""   # leave empty to auto-derive the in-cluster pull URL
