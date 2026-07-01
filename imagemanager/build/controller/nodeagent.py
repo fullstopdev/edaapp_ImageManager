@@ -46,8 +46,9 @@ POD_NAMESPACE = os.environ.get("POD_NAMESPACE", "eda-system")
 # The DaemonSet mounts the node's containerd config dir here (read-write).
 HOST_ROOT = os.environ.get("HOST_ROOT", "/host")
 CONTAINERD_DIR = os.environ.get("CONTAINERD_DIR", "/etc/containerd")
-RESYNC_SECONDS = int(os.environ.get("RESYNC_SECONDS", "60"))
+RESYNC_SECONDS = int(os.environ.get("RESYNC_SECONDS", "120"))
 HEARTBEAT_FILE = os.environ.get("HEARTBEAT_FILE", "/tmp/.heartbeat")
+ENABLED = os.environ.get("NODE_AGENT_ENABLED", "true").lower() not in ("0", "false", "no")
 
 logging.basicConfig(level=logging.INFO,
                     format="%(asctime)s %(levelname)s %(message)s")
@@ -216,13 +217,16 @@ def main():
     signal.signal(signal.SIGTERM, _handle_signal)
     signal.signal(signal.SIGINT, _handle_signal)
     log.info("node registry-trust agent starting (host=%s ns=%s port=%s "
-             "resync=%ss)", registry_host(), POD_NAMESPACE, REGISTRY_PORT,
-             RESYNC_SECONDS)
+             "resync=%ss enabled=%s)", registry_host(), POD_NAMESPACE,
+             REGISTRY_PORT, RESYNC_SECONDS, ENABLED)
+    if not ENABLED:
+        log.info("NODE_AGENT_ENABLED=false; idle heartbeat only (no hosts.toml writes)")
     while True:
-        try:
-            reconcile()
-        except Exception as e:   # never let the reconcile loop die
-            log.error("reconcile error: %s", e)
+        if ENABLED:
+            try:
+                reconcile()
+            except Exception as e:   # never let the reconcile loop die
+                log.error("reconcile error: %s", e)
         try:
             with open(HEARTBEAT_FILE, "w") as f:
                 f.write(str(int(time.time())))

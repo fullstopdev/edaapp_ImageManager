@@ -18,6 +18,8 @@ Artifact/status operations use the Kubernetes API (pod ServiceAccount token);
 the web UI sign-in is handled separately in auth.py (EDA OIDC / Keycloak).
 """
 
+import hashlib
+import json
 import logging
 import os
 import signal
@@ -31,11 +33,11 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.6"
+VERSION = "v0.0.7"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
-RECONCILE_INTERVAL = 30
+RECONCILE_INTERVAL = int(os.environ.get("RECONCILE_INTERVAL", "60"))
 
 CRD_GROUP = "imagemanager.eda.edacommunity.com"
 CRD_VERSION = "v1alpha1"
@@ -52,6 +54,9 @@ DEFAULTS = {
 
 logger = logging.getLogger("main")
 shutdown_event = threading.Event()
+_last_status_hash = None
+_import_lock = threading.Lock()
+_import_running = False
 
 
 def _setup_logging():
@@ -117,39 +122,72 @@ def _ensure_default_cr():
         logger.warning("Failed to ensure default %s: %s", CRD_KIND, e)
 
 
+def _status_payload(health, message, tracked):
+    count, total_bytes = uploads.storage_stats()
+    return {
+        "health": health,
+        "message": message,
+        "open": "View",
+        "lastReconcileTime": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "uploadsStored": count,
+        "bytesStored": total_bytes,
+        "artifacts": [
+            {
+                "name": t.get("name", ""),
+                "displayName": t.get("displayName") or t.get("name", ""),
+                "namespace": t.get("namespace", ""),
+                "repo": t.get("repo", ""),
+                "filePath": t.get("filePath", ""),
+                "sizeBytes": t.get("sizeBytes"),
+                "downloadStatus": t.get("downloadStatus", ""),
+                "statusReason": t.get("statusReason", ""),
+                "externalUrl": t.get("externalUrl", ""),
+                "open": "View",
+            }
+            for t in tracked[:500]
+        ],
+        "version": VERSION,
+    }
+
+
 def _update_status(health, message, tracked):
+    global _last_status_hash
     try:
         cr = k8s.read_cr(CRD_GROUP, CRD_VERSION, CRD_PLURAL, CRD_NAME)
         if not cr:
             return
-        count, total_bytes = uploads.storage_stats()
-        cr["status"] = {
-            "health": health,
-            "message": message,
-            "open": "View",
-            "lastReconcileTime": datetime.now(timezone.utc).isoformat(timespec="seconds"),
-            "uploadsStored": count,
-            "bytesStored": total_bytes,
-            "artifacts": [
-                {
-                    "name": t.get("name", ""),
-                    "displayName": t.get("displayName") or t.get("name", ""),
-                    "namespace": t.get("namespace", ""),
-                    "repo": t.get("repo", ""),
-                    "filePath": t.get("filePath", ""),
-                    "sizeBytes": t.get("sizeBytes"),
-                    "downloadStatus": t.get("downloadStatus", ""),
-                    "statusReason": t.get("statusReason", ""),
-                    "externalUrl": t.get("externalUrl", ""),
-                    "open": "View",
-                }
-                for t in tracked[:500]
-            ],
-            "version": VERSION,
-        }
+        status = _status_payload(health, message, tracked)
+        digest = hashlib.sha256(
+            json.dumps(status, sort_keys=True, separators=(",", ":")).encode()
+        ).hexdigest()
+        if digest == _last_status_hash:
+            return
+        cr["status"] = status
         k8s.update_cr_status(CRD_GROUP, CRD_VERSION, CRD_PLURAL, CRD_NAME, cr)
+        _last_status_hash = digest
     except Exception as e:
         logger.warning("Failed to update CRD status: %s", e)
+
+
+def _run_imports_async(cfg):
+    """Run URL imports off the main reconcile path so uploads stay responsive."""
+    global _import_running
+    with _import_lock:
+        if _import_running:
+            return
+        _import_running = True
+
+    def _work():
+        global _import_running
+        try:
+            imports.reconcile(cfg)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("ImageImport reconcile failed: %s", e)
+        finally:
+            with _import_lock:
+                _import_running = False
+
+    threading.Thread(target=_work, daemon=True, name="imports").start()
 
 
 def main():
@@ -194,10 +232,7 @@ def main():
         except Exception as e:
             logger.warning("Launcher artifact sync failed: %s", e)
 
-        try:
-            imports.reconcile(cfg)
-        except Exception as e:  # noqa: BLE001 - ImageImport bugs must not kill the app
-            logger.warning("ImageImport reconcile failed: %s", e)
+        _run_imports_async(cfg)
 
         logger.info("Reconcile done: %d tracked upload(s), health=%s (%dms)",
                     len(tracked), health, int((time.time() - cycle_start) * 1000))

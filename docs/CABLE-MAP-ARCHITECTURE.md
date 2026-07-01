@@ -16,6 +16,9 @@ which caused install/uninstall failures and EDA transaction errors.
 v0.0.3 aligns Image Manager with cable-map where applicable while keeping imagemanager-specific
 CRDs, PVC, and the node-agent DaemonSet.
 
+**v0.0.7** reduces API/reconcile load and makes the node-agent optional for non-SR-SIM labs
+(see `docs/STABILITY.md`).
+
 **v0.0.4** fixes the missing EDA nav panel: register the view under `ui.category: Topology`
 (not a custom top-level category), move the `view` component last in the manifest, and point
 the launcher dashlet at `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs`

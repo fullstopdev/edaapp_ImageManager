@@ -9,7 +9,8 @@ metadata:
 spec:
   selector:
     matchLabels:
-      eda.nokia.com/app: eda-imagemanager-node-agent
+      eda.nokia.com/app: eda-imagemanager
+      eda.nokia.com/component: node-agent
   updateStrategy:
     type: RollingUpdate
     rollingUpdate:
@@ -17,7 +18,8 @@ spec:
   template:
     metadata:
       labels:
-        eda.nokia.com/app: eda-imagemanager-node-agent
+        eda.nokia.com/app: eda-imagemanager
+        eda.nokia.com/component: node-agent
         eda.nokia.com/app-group: control-plane
     spec:
       # Dedicated SA with no RBAC binding; the agent makes zero API calls, so no
@@ -28,10 +30,10 @@ spec:
       # labs, so the redirect must exist on every node.
       tolerations:
         - operator: Exists
-      terminationGracePeriodSeconds: 15
+      terminationGracePeriodSeconds: 10
       containers:
         - name: node-agent
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.6
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.7
           imagePullPolicy: IfNotPresent
           command: ["python3", "nodeagent.py"]
           env:
@@ -39,6 +41,11 @@ spec:
               valueFrom:
                 fieldRef:
                   fieldPath: metadata.namespace
+            # Set false (or scale this DaemonSet to 0) when not using SR-SIM pulls.
+            - name: NODE_AGENT_ENABLED
+              value: "true" # app-set: ${nodeAgentEnabled}
+            - name: RESYNC_SECONDS
+              value: "120"
             - name: PYTHONDONTWRITEBYTECODE   # don't try to write .pyc to the read-only root fs
               value: "1"
           # Root (to write the root-owned containerd config dir) but otherwise
@@ -57,13 +64,6 @@ spec:
               add: ["DAC_OVERRIDE"]
             seccompProfile:
               type: RuntimeDefault
-          lifecycle:
-            preStop:
-              exec:
-                command:
-                  - /bin/sh
-                  - -c
-                  - python3 -c "import nodeagent; nodeagent.cleanup()"
           volumeMounts:
             - name: containerd-conf
               mountPath: /host/etc/containerd

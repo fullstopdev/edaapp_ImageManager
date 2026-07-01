@@ -1543,7 +1543,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(activeTab==="status"){ refresh(); refreshImports(); }
     else { updateStatusBadge(); }
     syncLiveIndicator();
-  }, 5000);
+  }, 10000);
   syncLiveIndicator();
 })();
 </script>

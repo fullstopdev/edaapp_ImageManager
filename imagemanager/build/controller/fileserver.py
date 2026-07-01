@@ -72,6 +72,9 @@ LICENSE_NS = POD_NAMESPACE
 
 _server = None
 _server_lock = threading.Lock()
+_tracked_cache = {"at": 0.0, "data": None}
+_tracked_lock = threading.Lock()
+_TRACKED_TTL = 8  # seconds; UI polls every 10s on the Status tab
 
 # OCI distribution (registry v2) path patterns. `name` may contain '/'.
 _V2_MANIFEST_RE = re.compile(r"^/v2/(.+)/manifests/(.+)$")
@@ -858,6 +861,7 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json(err, err.get("status", 502))
             return
         logger.info("Delete %s/%s (%d artifact(s))", namespace, upload_id, len(names))
+        invalidate_tracked_cache()
         self._send_json({"ok": True, "artifactDeleted": bool(namespace),
                          "localRemoved": True})
 
@@ -911,6 +915,7 @@ class Handler(BaseHTTPRequestHandler):
                 return
             result = import_common.process_zip(tmp_dir, tmp_zip, filename, namespace,
                                                name_override, CONFIG, replace=replace)
+            invalidate_tracked_cache()
             self._send_json(result, result.get("status", 200 if result.get("ok") else 400))
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
@@ -1253,8 +1258,28 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
     return list(groups.values())
 
 
+def invalidate_tracked_cache():
+    """Drop cached artifact rows (call after upload/delete)."""
+    with _tracked_lock:
+        _tracked_cache["at"] = 0.0
+        _tracked_cache["data"] = None
+
+
 def build_tracked_list():
     """Merge PVC upload metadata with live Artifact download status for the UI."""
+    now = time.time()
+    with _tracked_lock:
+        cached = _tracked_cache["data"]
+        if cached is not None and now - _tracked_cache["at"] < _TRACKED_TTL:
+            return cached
+    rows = _build_tracked_list()
+    with _tracked_lock:
+        _tracked_cache["data"] = rows
+        _tracked_cache["at"] = now
+    return rows
+
+
+def _build_tracked_list():
     # one cluster-wide list call, indexed by (namespace, name)
     status_by_key = {}
     try:
