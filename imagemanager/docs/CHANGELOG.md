@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.0.4
+
+Fix missing EDA nav view (entire Image Manager panel absent):
+
+- Restructure `imagemanager-dashboard.json` as a cable-map structural clone
+  (`flexRow` → `dashletDataView`, external HttpProxy nav target) using simpler
+  EQL on `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs`
+  (always has a `default` row) instead of `imagemanagerartifacts` (empty list
+  may fail view registration).
+- Move manifest `view` component to last (cable-map pattern: workloads before view).
+- Register nav under `ui.category: Topology` (cable-map uses Topology; custom
+  `Image Manager` category never appeared in the nav tree).
+- Match cable-map manifest view section field order (`category`, `icon`, `name`).
+- Add `status.open: View` on ImageManagerConfig for launcher View column parity.
+- Regenerate dashboard UUIDs and bump dashboard `version` to `0.0.4`.
+
 ## v0.0.3
 
 Install/uninstall reliability aligned with cable-map patterns:

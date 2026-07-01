@@ -1,32 +1,32 @@
 {
-  "uuid": "65ee5ea8-6712-4401-8fa2-3ce557622430",
+  "uuid": "b4c8e2f1-9a3d-4f5e-8c7b-1d2e3f4a5b6c",
   "name": "Image Manager",
-  "version": "0.0.3",
+  "version": "0.0.4",
   "displayName": "Image Manager",
-  "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
+  "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-01T18:35:00Z",
+  "lastChanged": "2026-07-01T19:00:00Z",
   "screens": [
     {
       "name": "Image Manager",
-      "uuid": "f8a8d005-19a5-438f-817c-48f461edd3a5",
+      "uuid": "c5d9e3f2-0a4e-4f6f-9d8c-2e3f4a5b6c7d",
       "screenType": "dashboard",
       "partOfNav": true,
       "startScreen": true,
       "type": "screen",
       "components": [
         {
-          "uuid": "11cf9396-5fad-49b2-8c5f-5f2f24454794",
+          "uuid": "d6e0f4a3-1b5f-4070-ae9d-3f4a5b6c7d8e",
           "type": "flexRow",
           "flexDirection": "row",
           "horizontalAlignment": "start",
           "verticalAlignment": "start",
           "components": [
             {
-              "uuid": "5f5a9072-8daa-4f96-a471-ac45cade2d6b",
+              "uuid": "e7f1a5b4-2c6f-4181-bf0e-4a5b6c7d8e9f",
               "type": "dashletDataView",
               "title": "Image Manager",
-              "subtitle": "Tracked images and Artifact download status — click View to open the full UI",
+              "subtitle": "Click on View link of this panel to open the Image Manager UI",
               "width": 980,
               "height": 420,
               "fillWidth": true,
@@ -40,60 +40,59 @@
               },
               "componentConfiguration": {
                 "apiConfiguration": {
-                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerartifacts",
+                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs",
                   "queryType": "eql",
                   "requestType": "get",
                   "definition": {
                     "initialModel": {
                       "schema": "v1",
-                      "modelName": "ImageManagerArtifact",
+                      "modelName": "ImageManagerConfig",
                       "primaryKey": "name",
                       "showGroupDisplay": "no",
                       "flat": true,
                       "fields": [
                         {
-                          "fieldName": "displayName",
-                          "label": "Name",
+                          "fieldName": "name",
+                          "label": "Service",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 180,
-                          "flex": 1.6
-                        },
-                        {
-                          "fieldName": "sizeBytes",
-                          "label": "Size",
-                          "type": "number",
-                          "sortable": true,
-                          "minWidth": 110,
-                          "flex": 0.9
-                        },
-                        {
-                          "fieldName": "downloadStatus",
-                          "label": "Status",
-                          "type": "string",
-                          "sortable": true,
-                          "minWidth": 120,
-                          "flex": 1
+                          "minWidth": 160,
+                          "flex": 1.4
                         },
                         {
                           "fieldName": "open",
                           "label": "View",
                           "type": "string",
                           "sortable": false,
-                          "minWidth": 90,
+                          "minWidth": 100,
                           "flex": 0.7
                         },
                         {
-                          "fieldName": "namespace",
-                          "label": "Namespace",
+                          "fieldName": "health",
+                          "label": "Status",
                           "type": "string",
-                          "visible": false,
                           "sortable": true,
-                          "minWidth": 140,
-                          "flex": 1.1
+                          "minWidth": 170,
+                          "flex": 1.6
                         },
                         {
-                          "fieldName": "statusReason",
+                          "fieldName": "uploadsStored",
+                          "label": "Uploads",
+                          "type": "number",
+                          "sortable": true,
+                          "minWidth": 130,
+                          "flex": 1
+                        },
+                        {
+                          "fieldName": "bytesStored",
+                          "label": "Bytes",
+                          "type": "number",
+                          "sortable": true,
+                          "minWidth": 100,
+                          "flex": 0.8
+                        },
+                        {
+                          "fieldName": "message",
                           "label": "Message",
                           "type": "string",
                           "visible": false,
@@ -101,12 +100,12 @@
                           "width": "260px"
                         },
                         {
-                          "fieldName": "artifactName",
-                          "label": "Artifact ID",
+                          "fieldName": "version",
+                          "label": "Version",
                           "type": "string",
                           "visible": false,
                           "sortable": false,
-                          "width": "200px"
+                          "width": "260px"
                         }
                       ]
                     }

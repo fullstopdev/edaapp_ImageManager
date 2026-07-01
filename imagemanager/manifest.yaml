@@ -22,7 +22,7 @@ spec:
     central image store or data lake; this app is a self-contained alternative for
     labs and PoCs where standing up that external store is unnecessary friction.
   author: EDACommunity
-  image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-app:v0.0.3
+  image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-app:v0.0.4
   supportedCoreVersions:
     - "v5.0.0-0"
   appInfo:
@@ -65,13 +65,6 @@ spec:
           listKind: ImageManagerArtifactList
           plural: imagemanagerartifacts
           singular: imagemanagerartifact
-    - view:
-        path: imagemanager/ui/imagemanager-dashboard.json
-        ui:
-          category: Image Manager
-          name: Image Manager
-          icon: Import
-    # RBAC and storage before workloads (cable-map pattern: identity + deps first).
     - cr:
         path: imagemanager/manifests/rbac.yaml
     - cr:
@@ -86,6 +79,12 @@ spec:
         path: imagemanager/manifests/httpproxy.yaml
     - cr:
         path: imagemanager/manifests/daemonset.yaml
+    - view:
+        path: imagemanager/ui/imagemanager-dashboard.json
+        ui:
+          category: Topology
+          icon: Import
+          name: Image Manager
   dependencies:
     - file:
         path: utils

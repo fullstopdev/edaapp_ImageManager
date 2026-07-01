@@ -17,6 +17,7 @@ Y_UPLOADSSTORED = 'uploadsStored'
 Y_BYTESSTORED = 'bytesStored'
 Y_ARTIFACTS = 'artifacts'
 Y_VERSION = 'version'
+Y_OPEN = 'open'
 Y_DISPLAYNAME = 'displayName'
 Y_NAMESPACE = 'namespace'
 Y_REPO = 'repo'
@@ -25,7 +26,6 @@ Y_SIZEBYTES = 'sizeBytes'
 Y_DOWNLOADSTATUS = 'downloadStatus'
 Y_STATUSREASON = 'statusReason'
 Y_EXTERNALURL = 'externalUrl'
-Y_OPEN = 'open'
 # Package objects (GVK Schemas)
 IMAGEMANAGERCONFIG_SCHEMA = eda.Schema(group='imagemanager.eda.edacommunity.com', version='v1alpha1', kind='ImageManagerConfig')
 
@@ -158,6 +158,7 @@ class ImageManagerConfigStatus:
         bytesStored: int | None = None,
         artifacts: list[TrackedArtifact] | None = None,
         version: str | None = None,
+        open: str | None = None,
     ):
         self.health = health
         self.message = message
@@ -166,6 +167,7 @@ class ImageManagerConfigStatus:
         self.bytesStored = bytesStored
         self.artifacts = artifacts
         self.version = version
+        self.open = open
 
     def to_input(self):  # pragma: no cover
         _rval = {}
@@ -183,6 +185,8 @@ class ImageManagerConfigStatus:
             _rval[Y_ARTIFACTS] = [x.to_input() for x in self.artifacts]
         if self.version is not None:
             _rval[Y_VERSION] = self.version
+        if self.open is not None:
+            _rval[Y_OPEN] = self.open
         return _rval
 
     @staticmethod
@@ -198,6 +202,7 @@ class ImageManagerConfigStatus:
                 for x in obj.get(Y_ARTIFACTS):
                     _artifacts.append(TrackedArtifact.from_input(x))
             _version = obj.get(Y_VERSION)
+            _open = obj.get(Y_OPEN)
             return ImageManagerConfigStatus(
                 health=_health,
                 message=_message,
@@ -206,6 +211,7 @@ class ImageManagerConfigStatus:
                 bytesStored=_bytesStored,
                 artifacts=_artifacts,
                 version=_version,
+                open=_open,
             )
         return None  # pragma: no cover
 

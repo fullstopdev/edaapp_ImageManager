@@ -140,6 +140,10 @@
           "description": "Message is a human-readable explanation of the current health state.",
           "type": "string"
         },
+        "open": {
+          "description": "Open is the launcher dashlet View link label (cable-map parity).",
+          "type": "string"
+        },
         "uploadsStored": {
           "description": "UploadsStored is the number of upload files currently on the PVC.",
           "type": "integer"

@@ -83,6 +83,9 @@ type ImageManagerConfigStatus struct {
 
 	// Version is the controller version string.
 	Version string `json:"version,omitempty"`
+
+	// Open is the launcher dashlet View link label (cable-map parity).
+	Open string `json:"open,omitempty"`
 }
 
 // TrackedArtifact is a denormalized record of one Artifact CR created by this
