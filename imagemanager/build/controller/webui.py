@@ -611,6 +611,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   </div>
 </div>
 
+<!-- replace-on-conflict confirm dialog -->
+<div class="dialog confirm" id="replaceDialog" role="dialog" aria-modal="true" aria-labelledby="replaceTitle">
+  <h2 class="dialog-title" id="replaceTitle">Replace existing artifact?</h2>
+  <div class="dialog-body">
+    <p id="replaceLead"></p>
+  </div>
+  <div class="dialog-actions">
+    <button class="btn text subtle ripple" id="replaceCancel">Cancel</button>
+    <button class="btn primary ripple" id="replaceOk">Replace</button>
+  </div>
+</div>
+
 <!-- delete-artifact confirm dialog (warning + explicit acknowledgement) -->
 <div class="dialog confirm" id="confirmDialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
   <h2 class="dialog-title danger-title" id="confirmTitle">Delete artifact</h2>
@@ -885,6 +897,30 @@ INDEX_HTML = r"""<!DOCTYPE html>
     openModal(el("confirmDialog"));
   }
 
+  // ---------- replace-on-conflict confirm dialog ----------
+  var replaceLead=el("replaceLead"), replaceOk=el("replaceOk"), pendingReplace=null;
+  el("replaceCancel").addEventListener("click", function(){
+    pendingReplace=null; closeModal();
+  });
+  replaceOk.addEventListener("click", function(){
+    var fn=pendingReplace; pendingReplace=null; closeModal(); if(fn) fn();
+  });
+  function askReplace(artifactName, namespace, onReplace){
+    replaceLead.innerHTML='Artifact <b class="mono">'+esc(artifactName)+'</b> already exists in '+
+      '<span class="mono">'+esc(namespace)+'</span>. Replace it?';
+    pendingReplace=onReplace;
+    openModal(el("replaceDialog"));
+  }
+  function isConflictResponse(status, r){
+    return status===409 && r && (r.conflict || /already exists/i.test(r.error||""));
+  }
+  function conflictInfo(r, fallbackName, fallbackNs){
+    return {
+      artifactName: (r&&r.artifactName)||fallbackName,
+      namespace: (r&&r.namespace)||fallbackNs
+    };
+  }
+
   function fillNamespaceSelects(names, defaultNs){
     [ns, urlNs].forEach(function(sel){
       if(!sel) return;
@@ -1002,12 +1038,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // Single upload path. The NOS is auto-detected server-side from the zip; md5
   // and the YANG schema profile are handled automatically.
-  function doUpload(f, namespace, lic){
+  function doUpload(f, namespace, lic, replace){
     // Lowercase unconditionally here (the authoritative client-side point), so the
     // query param and the live pending row match the server's lowercased name
     // regardless of how text reached the field — the input listener is then cosmetic.
     var name=(imageName.value||deriveName(f.name)).trim().toLowerCase();
     var qs=new URLSearchParams({ filename:f.name, namespace:namespace, name:name });
+    if(replace) qs.set("replace","true");
     var key="u"+(++uploadSeq);
     var p={ key:key, displayName:name, namespace:namespace, total:f.size, isZip:true,
             phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0 };
@@ -1015,6 +1052,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
     sendUpload(api("/api/upload")+"?"+qs.toString(), f, p, {
       onBodySent:function(){ p.phase="Unzipping"; paintPendingCell(p); },
       onDone:function(status, r){
+        if(isConflictResponse(status, r)){
+          delete pendingUploads[key]; render();
+          var info=conflictInfo(r, name, namespace);
+          askReplace(info.artifactName, info.namespace, function(){
+            doUpload(f, namespace, lic, true);
+          });
+          return;
+        }
         if(status>=200 && status<300 && r.ok){
           // The authoritative row now exists server-side; clear the pending row.
           delete pendingUploads[key];
@@ -1205,6 +1250,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
   });
 
+  importRows.addEventListener("click", function(e){
+    var b=e.target.closest("button[data-act='retry-import']");
+    if(!b) return;
+    var payload={
+      url: b.getAttribute("data-url")||"",
+      namespace: b.getAttribute("data-ns")||"",
+      insecureSkipTLSVerify: !!el("urlInsecure").checked
+    };
+    var nm=(b.getAttribute("data-name")||"").trim();
+    if(nm) payload.name=nm.toLowerCase();
+    var m=/Artifact named '([^']+)' already exists in ([^.]+)/.exec(
+      (b.parentElement&&b.parentElement.textContent)||"");
+    if(m){
+      askReplace(m[1], m[2].trim(), function(){ startUrlImport(payload, true); });
+    } else {
+      startUrlImport(payload, true);
+    }
+  });
+
   // sorting
   var STATUS_RANK={Available:0,Ready:0,InProgress:1,Error:2,Failed:3,NoArtifact:4};
   var currentData=[], sortState=null;  // null = server order (newest first)
@@ -1261,6 +1325,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     updateStatusBadge();
   }
 
+  function isImportConflict(i){
+    return i.phase==="Failed" && /already exists/i.test(i.message||"");
+  }
   function renderImports(list){
     lastImports = list || [];
     if(!list || !list.length){
@@ -1269,9 +1336,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return;
     }
     importRows.innerHTML = list.map(function(i){
+      var retry=isImportConflict(i)
+        ? (' <button class="btn text ripple" data-act="retry-import" data-url="'+esc(i.sourceUrl)+'"'+
+           ' data-ns="'+esc(i.namespace)+'" data-name="'+esc(i.specName||"")+'">Replace</button>')
+        : "";
       return '<tr><td class="mono">'+esc(i.name)+'</td><td>'+esc(i.namespace)+'</td>'+
         '<td class="mono">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase)+'</td>'+
-        '<td>'+esc(i.message||"")+'</td></tr>';
+        '<td>'+esc(i.message||"")+retry+'</td></tr>';
     }).join("");
     if(activeTab !== "status") render();
   }
@@ -1330,6 +1401,28 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }).catch(function(){ snack("err","Save failed (network).", true); });
   });
 
+  function startUrlImport(payload, replace){
+    var body=Object.assign({}, payload);
+    if(replace) body.replace=true;
+    return fetchJson(api("/api/url-import"), {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)
+    }).then(function(res){
+      if(res.ok && res.body && res.body.ok){
+        snack("ok","URL import started: "+res.body.namespace+"/"+res.body.name);
+        el("urlSource").value=""; el("urlName").value=""; el("urlLicText").value="";
+        showTab("status");
+        refreshImports();
+      } else if(isConflictResponse(res.status, res.body) && !replace){
+        var info=conflictInfo(res.body, body.name||"", body.namespace||"");
+        askReplace(info.artifactName, info.namespace, function(){ startUrlImport(payload, true); });
+      } else {
+        snack("err",(res.body&&res.body.error)||("Import failed (HTTP "+res.status+")"), true);
+      }
+    });
+  }
+
   el("urlImportBtn").addEventListener("click", function(){
     var url=(el("urlSource").value||"").trim();
     var namespace=(urlNs.value||"").trim();
@@ -1342,20 +1435,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var nm=(el("urlName").value||"").trim();
     if(nm) payload.name=nm.toLowerCase();
     if(lic) payload.licenseKey=lic;
-    fetchJson(api("/api/url-import"), {
-      method:"POST",
-      headers:{"Content-Type":"application/json"},
-      body:JSON.stringify(payload)
-    }).then(function(res){
-      if(res.ok && res.body && res.body.ok){
-        snack("ok","URL import started: "+res.body.namespace+"/"+res.body.name);
-        el("urlSource").value=""; el("urlName").value=""; el("urlLicText").value="";
-        showTab("status");
-        refreshImports();
-      } else {
-        snack("err",(res.body&&res.body.error)||("Import failed (HTTP "+res.status+")"), true);
-      }
-    }).catch(function(){ snack("err","Import failed (network).", true); });
+    startUrlImport(payload, false).catch(function(){ snack("err","Import failed (network).", true); });
   });
 
   function fmtGB(b){ return ((b||0)/1073741824).toFixed(1)+" GB"; }

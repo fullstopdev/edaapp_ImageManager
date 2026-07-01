@@ -119,10 +119,13 @@ def _process_one(cr, config):
                       message="Detecting image type and creating Artifact(s)")
 
         filename = os.path.basename(source_url.split("?")[0]) or "import.zip"
+        replace = ((cr.get("metadata") or {}).get("annotations") or {}).get(
+            import_common.REPLACE_ANNOTATION) == "true"
         result = import_common.process_zip(
             tmp_dir, tmp_zip, filename, namespace,
             (spec.get("name") or "").strip(),
             {**config, **({"defaultRepo": spec["repo"]} if spec.get("repo") else {})},
+            replace=replace,
         )
 
         cr3 = k8s.read_namespaced_cr(GROUP, VERSION, namespace, PLURAL, name) or cr2

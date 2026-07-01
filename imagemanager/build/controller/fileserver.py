@@ -466,6 +466,7 @@ class Handler(BaseHTTPRequestHandler):
                     "name": md.get("name", ""),
                     "namespace": md.get("namespace", ""),
                     "sourceUrl": spec.get("sourceUrl", ""),
+                    "specName": spec.get("name", ""),
                     "phase": st.get("phase") or "Pending",
                     "message": st.get("message", ""),
                     "detectedNos": st.get("detectedNos", ""),
@@ -727,12 +728,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         url = (body.get("url") or body.get("sourceUrl") or "").strip()
         namespace = (body.get("namespace") or "").strip()
+        replace = body.get("replace") in (True, "true", "1", 1)
         if not url or not url.lower().startswith(("http://", "https://")):
             self._send_json({"ok": False, "error": "url must be an http(s) URL"}, 400)
             return
         if not namespace:
             self._send_json({"ok": False, "error": "namespace is required"}, 400)
             return
+        name_hint = (body.get("name") or "").strip().lower()
+        if not name_hint:
+            name_hint = uploads.derive_name(
+                os.path.basename(url.split("?")[0]) or "import.zip")
+        upload_id = uploads.to_k8s_name(name_hint) if name_hint else ""
+        if upload_id and not replace:
+            conflict = import_common.check_conflict(upload_id, namespace, name_hint)
+            if conflict:
+                self._send_json(conflict, 409)
+                return
         base_name = uploads.to_k8s_name(
             (body.get("name") or "").strip()
             or os.path.basename(url.split("?")[0]).replace(".zip", "")
@@ -763,6 +775,10 @@ class Handler(BaseHTTPRequestHandler):
             "metadata": {"name": cr_name, "namespace": namespace},
             "spec": spec,
         }
+        if replace:
+            cr_body["metadata"]["annotations"] = {
+                import_common.REPLACE_ANNOTATION: "true",
+            }
         try:
             k8s.create_namespaced_cr(
                 IM_CRD_GROUP, IM_CRD_VERSION, namespace, IM_IMPORT_PLURAL, cr_body)
@@ -828,60 +844,19 @@ class Handler(BaseHTTPRequestHandler):
         upload_id = one("uploadId")
         namespace = one("namespace")
         name = one("name")
-        meta = uploads.read_meta(upload_id) if upload_id else None
+        if not upload_id:
+            self._send_json({"ok": False, "error": "uploadId query param required"}, 400)
+            return
+        meta = uploads.read_meta(upload_id)
         namespace = namespace or (meta or {}).get("namespace")
-        # Collect every Artifact this upload created: a group (SR OS) lists them in
-        # meta.artifacts (+ yang); a single image is name + its optional md5 sidecar.
-        names = []
-        if meta and meta.get("artifacts"):
-            for a in meta["artifacts"]:
-                if a.get("artifactName"):
-                    names.append(a["artifactName"])
-                if a.get("md5ArtifactName"):     # per-file md5 sidecar Artifact (SR OS)
-                    names.append(a["md5ArtifactName"])
-            yang = meta.get("yang") or {}
-            if yang.get("artifactName"):
-                names.append(yang["artifactName"])
-        else:
-            md5_name = (meta or {}).get("md5ArtifactName") or ""
-            yang = (meta or {}).get("yang") or {}
-            names = [n for n in (name, md5_name, yang.get("artifactName")) if n]
-        artifact_deleted = False
-        if namespace:
-            for art_name in names:
-                try:
-                    artifact.delete_artifact(namespace, art_name)
-                    artifact_deleted = True
-                except urllib.error.HTTPError as e:
-                    if e.code != 404:
-                        self._send_json({"ok": False,
-                                         "error": f"Artifact delete failed (HTTP {e.code})"}, 502)
-                        return
-                    artifact_deleted = True  # already gone
-        # Also drop the image's license ConfigMap (if one was attached). It lives in
-        # eda-system, not the image's artifact namespace. Guard on the managed label
-        # so we never delete an EDA-owned (or otherwise foreign) ConfigMap even if
-        # meta somehow points at one.
-        lic = (meta or {}).get("license") or {}
-        lic_cm = lic.get("configMap")
-        if lic_cm:
-            lic_ns = lic.get("namespace") or LICENSE_NS
-            try:
-                ex = k8s.read_configmap(lic_cm, lic_ns)
-                owned = ((ex or {}).get("metadata", {}).get("labels", {}) or {}).get(
-                    artifact.MANAGED_LABEL) == "true"
-                if ex is not None and owned:
-                    k8s.delete_configmap(lic_cm, lic_ns)
-                elif ex is not None:
-                    logger.warning("refusing to delete non-managed ConfigMap %s/%s referenced "
-                                   "by %s", lic_ns, lic_cm, upload_id)
-            except Exception as e:  # noqa: BLE001 - best-effort; image delete still succeeds
-                logger.warning("license ConfigMap %s delete failed: %s", lic_cm, e)
-        local_removed = uploads.delete_upload(upload_id) if upload_id else False
-        logger.info("Delete %s/%s (%d artifact(s)) (artifactDeleted=%s localRemoved=%s)",
-                    namespace, upload_id, len(names), artifact_deleted, local_removed)
-        self._send_json({"ok": True, "artifactDeleted": artifact_deleted,
-                         "localRemoved": local_removed})
+        names = import_common.collect_artifact_names(meta, name or upload_id)
+        err = import_common.cleanup_existing(upload_id, namespace, name or upload_id)
+        if err:
+            self._send_json(err, err.get("status", 502))
+            return
+        logger.info("Delete %s/%s (%d artifact(s))", namespace, upload_id, len(names))
+        self._send_json({"ok": True, "artifactDeleted": bool(namespace),
+                         "localRemoved": True})
 
     def _handle_upload(self, q):
         """Single entry point for image uploads. Only vendor .zip files are
@@ -895,6 +870,7 @@ class Handler(BaseHTTPRequestHandler):
         filename = uploads.sanitize_filename(one("filename", ""))
         namespace = (one("namespace") or "").strip()
         name_override = (one("name") or "").strip()
+        replace = (one("replace") or "").lower() in ("true", "1", "yes")
         if not filename:
             self._send_json({"ok": False, "error": "filename query param required"}, 400)
             return
@@ -931,7 +907,7 @@ class Handler(BaseHTTPRequestHandler):
                                  "error": "the uploaded file is not a valid .zip archive"}, 400)
                 return
             result = import_common.process_zip(tmp_dir, tmp_zip, filename, namespace,
-                                               name_override, CONFIG)
+                                               name_override, CONFIG, replace=replace)
             self._send_json(result, result.get("status", 200 if result.get("ok") else 400))
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)

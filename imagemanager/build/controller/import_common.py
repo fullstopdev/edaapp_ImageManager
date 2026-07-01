@@ -29,12 +29,123 @@ logger = logging.getLogger("import_common")
 POD_NAMESPACE = os.environ.get("POD_NAMESPACE", "eda-system")
 LICENSE_NS = POD_NAMESPACE
 UPLOAD_DIR = "/data/uploads"
+REPLACE_ANNOTATION = "imagemanager.eda.edacommunity.com/replace"
 
 _VER_RE = re.compile(r"(\d+\.\d+\.[A-Za-z]?\d+(?:-\d+)?)")
 
 
-def _err(status, message):
-    return {"ok": False, "status": status, "error": message}
+def _err(status, message, **extra):
+    out = {"ok": False, "status": status, "error": message}
+    out.update(extra)
+    return out
+
+
+def _conflict_err(display_name, artifact_name, namespace, kind="image"):
+    """409 with structured fields for the UI replace dialog."""
+    if kind == "artifact":
+        msg = (f"An Artifact named '{artifact_name}' already exists "
+               f"in {namespace}. Delete it first.")
+    else:
+        msg = (f"An image named '{display_name}' already exists. "
+               f"Delete it first to replace it.")
+    return _err(409, msg, conflict=True, artifactName=artifact_name,
+                displayName=display_name, namespace=namespace)
+
+
+def image_exists_locally(upload_id):
+    if not upload_id:
+        return False
+    return os.path.isfile(os.path.join(UPLOAD_DIR, upload_id, "meta.json"))
+
+
+def artifact_cr_exists(namespace, name):
+    if not namespace or not name:
+        return False
+    return k8s.read_namespaced_cr(
+        artifact.ARTIFACT_GROUP, artifact.ARTIFACT_VERSION,
+        namespace, artifact.ARTIFACT_PLURAL, name) is not None
+
+
+def collect_artifact_names(meta, primary_name):
+    """Artifact CR names tied to one upload (mirrors fileserver delete)."""
+    if meta and meta.get("artifacts"):
+        names = []
+        for a in meta["artifacts"]:
+            if a.get("artifactName"):
+                names.append(a["artifactName"])
+            if a.get("md5ArtifactName"):
+                names.append(a["md5ArtifactName"])
+        yang = meta.get("yang") or {}
+        if yang.get("artifactName"):
+            names.append(yang["artifactName"])
+        return names
+    md5_name = (meta or {}).get("md5ArtifactName") or ""
+    yang = (meta or {}).get("yang") or {}
+    return [n for n in (primary_name, md5_name, yang.get("artifactName")) if n]
+
+
+def check_conflict(upload_id, namespace, display_name=None):
+    """Return a 409 result dict when an upload id is already taken, else None."""
+    if not upload_id:
+        return None
+    display_name = (display_name or upload_id).strip().lower()
+    if image_exists_locally(upload_id):
+        return _conflict_err(display_name, upload_id, namespace, "image")
+    if artifact_cr_exists(namespace, upload_id):
+        return _conflict_err(display_name, upload_id, namespace, "artifact")
+    return None
+
+
+def cleanup_existing(upload_id, namespace=None, primary_name=None):
+    """Delete Artifact CRs, license ConfigMap, and PVC storage for an upload."""
+    if not upload_id or any(c in upload_id for c in ("/", "\\", "..")):
+        return _err(400, "valid upload id required")
+    meta = uploads.read_meta(upload_id)
+    namespace = namespace or (meta or {}).get("namespace")
+    primary_name = primary_name or upload_id
+    names = collect_artifact_names(meta, primary_name)
+    if not meta:
+        names = list(dict.fromkeys(names + [
+            primary_name,
+            primary_name + "-md5",
+            primary_name + "-yang",
+        ]))
+    if namespace:
+        for art_name in names:
+            try:
+                artifact.delete_artifact(namespace, art_name)
+            except urllib.error.HTTPError as e:
+                if e.code != 404:
+                    return _err(502, f"Artifact delete failed (HTTP {e.code})")
+    lic = (meta or {}).get("license") or {}
+    lic_cm = lic.get("configMap")
+    if lic_cm:
+        lic_ns = lic.get("namespace") or LICENSE_NS
+        try:
+            ex = k8s.read_configmap(lic_cm, lic_ns)
+            owned = ((ex or {}).get("metadata", {}).get("labels", {}) or {}).get(
+                artifact.MANAGED_LABEL) == "true"
+            if ex is not None and owned:
+                k8s.delete_configmap(lic_cm, lic_ns)
+            elif ex is not None:
+                logger.warning("refusing to delete non-managed ConfigMap %s/%s referenced "
+                               "by %s", lic_ns, lic_cm, upload_id)
+        except Exception as e:  # noqa: BLE001
+            logger.warning("license ConfigMap %s delete failed: %s", lic_cm, e)
+    uploads.delete_upload(upload_id)
+    logger.info("Replaced/cleaned %s/%s (%d artifact(s))", namespace, upload_id, len(names))
+    return None
+
+
+def _ensure_replace(upload_id, display_name, artifact_name, namespace, replace):
+    """When replace is set, remove any existing upload; otherwise return 409."""
+    if replace:
+        return cleanup_existing(upload_id, namespace, artifact_name)
+    if image_exists_locally(upload_id):
+        return _conflict_err(display_name, artifact_name, namespace, "image")
+    if artifact_cr_exists(namespace, artifact_name):
+        return _conflict_err(display_name, artifact_name, namespace, "artifact")
+    return None
 
 
 def _create_yang_artifact(namespace, upload_id, yname, yang_filename, base_url):
@@ -60,16 +171,16 @@ def _create_yang_artifact(namespace, upload_id, yname, yang_filename, base_url):
             return False, None
 
 
-def _process_srl(tmp_zip, filename, namespace, name_override, config):
+def _process_srl(tmp_zip, filename, namespace, name_override, config, replace=False):
     repo = (config.get("defaultRepo") or "images").strip()
     display_name = (name_override or uploads.derive_name(filename)).strip().lower()
     artifact_name = uploads.to_k8s_name(display_name)
     if not artifact_name:
         return _err(400, "could not derive a valid image name")
     upload_dir = os.path.join(UPLOAD_DIR, artifact_name)
-    if os.path.isfile(os.path.join(upload_dir, "meta.json")):
-        return _err(409, f"An image named '{display_name}' already exists. "
-                         f"Delete it first to replace it.")
+    err = _ensure_replace(artifact_name, display_name, artifact_name, namespace, replace)
+    if err:
+        return err
     shutil.rmtree(upload_dir, ignore_errors=True)
     os.makedirs(upload_dir, exist_ok=True)
     try:
@@ -89,16 +200,34 @@ def _process_srl(tmp_zip, filename, namespace, name_override, config):
         artifact.create_artifact(namespace, artifact_name, repo, image_file_path,
                                   file_url, md5_url if md5 else None)
     except urllib.error.HTTPError as e:
-        shutil.rmtree(upload_dir, ignore_errors=True)
-        if e.code == 409:
-            return _err(409, f"An Artifact named '{artifact_name}' already exists "
-                             f"in {namespace}. Delete it first.")
-        detail = ""
-        try:
-            detail = e.read().decode("utf-8", errors="replace")[:300]
-        except Exception:  # noqa: BLE001
-            pass
-        return _err(502, f"Artifact create failed (HTTP {e.code}): {detail}")
+        if e.code == 409 and replace:
+            cleanup_existing(artifact_name, namespace, artifact_name)
+            try:
+                artifact.create_artifact(namespace, artifact_name, repo, image_file_path,
+                                          file_url, md5_url if md5 else None)
+            except urllib.error.HTTPError as e2:
+                shutil.rmtree(upload_dir, ignore_errors=True)
+                if e2.code == 409:
+                    return _conflict_err(display_name, artifact_name, namespace, "artifact")
+                detail = ""
+                try:
+                    detail = e2.read().decode("utf-8", errors="replace")[:300]
+                except Exception:  # noqa: BLE001
+                    pass
+                return _err(502, f"Artifact create failed (HTTP {e2.code}): {detail}")
+            except Exception as e2:  # noqa: BLE001
+                shutil.rmtree(upload_dir, ignore_errors=True)
+                return _err(502, f"Artifact create failed: {e2}")
+        else:
+            shutil.rmtree(upload_dir, ignore_errors=True)
+            if e.code == 409:
+                return _conflict_err(display_name, artifact_name, namespace, "artifact")
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", errors="replace")[:300]
+            except Exception:  # noqa: BLE001
+                pass
+            return _err(502, f"Artifact create failed (HTTP {e.code}): {detail}")
     except Exception as e:  # noqa: BLE001 - don't orphan the extracted file
         shutil.rmtree(upload_dir, ignore_errors=True)
         return _err(502, f"Artifact create failed: {e}")
@@ -132,7 +261,7 @@ def _process_srl(tmp_zip, filename, namespace, name_override, config):
             "sizeBytes": written, "yangCreated": yang_created}
 
 
-def _process_sros(tmp_dir, tmp_zip, namespace, name_override, config):
+def _process_sros(tmp_dir, tmp_zip, namespace, name_override, config, replace=False):
     try:
         version_disp, extracted = uploads.extract_sros_images(tmp_zip, tmp_dir)
     except uploads.BadZip as e:
@@ -143,9 +272,9 @@ def _process_sros(tmp_dir, tmp_zip, namespace, name_override, config):
     if not group_id:
         return _err(400, "could not derive a valid image name")
     group_dir = os.path.join(UPLOAD_DIR, group_id)
-    if os.path.isfile(os.path.join(group_dir, "meta.json")):
-        return _err(409, f"An image named '{display_name}' already exists. "
-                         f"Delete it first to replace it.")
+    err = _ensure_replace(group_id, display_name, group_id, namespace, replace)
+    if err:
+        return err
     shutil.rmtree(group_dir, ignore_errors=True)
     os.makedirs(group_dir, exist_ok=True)
     total = 0
@@ -179,13 +308,14 @@ def _process_sros(tmp_dir, tmp_zip, namespace, name_override, config):
                                       fn, file_url, md5_url if md5 else None)
         except urllib.error.HTTPError as e:
             rollback()
+            if e.code == 409:
+                return _conflict_err(display_name, group_id, namespace, "artifact")
             detail = ""
             try:
                 detail = e.read().decode("utf-8", "replace")[:200]
             except Exception:  # noqa: BLE001
                 pass
-            return _err(409 if e.code == 409 else 502,
-                       f"Artifact {art_name} create failed (HTTP {e.code}): {detail}")
+            return _err(502, f"Artifact {art_name} create failed (HTTP {e.code}): {detail}")
         except Exception as e:  # noqa: BLE001 - roll back, never orphan
             rollback()
             return _err(502, f"Artifact {art_name} create failed: {e}")
@@ -231,15 +361,15 @@ def _process_sros(tmp_dir, tmp_zip, namespace, name_override, config):
             "yangCreated": bool(yang_meta), "note": note}
 
 
-def _process_srsim(tmp_zip, filename, namespace, name_override, config):
+def _process_srsim(tmp_zip, filename, namespace, name_override, config, replace=False):
     display_name = (name_override or uploads.derive_name(filename)).strip().lower()
     artifact_name = uploads.to_k8s_name(display_name)
     if not artifact_name:
         return _err(400, "could not derive a valid image name")
     image_dir = os.path.join(UPLOAD_DIR, artifact_name)
-    if os.path.isfile(os.path.join(image_dir, "meta.json")):
-        return _err(409, f"An image named '{display_name}' already exists. "
-                         f"Delete it first to replace it.")
+    err = _ensure_replace(artifact_name, display_name, artifact_name, namespace, replace)
+    if err:
+        return err
     shutil.rmtree(image_dir, ignore_errors=True)
     os.makedirs(image_dir, exist_ok=True)
     try:
@@ -274,7 +404,7 @@ def _process_srsim(tmp_zip, filename, namespace, name_override, config):
             "sizeBytes": oci.get("sizeBytes"), "yangCreated": bool(yang_meta)}
 
 
-def process_zip(tmp_dir, tmp_zip, filename, namespace, name_override, config):
+def process_zip(tmp_dir, tmp_zip, filename, namespace, name_override, config, replace=False):
     """Detect the NOS in tmp_zip and dispatch to the matching processor.
     Returns a result dict: {"ok": True, ...fields} or
     {"ok": False, "status": <http-like code>, "error": <message>}.
@@ -284,11 +414,11 @@ def process_zip(tmp_dir, tmp_zip, filename, namespace, name_override, config):
         return _err(400, "the file is not a valid .zip archive")
     nos = uploads.detect_nos_from_zip(tmp_zip)
     if nos == "srsim":
-        return _process_srsim(tmp_zip, filename, namespace, name_override, config)
+        return _process_srsim(tmp_zip, filename, namespace, name_override, config, replace)
     if nos == "sros":
-        return _process_sros(tmp_dir, tmp_zip, namespace, name_override, config)
+        return _process_sros(tmp_dir, tmp_zip, namespace, name_override, config, replace)
     if nos == "srl":
-        return _process_srl(tmp_zip, filename, namespace, name_override, config)
+        return _process_srl(tmp_zip, filename, namespace, name_override, config, replace)
     return _err(400, "could not detect an SR Linux (.bin), SR OS 7750 TiMOS, "
                      "or SR-SIM (srsim.tar.xz) image inside the zip")
 
