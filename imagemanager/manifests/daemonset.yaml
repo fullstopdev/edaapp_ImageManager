@@ -33,7 +33,7 @@ spec:
       terminationGracePeriodSeconds: 10
       containers:
         - name: node-agent
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.7
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.1
           imagePullPolicy: IfNotPresent
           command: ["python3", "nodeagent.py"]
           env:

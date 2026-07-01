@@ -1,18 +1,10 @@
 # Changelog
 
-## v0.0.7
+## v0.0.1
 
-- Fix blank EDA nav view: dashlet field bindings must use flat status column names (`displayName`, `open`, …) when querying `.cluster...imagemanagerartifacts`; v0.0.6 incorrectly prefixed fields with `status.` and `metadata.name` primaryKey, which prevented the dashboard from rendering at all.
+Initial public release (Image Manager for EDA):
 
-## v0.0.6
-
-- Fix empty launcher dashlet: EDA EQL cannot expand nested `ImageManagerConfig.status.artifacts` arrays. Re-introduce cluster-scoped `ImageManagerArtifact` CRs (one row per tracked upload) synced by the controller; dashboard queries `.cluster...imagemanagerartifacts` with `status.*` column bindings (cable-map flat-table pattern). Add RBAC and `imagemanager-viewer` tableRules for the new CR.
-
-## v0.0.5
-
-- Release bump: launcher (`status.artifacts` EQL) and Artifact CR fallback rows; publish workflow adds `edabuilder publish --force` for catalog republish safety.
-
-## v0.0.4
-
-- Launcher dashlet reads `ImageManagerConfig.status.artifacts` via EQL (`.cluster...imagemanagerconfigs.default.status.artifacts`); controller mirrors tracked uploads and synthesizes fallback rows from managed Artifact CRs when PVC metadata is missing.
-- Dropped the unused `ImageManagerArtifact` CRD after confirming nested `status.artifacts` works with EDA EQL.
+- Web UI to upload SR Linux, SR OS hardware, and SR-SIM zips; automatic type detection, md5, and YANG schema profile resolution (schema-profiles or on-the-fly from `nokia/7x50_YangModels`).
+- Controller file server, Artifact CR management, PVC-backed storage, and NodeProfile snippet helpers.
+- EDA launcher dashboard with cluster-scoped `ImageManagerArtifact` CRs (flat status column bindings for EDA EQL).
+- Offline air-gap bundle attached to each GitHub Release under `apps/imagemanager.eda.edacommunity.com/<version>`.

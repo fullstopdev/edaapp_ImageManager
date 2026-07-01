@@ -275,7 +275,7 @@ unset GHCR_TOKEN
 
 Build & publish flow (high level): `docker build/push` the controller image → `edabuilder build-push` the app bundle to GHCR → `edabuilder publish app` the catalog entry + version tag → attach the offline bundle to the GitHub Release.
 
-**Versioning:** the app uses **semantic versioning** for releases, starting at `v0.0.0`. Bump the **patch** for each release (`v0.0.1`, `v0.0.2`, …) when you change `spec.image` in `imagemanager/manifest.yaml` and the matching controller image refs in `imagemanager/manifests/` (and `VERSION` in `imagemanager/build/controller/main.py`). The controller image, app bundle, and catalog tag `apps/imagemanager.eda.edacommunity.com/<version>` all share the same tag (with a leading `v`, as required by `edabuilder`).
+**Versioning:** the app uses **semantic versioning** for releases, starting at `v0.0.1` (first release; prior experimental tags were removed). Bump the **patch** for each release (`v0.0.2`, `v0.0.3`, …) when you change `spec.image` in `imagemanager/manifest.yaml` and the matching controller image refs in `imagemanager/manifests/` (and `VERSION` in `imagemanager/build/controller/main.py`). The controller image, app bundle, and catalog tag `apps/imagemanager.eda.edacommunity.com/<version>` all share the same tag (with a leading `v`, as required by `edabuilder`).
 
 The EDA toolchain version in `PROJECT` (`builderVersion`, e.g. `v26.4.2`) is separate — it pins which `edabuilder` release builds the app, not the app release number.
 

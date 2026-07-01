@@ -41,4 +41,4 @@ CRD yaml here, then `make imagemanager-build-push` as usual.
 
 ## Release versioning
 
-App releases use semver (`v0.0.0`, then patch bumps `v0.0.1`, `v0.0.2`, …). Bump `imagemanager/manifest.yaml` `spec.image`, controller manifests, and `imagemanager/build/controller/main.py` `VERSION` before merging to `main`. Catalog tags are `apps/imagemanager.eda.edacommunity.com/<version>`.
+App releases use semver (semver patch bumps (`v0.0.2`, …) after the initial `v0.0.1` release). Bump `imagemanager/manifest.yaml` `spec.image`, controller manifests, and `imagemanager/build/controller/main.py` `VERSION` before merging to `main`. Catalog tags are `apps/imagemanager.eda.edacommunity.com/<version>`.
