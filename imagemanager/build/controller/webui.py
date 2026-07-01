@@ -12,6 +12,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="imagemanager-api-base" content="/core/httpproxy/v1/imagemanager">
 <title>EDA Image Manager</title>
 <style>
   :root {
@@ -51,9 +52,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --elev24:0 22px 48px rgba(0,0,0,.7);
   }
   * { box-sizing:border-box; }
+  html, body { min-height:100%; }
   body { margin:0; background:var(--bg); color:var(--fg);
     font:14px/1.5 "Nokia Pure Text","Inter","Segoe UI",Roboto,Helvetica,Arial,sans-serif;
     -webkit-font-smoothing:antialiased; }
+  /* Slightly lighter than the EDA shell (#101824) so iframe content is visible. */
+  html.eda-embedded { --bg:#121c2a; }
+  html.eda-embedded body { min-height:100vh; }
 
   /* ---------- ripple (Material touch feedback) ---------- */
   .ripple { position:relative; overflow:hidden; }
@@ -292,14 +297,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   /* ---------- EDA embedded (iframe) mode — hide duplicate chrome ---------- */
   html.eda-embedded .appbar { display:none; }
-  html.eda-embedded main { max-width:none; padding:18px 20px 48px; }
+  html.eda-embedded main { max-width:none; padding:18px 20px 48px; min-height:60vh; }
   html.eda-embedded .page-head { margin-top:0; }
   html.eda-embedded .switch { display:none; }
-  .auth-pending main { opacity:.55; pointer-events:none; }
-  .auth-pending::after { content:"Signing in\u2026"; position:fixed; inset:0; display:flex;
-    align-items:center; justify-content:center; font-size:15px; color:var(--muted);
-    background:rgba(247,249,253,.72); z-index:80; }
-  html[data-theme="dark"].auth-pending::after { background:rgba(16,24,36,.72); color:var(--muted); }
+  /* Visible before JS runs (noscript-style fallback for slow/failed boot). */
+  #boot-shell { padding:14px 16px 6px; color:var(--muted); font-size:13.5px; }
+  #boot-shell.hide { display:none; }
+  /* Non-blocking auth status — never cover the whole iframe with a dark scrim. */
+  .auth-banner { display:none; margin:0 2px 14px; padding:10px 14px; border-radius:10px;
+    background:var(--info-bg); color:var(--info-fg); border:1px solid var(--info-bd);
+    font-size:13px; line-height:1.45; }
+  .auth-banner.show { display:block; }
+  .auth-banner.err { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
 
   /* ---------- tabs ---------- */
   .tabs { display:flex; gap:4px; margin:0 2px 18px; border-bottom:1px solid var(--line);
@@ -325,6 +334,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <script>try{var _e=window.self!==window.top;if(_e)document.documentElement.classList.add("eda-embedded");var _t=localStorage.getItem("imagemanager-theme")||(_e&&window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
 </head>
 <body>
+<noscript><div style="padding:24px 20px;background:#121c2a;color:#e6edf3;font:14px sans-serif">
+  Image Manager requires JavaScript. Enable it, or open
+  <a href="/core/httpproxy/v1/imagemanager/" style="color:#4d8dff">/core/httpproxy/v1/imagemanager/</a>
+  in a new tab.</div></noscript>
 <header class="appbar">
   <span class="brand-mark"></span>
   <span class="brand-name">EDA Image Manager</span>
@@ -341,6 +354,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
 </header>
 
 <main>
+  <div id="boot-shell" role="status">Loading Image Manager&hellip;</div>
+  <div id="authBanner" class="auth-banner" role="status" aria-live="polite"></div>
   <div class="page-head">
     <div>
       <h1 class="page-title">Image Manager</h1>
@@ -533,8 +548,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <script>
 (function(){
   var API_PROXY_PREFIX = "/core/httpproxy/v1/imagemanager";
-  var apiBase = location.pathname.replace(/\/+$/, "");
-  if (!apiBase || apiBase === "/" || apiBase.indexOf("imagemanager") < 0) apiBase = API_PROXY_PREFIX;
+  function resolveApiBase(){
+    var meta = document.querySelector('meta[name="imagemanager-api-base"]');
+    if(meta && meta.content) return meta.content.replace(/\/+$/, "");
+    var base = location.pathname.replace(/\/+$/, "");
+    if(base && base !== "/" && base.indexOf("imagemanager") >= 0) return base;
+    return API_PROXY_PREFIX;
+  }
+  var apiBase = resolveApiBase();
   function api(p){ return apiBase + p; }
   function fetchJson(url, opts){
     return fetch(url, opts).then(function(r){
@@ -545,6 +566,36 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var maxBytes = 4096*1024*1024;
   var embedded = window.self !== window.top;
   var authReady = false;
+  var SSO_TIMEOUT_MS = 15000;
+
+  function bootDone(){
+    var b = document.getElementById("boot-shell");
+    if(b) b.classList.add("hide");
+  }
+  function setAuthBanner(kind, text){
+    var b = document.getElementById("authBanner");
+    if(!b) return;
+    if(!text){ b.className = "auth-banner"; b.textContent = ""; return; }
+    b.className = "auth-banner show" + (kind === "err" ? " err" : "");
+    b.textContent = text;
+  }
+  function withTimeout(promise, ms, label){
+    return new Promise(function(resolve, reject){
+      var done = false;
+      var timer = setTimeout(function(){
+        if(done) return;
+        done = true;
+        reject(new Error(label || "timed out"));
+      }, ms);
+      promise.then(function(v){
+        if(done) return;
+        done = true; clearTimeout(timer); resolve(v);
+      }, function(e){
+        if(done) return;
+        done = true; clearTimeout(timer); reject(e);
+      });
+    });
+  }
 
   function loadScript(src){
     return new Promise(function(resolve, reject){
@@ -562,18 +613,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }).then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }); });
   }
   function silentSso(){
-    document.documentElement.classList.add("auth-pending");
-    return loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
-      var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
-      return kc.init({
-        onLoad: "check-sso",
-        silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-        checkLoginIframe: false
-      }).then(function(ok){
-        if(ok && kc.token) return exchangeToken(kc.token);
-        return null;
-      });
-    }).finally(function(){ document.documentElement.classList.remove("auth-pending"); });
+    setAuthBanner("info", "Signing in\u2026");
+    return withTimeout(
+      loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
+        if(typeof Keycloak === "undefined") throw new Error("keycloak-js unavailable");
+        var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
+        return kc.init({
+          onLoad: "check-sso",
+          silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
+          checkLoginIframe: false
+        }).then(function(ok){
+          if(ok && kc.token) return exchangeToken(kc.token);
+          return null;
+        });
+      }),
+      SSO_TIMEOUT_MS,
+      "Sign-in timed out after " + (SSO_TIMEOUT_MS / 1000) + "s"
+    ).finally(function(){ setAuthBanner("", ""); });
   }
   function authErrorMessage(ex){
     if(ex && ex.status === 403 && ex.body){
@@ -586,7 +642,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return "Sign-in failed inside EDA. Reload this page or open Image Manager in a new tab.";
   }
   function showFatal(msg){
-    rows.innerHTML = '<tr><td colspan="5" class="empty">'+esc(msg)+'</td></tr>';
+    bootDone();
+    setAuthBanner("err", msg);
+    if(rows) rows.innerHTML = '<tr><td colspan="5" class="empty">'+esc(msg)+'</td></tr>';
     snack("err", msg, true);
   }
   function ensureAuth(){
@@ -753,6 +811,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---------- config + namespaces ----------
+  bootDone();
   ensureAuth().then(function(c){
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
@@ -773,7 +832,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     refresh();
     refreshImports();
   }).catch(function(err){
-    var msg = (err && err.exchange) ? authErrorMessage(err.exchange)
+    var msg = (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
+            : (err && err.exchange) ? authErrorMessage(err.exchange)
             : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
             : authErrorMessage(null);
     showFatal(msg);
@@ -1206,6 +1266,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   // ---------- theme switch ----------
   (function(){
     var t=el("themeToggle"), lab=el("themeLabel");
+    if(!t || !lab) return;
     function sync(){
       var dark=document.documentElement.getAttribute("data-theme")==="dark";
       t.checked=dark; lab.textContent=dark?"Light":"Dark";
@@ -1218,6 +1279,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
       sync();
     });
   })();
+
+  window.addEventListener("error", function(e){
+    var msg = (e && e.message) ? e.message : "JavaScript error";
+    setAuthBanner("err", "Image Manager failed to start: " + msg);
+    bootDone();
+  });
 
   setInterval(function(){ if(activeTab==="status"){ refresh(); refreshImports(); } }, 5000);
 })();

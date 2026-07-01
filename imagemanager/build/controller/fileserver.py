@@ -311,7 +311,13 @@ class Handler(BaseHTTPRequestHandler):
             # UI shell loads without a session so keycloak-js can perform silent SSO
             # inside the EDA iframe (cable-map.eda.labs pattern). Data APIs stay gated.
             if path == "/":
-                self._send_text(webui.INDEX_HTML, ctype="text/html; charset=utf-8")
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                body = webui.INDEX_HTML.encode("utf-8")
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
                 return
             if auth.enabled() and not self._authed_user():
                 if path.startswith("/api/"):
