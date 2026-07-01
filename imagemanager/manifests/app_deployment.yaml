@@ -3,8 +3,13 @@ kind: Deployment
 metadata:
   name: eda-imagemanager
   namespace: eda-system
+  labels:
+    eda.nokia.com/app: eda-imagemanager
+    eda.nokia.com/app-group: control-plane
 spec:
   replicas: 1
+  progressDeadlineSeconds: 600
+  revisionHistoryLimit: 2
   strategy:
     type: Recreate
   selector:
@@ -19,15 +24,13 @@ spec:
         eda.nokia.com/app-group: control-plane
     spec:
       serviceAccountName: eda-imagemanager
-      imagePullSecrets:
-        - name: ghcr-imagemanager
       terminationGracePeriodSeconds: 30
       securityContext:
         fsGroup: 65534
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: imagemanager-controller
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.2
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.3
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAMESPACE
@@ -40,24 +43,29 @@ spec:
             - name: serving
               containerPort: 8443
               protocol: TCP
-          startupProbe:
-            tcpSocket:
-              port: serving
-            failureThreshold: 15
-            periodSeconds: 2
-          livenessProbe:
-            httpGet:
-              path: /healthz
-              port: serving
-              scheme: HTTPS
-            periodSeconds: 30
-            failureThreshold: 5
           readinessProbe:
             httpGet:
               path: /healthz
               port: serving
               scheme: HTTPS
+            initialDelaySeconds: 5
             periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: serving
+              scheme: HTTPS
+            initialDelaySeconds: 10
+            periodSeconds: 20
+            failureThreshold: 3
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - sleep 5
           volumeMounts:
             - name: upload-data
               mountPath: /data

@@ -70,6 +70,9 @@ SERVICE_NAME = "eda-imagemanager"
 # user namespace references the ConfigMap by name; the consumer reads it here.
 LICENSE_NS = POD_NAMESPACE
 
+_server = None
+_server_lock = threading.Lock()
+
 # OCI distribution (registry v2) path patterns. `name` may contain '/'.
 _V2_MANIFEST_RE = re.compile(r"^/v2/(.+)/manifests/(.+)$")
 _V2_BLOB_RE = re.compile(r"^/v2/(.+)/blobs/(sha256:[0-9a-f]{64})$")
@@ -1302,6 +1305,7 @@ def _build_ssl_context():
 
 def start_file_server(port=8443):
     """Start the HTTPS file server as a daemon thread. Falls back to HTTP if no cert."""
+    global _server
     server = ThreadingHTTPServer(("0.0.0.0", port), Handler)
     ctx = None
     try:
@@ -1316,7 +1320,28 @@ def start_file_server(port=8443):
                      "probes and eda-asvr HTTPS pulls will fail until cert present)",
                      TLS_DIR)
         scheme = "http"
+    with _server_lock:
+        _server = server
     t = threading.Thread(target=server.serve_forever, daemon=True, name="fileserver")
     t.start()
     logger.info("File server started on %s://0.0.0.0:%d", scheme, port)
     return server
+
+
+def stop_file_server():
+    """Gracefully stop the HTTPS server (called on SIGTERM)."""
+    global _server
+    with _server_lock:
+        server = _server
+        _server = None
+    if server is None:
+        return
+    try:
+        write_healthz("shutting_down", None)
+    except Exception:
+        pass
+    try:
+        server.shutdown()
+        logger.info("File server stopped")
+    except Exception as e:
+        logger.warning("File server shutdown error: %s", e)

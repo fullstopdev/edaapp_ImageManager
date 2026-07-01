@@ -31,7 +31,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.2"
+VERSION = "v0.0.3"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -203,6 +203,7 @@ def main():
         shutdown_event.wait(timeout=RECONCILE_INTERVAL)
 
     logger.info("Controller shutting down")
+    fileserver.stop_file_server()
 
 
 if __name__ == "__main__":

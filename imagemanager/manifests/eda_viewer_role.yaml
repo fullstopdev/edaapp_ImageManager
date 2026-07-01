@@ -4,7 +4,6 @@ metadata:
   labels:
     eda.nokia.com/app: eda-imagemanager
   name: imagemanager-viewer
-  namespace: eda-system
 spec:
   description: Read-only access to the Image Manager launcher and HttpProxy UI.
   resourceRules:

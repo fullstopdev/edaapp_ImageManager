@@ -2,6 +2,10 @@ apiVersion: core.eda.nokia.com/v1
 kind: HttpProxy
 metadata:
   name: imagemanager
+  namespace: eda-system
+  labels:
+    eda.nokia.com/app: eda-imagemanager
+    eda.nokia.com/app-group: control-plane
 spec:
   rootUrl: https://eda-imagemanager.eda-system.svc:8443/
   authType: atDestination

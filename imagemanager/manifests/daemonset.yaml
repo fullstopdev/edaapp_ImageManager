@@ -24,16 +24,14 @@ spec:
       # token is mounted (defence-in-depth: nothing to steal from a node pod).
       serviceAccountName: eda-imagemanager-node-agent
       automountServiceAccountToken: false
-      imagePullSecrets:
-        - name: ghcr-imagemanager
       # Sim pods schedule on any node, including control-plane in single-node
       # labs, so the redirect must exist on every node.
       tolerations:
         - operator: Exists
-      terminationGracePeriodSeconds: 10
+      terminationGracePeriodSeconds: 15
       containers:
         - name: node-agent
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.2
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.3
           imagePullPolicy: IfNotPresent
           command: ["python3", "nodeagent.py"]
           env:
@@ -59,6 +57,13 @@ spec:
               add: ["DAC_OVERRIDE"]
             seccompProfile:
               type: RuntimeDefault
+          lifecycle:
+            preStop:
+              exec:
+                command:
+                  - /bin/sh
+                  - -c
+                  - python3 -c "import nodeagent; nodeagent.cleanup()"
           volumeMounts:
             - name: containerd-conf
               mountPath: /host/etc/containerd

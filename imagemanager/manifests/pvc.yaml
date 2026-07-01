@@ -3,6 +3,9 @@ kind: PersistentVolumeClaim
 metadata:
   name: imagemanager-data
   namespace: eda-system
+  labels:
+    eda.nokia.com/app: eda-imagemanager
+    eda.nokia.com/app-group: control-plane
 spec:
   accessModes:
     - ReadWriteOnce

@@ -190,7 +190,31 @@ def reconcile():
     return path
 
 
+def cleanup():
+    """Remove the registry redirect written by this agent (preStop / SIGTERM)."""
+    certs_dir = detect_certs_dir()
+    if not certs_dir:
+        return
+    path = os.path.join(certs_dir, registry_host(), "hosts.toml")
+    try:
+        os.remove(path)
+        log.info("removed registry redirect %s", path)
+    except FileNotFoundError:
+        pass
+    except OSError as e:
+        log.warning("could not remove %s: %s", path, e)
+
+
 def main():
+    import signal
+
+    def _handle_signal(signum, frame):
+        log.info("received signal %s, cleaning up", signum)
+        cleanup()
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _handle_signal)
+    signal.signal(signal.SIGINT, _handle_signal)
     log.info("node registry-trust agent starting (host=%s ns=%s port=%s "
              "resync=%ss)", registry_host(), POD_NAMESPACE, REGISTRY_PORT,
              RESYNC_SECONDS)
