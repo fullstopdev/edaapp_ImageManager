@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.3
+
+Install/uninstall reliability aligned with cable-map patterns:
+
+- Reorder manifest components: CRDs → RBAC → PVC → Service → Deployment → HttpProxy → DaemonSet (Deployment was previously applied before ServiceAccount/RBAC existed).
+- Remove hardcoded `ghcr-imagemanager` imagePullSecret (EDA injects `appstore-eda-apps-registry-image-pull`; the missing secret caused install warnings and pull failures).
+- Graceful controller shutdown: `preStop` sleep, `stop_file_server()` on SIGTERM, probes aligned with cable-map (`initialDelaySeconds`, no TCP startupProbe).
+- DaemonSet `preStop` removes containerd registry redirect on uninstall so reinstall is not blocked by stale `hosts.toml`.
+- Fix invalid `namespace` field on cluster-scoped `imagemanager-viewer` ClusterRole.
+- Add `progressDeadlineSeconds: 600` and app labels on workloads/PVC/HttpProxy.
+
 ## v0.0.2
 
 Fix EDA nav launcher dashboard after the v0.0.1 release reset:
