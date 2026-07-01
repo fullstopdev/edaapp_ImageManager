@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Health",
+    "type": "string",
+    "jsonPath": ".status.health"
+  },
+  {
+    "name": "Uploads",
+    "type": "integer",
+    "jsonPath": ".status.uploadsStored"
+  },
+  {
+    "name": "Bytes",
+    "type": "integer",
+    "jsonPath": ".status.bytesStored"
+  },
+  {
+    "name": "Last reconcile",
+    "type": "date",
+    "jsonPath": ".status.lastReconcileTime"
+  }
+]
