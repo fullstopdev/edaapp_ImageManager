@@ -279,6 +279,8 @@ Build & publish flow (high level): `docker build/push` the controller image → 
 
 ### CI/CD
 
-Pushes to `main` (and manual **Actions → Publish → Run workflow**) run [`.github/workflows/publish.yml`](.github/workflows/publish.yml): build/push `imagemanager-controller` and the app OCI image to GHCR, then `edabuilder publish app` updates the catalog under `apps/` and pushes the version tag. Bump `spec.image` in `imagemanager/manifest.yaml` before merging when you want a new release. Catalog-only commits under `apps/` do not re-trigger the workflow.
+Pushes to `main` (and manual **Actions → Publish → Run workflow**) run [`.github/workflows/publish.yml`](.github/workflows/publish.yml): build/push `imagemanager-controller` and `imagemanager-app` to GHCR, `edabuilder publish app` updates the catalog under `apps/` and pushes the version tag, then a GitHub Release is created. **Bump `spec.image` in `imagemanager/manifest.yaml` (and controller image refs in `imagemanager/manifests/`) before merging** when you want a new version — the workflow reads the tag from the manifest. Catalog-only commits under `apps/` do not re-trigger the workflow.
+
+Repo settings: **Settings → Actions → General → Workflow permissions** → *Read and write permissions*. No extra secrets are required beyond the built-in `GITHUB_TOKEN`.
 
 **License:** MIT.

@@ -12,8 +12,8 @@ name: Publish
 on:
   push:
     branches: [main]
-    tags:
-      - apps/imagemanager.eda.edacommunity.com/v*
+    paths-ignore:
+      - apps/**
   workflow_dispatch:
     inputs:
       skip_catalog:
@@ -42,10 +42,7 @@ env:
 
 jobs:
   publish:
-    # Catalog tags are created by edabuilder publish; skip the duplicate build.
-    if: >-
-      github.event_name == 'workflow_dispatch' ||
-      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.value }}
@@ -148,4 +145,5 @@ jobs:
           tag_name: apps/imagemanager.eda.edacommunity.com/${{ needs.publish.outputs.version }}
           name: imagemanager ${{ needs.publish.outputs.version }}
           generate_release_notes: true
+          make_latest: true
           # Offline bundle attachment is still a manual maintainer step today.

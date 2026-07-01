@@ -1,4 +1,4 @@
-REGISTRY ?= ghcr.io/kkayhan/edaapp_imagemanager
+REGISTRY ?= ghcr.io/fullstopdev/edaapp_imagemanager
 CATALOG_REPO ?= $(shell git config --get remote.origin.url)
 
 # operators
