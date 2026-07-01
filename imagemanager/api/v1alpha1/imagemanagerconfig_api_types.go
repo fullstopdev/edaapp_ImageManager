@@ -116,4 +116,7 @@ type TrackedArtifact struct {
 
 	// ExternalUrl mirrors Artifact.status.externalUrl once Available.
 	ExternalUrl string `json:"externalUrl,omitempty"`
+
+	// Open is the launcher dashlet View link label (cable-map parity).
+	Open string `json:"open,omitempty"`
 }

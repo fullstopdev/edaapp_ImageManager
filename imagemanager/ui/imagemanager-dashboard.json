@@ -1,7 +1,7 @@
 {
   "uuid": "64140263-840c-4da6-af3e-84907686cd63",
   "name": "Image Manager",
-  "version": "0.0.2",
+  "version": "0.0.4",
   "displayName": "Image Manager",
   "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
   "showNavigationToolbar": true,
@@ -40,7 +40,7 @@
               },
               "componentConfiguration": {
                 "apiConfiguration": {
-                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs.status.artifacts",
+                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs.default.status.artifacts",
                   "queryType": "eql",
                   "requestType": "get",
                   "definition": {
@@ -58,14 +58,6 @@
                           "sortable": true,
                           "minWidth": 180,
                           "flex": 1.6
-                        },
-                        {
-                          "fieldName": "namespace",
-                          "label": "Namespace",
-                          "type": "string",
-                          "sortable": true,
-                          "minWidth": 140,
-                          "flex": 1.1
                         },
                         {
                           "fieldName": "sizeBytes",
@@ -90,6 +82,15 @@
                           "sortable": false,
                           "minWidth": 90,
                           "flex": 0.7
+                        },
+                        {
+                          "fieldName": "namespace",
+                          "label": "Namespace",
+                          "type": "string",
+                          "visible": false,
+                          "sortable": true,
+                          "minWidth": 140,
+                          "flex": 1.1
                         },
                         {
                           "fieldName": "statusReason",

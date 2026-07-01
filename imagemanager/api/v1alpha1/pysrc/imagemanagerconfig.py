@@ -25,6 +25,7 @@ Y_SIZEBYTES = 'sizeBytes'
 Y_DOWNLOADSTATUS = 'downloadStatus'
 Y_STATUSREASON = 'statusReason'
 Y_EXTERNALURL = 'externalUrl'
+Y_OPEN = 'open'
 # Package objects (GVK Schemas)
 IMAGEMANAGERCONFIG_SCHEMA = eda.Schema(group='imagemanager.eda.edacommunity.com', version='v1alpha1', kind='ImageManagerConfig')
 
@@ -82,6 +83,7 @@ class TrackedArtifact:
         downloadStatus: str | None = None,
         statusReason: str | None = None,
         externalUrl: str | None = None,
+        open: str | None = None,
     ):
         self.name = name
         self.namespace = namespace
@@ -92,6 +94,7 @@ class TrackedArtifact:
         self.downloadStatus = downloadStatus
         self.statusReason = statusReason
         self.externalUrl = externalUrl
+        self.open = open
 
     def to_input(self):  # pragma: no cover
         _rval = {}
@@ -113,6 +116,8 @@ class TrackedArtifact:
             _rval[Y_STATUSREASON] = self.statusReason
         if self.externalUrl is not None:
             _rval[Y_EXTERNALURL] = self.externalUrl
+        if self.open is not None:
+            _rval[Y_OPEN] = self.open
         return _rval
 
     @staticmethod
@@ -127,6 +132,7 @@ class TrackedArtifact:
             _downloadStatus = obj.get(Y_DOWNLOADSTATUS)
             _statusReason = obj.get(Y_STATUSREASON)
             _externalUrl = obj.get(Y_EXTERNALURL)
+            _open = obj.get(Y_OPEN)
             return TrackedArtifact(
                 name=_name,
                 namespace=_namespace,
@@ -137,6 +143,7 @@ class TrackedArtifact:
                 downloadStatus=_downloadStatus,
                 statusReason=_statusReason,
                 externalUrl=_externalUrl,
+                open=_open,
             )
         return None  # pragma: no cover
 

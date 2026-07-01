@@ -1,0 +1,65 @@
+{
+  "description": "ImageManagerArtifact is a flat launcher row for one tracked upload/image.\nCluster-scoped; metadata.name is stable per upload (see controller).",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "description": "APIVersion defines the versioned schema of this representation of an object.\nServers should convert recognized schemas to the latest internal value, and\nmay reject unrecognized values.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Kind is a string value representing the REST resource this object represents.\nServers may infer this from the endpoint the client submits requests to.\nCannot be updated.\nIn CamelCase.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "status": {
+      "description": "ImageManagerArtifactStatus is a launcher-dashlet row for one tracked image.\nThe controller is the sole writer; rows mirror PVC uploads and managed\nArtifact CRs so the EDA nav table can query a flat CR list (EQL cannot\nnavigate into ImageManagerConfig.status.artifacts arrays).",
+      "type": "object",
+      "title": "Status",
+      "properties": {
+        "artifactName": {
+          "description": "ArtifactName is the primary Artifact CR name for this row.",
+          "type": "string"
+        },
+        "displayName": {
+          "description": "DisplayName is the human-friendly image name shown in the launcher UI.",
+          "type": "string"
+        },
+        "downloadStatus": {
+          "description": "DownloadStatus mirrors Artifact.status.downloadStatus (or aggregated).",
+          "type": "string"
+        },
+        "filePath": {
+          "description": "FilePath is the artifact-server destination path.",
+          "type": "string"
+        },
+        "namespace": {
+          "description": "Namespace is the Artifact CR namespace.",
+          "type": "string"
+        },
+        "open": {
+          "description": "Open is the launcher \"View\" link label (navigation uses dashlet target).",
+          "type": "string"
+        },
+        "repo": {
+          "description": "Repo is the artifact repo.",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "description": "SizeBytes is the on-disk size when known.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "statusReason": {
+          "description": "StatusReason is a short error/detail string when applicable.",
+          "type": "string"
+        }
+      },
+      "readOnly": true,
+      "x-eda-nokia-com": {
+        "ui-order-priority": 20
+      }
+    }
+  }
+}

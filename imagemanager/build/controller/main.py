@@ -25,12 +25,13 @@ import threading
 import time
 from datetime import datetime, timezone
 
+import artifact_launcher
 import fileserver
 import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.3"
+VERSION = "v0.0.4"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -139,6 +140,7 @@ def _update_status(health, message, tracked):
                     "downloadStatus": t.get("downloadStatus", ""),
                     "statusReason": t.get("statusReason", ""),
                     "externalUrl": t.get("externalUrl", ""),
+                    "open": "View",
                 }
                 for t in tracked[:500]
             ],
@@ -186,6 +188,10 @@ def main():
         now_str = datetime.now(timezone.utc).isoformat(timespec="seconds")
         fileserver.write_healthz(health, now_str)
         _update_status(health, message, tracked)
+        try:
+            artifact_launcher.sync_launcher_rows(tracked)
+        except Exception as e:
+            logger.warning("Launcher artifact sync failed: %s", e)
 
         try:
             imports.reconcile(cfg)

@@ -1205,6 +1205,50 @@ def _srsim_row(m, status_by_key):
     }
 
 
+def _upload_id_from_artifact(art):
+    """Best-effort upload id from spec.remoteFileUrl (/files/<uploadId>/...)."""
+    spec = art.get("spec", {}) or {}
+    remote = spec.get("remoteFileUrl") or {}
+    url = remote.get("fileUrl") or remote.get("md5Url") or ""
+    if "/files/" not in url:
+        return ""
+    try:
+        after = url.split("/files/", 1)[1]
+        return after.split("/", 1)[0]
+    except (IndexError, ValueError):
+        return ""
+
+
+def _artifact_fallback_rows(status_by_key, covered_keys):
+    """Rows for managed Artifacts with no PVC meta (e.g. after pod/PVC recycle)."""
+    groups = {}
+    for art in artifact.list_managed_artifacts():
+        md = art.get("metadata", {}) or {}
+        ns = md.get("namespace", "")
+        name = md.get("name", "")
+        if name.endswith("-md5"):
+            continue
+        upload_id = _upload_id_from_artifact(art) or name
+        key = (ns, upload_id)
+        if key in covered_keys:
+            continue
+        spec = art.get("spec", {}) or {}
+        st = status_by_key.get((ns, name), {})
+        groups.setdefault(key, {
+            "uploadId": upload_id,
+            "name": name,
+            "displayName": name,
+            "namespace": ns,
+            "repo": spec.get("repo", ""),
+            "filePath": spec.get("filePath", ""),
+            "sizeBytes": None,
+            "storedAt": md.get("creationTimestamp", ""),
+            "downloadStatus": st.get("downloadStatus", ""),
+            "statusReason": st.get("statusReason", ""),
+        })
+    return list(groups.values())
+
+
 def build_tracked_list():
     """Merge PVC upload metadata with live Artifact download status for the UI."""
     # one cluster-wide list call, indexed by (namespace, name)
@@ -1218,13 +1262,20 @@ def build_tracked_list():
         logger.info("artifact list unavailable: %s", e)
 
     out = []
+    covered = set()
     for m in uploads.list_meta():
+        key = (m.get("namespace"), m.get("uploadId") or m.get("artifactName"))
+        covered.add(key)
         if m.get("nos") == "srsim":
             out.append(_srsim_row(m, status_by_key))
         elif m.get("artifacts"):
             out.append(_group_row(m, status_by_key))
         else:
             out.append(_single_row(m, status_by_key))
+    try:
+        out.extend(_artifact_fallback_rows(status_by_key, covered))
+    except Exception as e:
+        logger.info("artifact fallback rows failed: %s", e)
     out.sort(key=lambda r: r.get("storedAt") or "", reverse=True)
     return out
 

@@ -43,6 +43,12 @@ rules:
   - apiGroups: ["imagemanager.eda.edacommunity.com"]
     resources: ["imagemanagerconfigs/status"]
     verbs: ["get", "update", "patch"]
+  - apiGroups: ["imagemanager.eda.edacommunity.com"]
+    resources: ["imagemanagerartifacts"]
+    verbs: ["get", "list", "watch", "create", "update", "patch", "delete"]
+  - apiGroups: ["imagemanager.eda.edacommunity.com"]
+    resources: ["imagemanagerartifacts/status"]
+    verbs: ["get", "update", "patch"]
   # ImageImport: list across all namespaces (reconcile loop), read/write status
   # per-namespace via the namespaced status subresource.
   - apiGroups: ["imagemanager.eda.edacommunity.com"]

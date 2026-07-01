@@ -160,6 +160,10 @@ spec:
                     namespace:
                       description: Namespace is the Artifact CR namespace.
                       type: string
+                    open:
+                      description: Open is the launcher dashlet View link label (cable-map
+                        parity).
+                      type: string
                     repo:
                       description: Repo is the artifact repo.
                       type: string
