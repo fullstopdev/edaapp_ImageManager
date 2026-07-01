@@ -381,8 +381,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   .tab:hover { color:var(--fg); background:var(--state); }
   .tab.active {
-    color:var(--fg); background:var(--surface);
-    box-shadow:var(--shadow-sm); border:1px solid var(--line);
+    color:#fff; background:var(--accent);
+    box-shadow:0 2px 8px rgba(0,90,255,.35); border:1px solid transparent;
   }
   .tab-panel {
     display:none; opacity:0; transform:translateY(4px);
