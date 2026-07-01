@@ -23,6 +23,8 @@ Y_FILEPATH = 'filePath'
 Y_DOWNLOADSTATUS = 'downloadStatus'
 Y_STATUSREASON = 'statusReason'
 Y_EXTERNALURL = 'externalUrl'
+Y_DISPLAYNAME = 'displayName'
+Y_SIZEBYTES = 'sizeBytes'
 # Package objects (GVK Schemas)
 IMAGEMANAGERCONFIG_SCHEMA = eda.Schema(group='imagemanager.eda.edacommunity.com', version='v1alpha1', kind='ImageManagerConfig')
 
@@ -78,6 +80,8 @@ class TrackedArtifact:
         downloadStatus: str | None = None,
         statusReason: str | None = None,
         externalUrl: str | None = None,
+        displayName: str | None = None,
+        sizeBytes: int | None = None,
     ):
         self.name = name
         self.namespace = namespace
@@ -86,6 +90,8 @@ class TrackedArtifact:
         self.downloadStatus = downloadStatus
         self.statusReason = statusReason
         self.externalUrl = externalUrl
+        self.displayName = displayName
+        self.sizeBytes = sizeBytes
 
     def to_input(self):  # pragma: no cover
         _rval = {}
@@ -103,6 +109,10 @@ class TrackedArtifact:
             _rval[Y_STATUSREASON] = self.statusReason
         if self.externalUrl is not None:
             _rval[Y_EXTERNALURL] = self.externalUrl
+        if self.displayName is not None:
+            _rval[Y_DISPLAYNAME] = self.displayName
+        if self.sizeBytes is not None:
+            _rval[Y_SIZEBYTES] = self.sizeBytes
         return _rval
 
     @staticmethod
@@ -115,6 +125,8 @@ class TrackedArtifact:
             _downloadStatus = obj.get(Y_DOWNLOADSTATUS)
             _statusReason = obj.get(Y_STATUSREASON)
             _externalUrl = obj.get(Y_EXTERNALURL)
+            _displayName = obj.get(Y_DISPLAYNAME)
+            _sizeBytes = obj.get(Y_SIZEBYTES)
             return TrackedArtifact(
                 name=_name,
                 namespace=_namespace,
@@ -123,6 +135,8 @@ class TrackedArtifact:
                 downloadStatus=_downloadStatus,
                 statusReason=_statusReason,
                 externalUrl=_externalUrl,
+                displayName=_displayName,
+                sizeBytes=_sizeBytes,
             )
         return None  # pragma: no cover
 

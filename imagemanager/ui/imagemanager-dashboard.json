@@ -1,7 +1,7 @@
 {
   "uuid": "64140263-840c-4da6-af3e-84907686cd63",
   "name": "Image Manager",
-  "version": "26.4.2-32",
+  "version": "26.4.2-33",
   "displayName": "Image Manager",
   "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
   "showNavigationToolbar": true,
@@ -26,7 +26,7 @@
               "uuid": "3820e730-92d1-463a-b4cf-fc51e9a8fcab",
               "type": "dashletDataView",
               "title": "Image Manager",
-              "subtitle": "Click on View link of this panel to open the Image Manager UI",
+              "subtitle": "Tracked images and Artifact download status — click View to open the full UI",
               "width": 980,
               "height": 420,
               "fillWidth": true,
@@ -40,35 +40,43 @@
               },
               "componentConfiguration": {
                 "apiConfiguration": {
-                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs",
+                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs.status.artifacts",
                   "queryType": "eql",
                   "requestType": "get",
                   "definition": {
                     "initialModel": {
                       "schema": "v1",
-                      "modelName": "ImageManagerStatus",
-                      "primaryKey": "name",
+                      "modelName": "ImageManagerArtifact",
+                      "primaryKey": "displayName",
                       "showGroupDisplay": "no",
                       "flat": true,
                       "fields": [
                         {
-                          "fieldName": "name",
-                          "label": "Service",
+                          "fieldName": "displayName",
+                          "label": "Name",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 160,
-                          "flex": 1.4
+                          "minWidth": 180,
+                          "flex": 1.6
                         },
                         {
-                          "fieldName": "open",
-                          "label": "View",
+                          "fieldName": "namespace",
+                          "label": "Namespace",
                           "type": "string",
-                          "sortable": false,
-                          "minWidth": 100,
-                          "flex": 0.7
+                          "sortable": true,
+                          "minWidth": 140,
+                          "flex": 1.1
                         },
                         {
-                          "fieldName": "health",
+                          "fieldName": "sizeBytes",
+                          "label": "Size",
+                          "type": "number",
+                          "sortable": true,
+                          "minWidth": 110,
+                          "flex": 0.9
+                        },
+                        {
+                          "fieldName": "downloadStatus",
                           "label": "Status",
                           "type": "string",
                           "sortable": true,
@@ -76,39 +84,15 @@
                           "flex": 1
                         },
                         {
-                          "fieldName": "uploadsStored",
-                          "label": "Uploads",
-                          "type": "number",
-                          "sortable": true,
-                          "minWidth": 100,
-                          "flex": 0.8
-                        },
-                        {
-                          "fieldName": "bytesStored",
-                          "label": "Bytes stored",
-                          "type": "number",
-                          "sortable": true,
-                          "minWidth": 130,
-                          "flex": 1
-                        },
-                        {
-                          "fieldName": "version",
-                          "label": "Version",
+                          "fieldName": "open",
+                          "label": "View",
                           "type": "string",
-                          "sortable": true,
-                          "minWidth": 120,
-                          "flex": 0.9
+                          "sortable": false,
+                          "minWidth": 90,
+                          "flex": 0.7
                         },
                         {
-                          "fieldName": "lastReconcileTime",
-                          "label": "Last reconcile",
-                          "type": "string",
-                          "sortable": true,
-                          "minWidth": 180,
-                          "flex": 1.2
-                        },
-                        {
-                          "fieldName": "message",
+                          "fieldName": "statusReason",
                           "label": "Message",
                           "type": "string",
                           "visible": false,
@@ -116,12 +100,12 @@
                           "width": "260px"
                         },
                         {
-                          "fieldName": "url",
-                          "label": "URL",
+                          "fieldName": "name",
+                          "label": "Artifact ID",
                           "type": "string",
                           "visible": false,
                           "sortable": false,
-                          "width": "260px"
+                          "width": "200px"
                         }
                       ]
                     }

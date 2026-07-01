@@ -122,12 +122,21 @@ spec:
                       description: Name is the Artifact CR name (equals the upload
                         id).
                       type: string
+                    displayName:
+                      description: DisplayName is the human-friendly image name shown
+                        in the UI (e.g. "srlinux-26.3.1").
+                      type: string
                     namespace:
                       description: Namespace is the Artifact CR namespace.
                       type: string
                     repo:
                       description: Repo is the artifact repo.
                       type: string
+                    sizeBytes:
+                      description: SizeBytes is the on-disk size of the uploaded image
+                        file(s).
+                      format: int64
+                      type: integer
                     statusReason:
                       description: StatusReason mirrors Artifact.status.statusReason
                         on Error/Failed.

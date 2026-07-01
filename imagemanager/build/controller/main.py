@@ -30,7 +30,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v26.4.2-32"
+VERSION = "v26.4.2-33"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -131,9 +131,11 @@ def _update_status(health, message, tracked):
             "artifacts": [
                 {
                     "name": t.get("name", ""),
+                    "displayName": t.get("displayName") or t.get("name", ""),
                     "namespace": t.get("namespace", ""),
                     "repo": t.get("repo", ""),
                     "filePath": t.get("filePath", ""),
+                    "sizeBytes": t.get("sizeBytes"),
                     "downloadStatus": t.get("downloadStatus", ""),
                     "statusReason": t.get("statusReason", ""),
                     "externalUrl": t.get("externalUrl", ""),

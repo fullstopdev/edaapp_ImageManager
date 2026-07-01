@@ -120,8 +120,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .page-head { display:flex; align-items:flex-end; gap:16px; margin:4px 2px 20px; }
   .page-title { margin:0; font-size:23px; font-weight:600; letter-spacing:.005em;
     display:flex; align-items:center; gap:11px; }
-  .count { font-size:12.5px; font-weight:600; color:var(--accent); background:var(--accent-soft);
-    border-radius:12px; padding:2px 10px; }
+  .count { display:inline-flex; align-items:center; justify-content:center;
+    min-width:20px; height:20px; padding:0 6px; font-size:11.5px; font-weight:700;
+    color:#fff; background:var(--accent); border-radius:10px; }
   .page-sub { margin:5px 0 0; color:var(--muted); font-size:13px; }
   .page-head .grow { flex:1; }
 
@@ -467,7 +468,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <div id="panel-status" class="tab-panel" role="tabpanel">
     <div class="card storage-card">
       <div class="storage-row">
-        <span class="storage-label">App storage</span>
+        <span class="storage-label">APP STORAGE</span>
         <span class="storage-stat" id="storageStat">&mdash;</span>
       </div>
       <div class="storage-track"><div class="storage-fill" id="storageFill"></div></div>
@@ -957,15 +958,49 @@ INDEX_HTML = r"""<!DOCTYPE html>
   });
 
   // ---------- artifacts table ----------
-  var pendingUploads={}, uploadSeq=0;   // in-flight browser->controller uploads (client-side)
+  var pendingUploads={}, uploadSeq=0, lastImports=[];   // in-flight browser->controller uploads
   function chip(s){ var c=s||"NoArtifact"; return '<span class="chip c-'+c+'">'+esc(c)+'</span>'; }
   function fmtElapsed(sec){ sec=Math.max(0,Math.floor(sec)); var m=Math.floor(sec/60), s=sec%60;
     return m+":"+(s<10?"0":"")+s; }
+  function fmtEta(loaded, total, speedMbps, elapsed){
+    if(!total || loaded >= total) return "0:00";
+    if(speedMbps > 0.05){
+      var rem = (total - loaded) / 1048576 / speedMbps;
+      return fmtElapsed(rem);
+    }
+    if(elapsed > 0 && loaded > 0){
+      var rate = loaded / elapsed;
+      if(rate > 0) return fmtElapsed((total - loaded) / rate);
+    }
+    return "\u2014";
+  }
+  function isActiveStatus(s){
+    return s === "InProgress" || s === "Uploading" || s === "Unzipping" ||
+           s === "Processing" || s === "Pending";
+  }
+  function activeStatusCount(){
+    var n = Object.keys(pendingUploads).length;
+    currentData.forEach(function(t){
+      if(isActiveStatus(t.downloadStatus)) n++;
+    });
+    lastImports.forEach(function(i){
+      if(isActiveStatus(i.phase)) n++;
+    });
+    return n;
+  }
+  function updateStatusBadge(){
+    var active = activeStatusCount();
+    var badge = el("statusCount");
+    if(!badge) return;
+    if(active > 0){ badge.style.display="inline-flex"; badge.textContent=active; }
+    else { badge.style.display="none"; }
+  }
 
   function pendStatusHtml(p){
     if(p.phase==="Uploading"){
-      var line=p.pct.toFixed(0)+"%  ·  "+fmtBytes(p.loaded)+" / "+fmtBytes(p.total)+
-               "  ·  "+p.speed.toFixed(1)+" MB/s  ·  "+fmtElapsed(p.elapsed);
+      var line=p.pct.toFixed(0)+"%  \u00b7  "+fmtBytes(p.loaded)+" / "+fmtBytes(p.total)+
+               "  \u00b7  "+p.speed.toFixed(1)+" MB/s  \u00b7  "+
+               fmtEta(p.loaded, p.total, p.speed, p.elapsed);
       return '<span class="chip c-Uploading">Uploading</span>'+
              '<div class="uprog"><div style="width:'+p.pct.toFixed(1)+'%"></div></div>'+
              '<div class="upinfo">'+esc(line)+'</div>';
@@ -1127,13 +1162,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
       el("statusCount").style.display="none"; return;
     }
     rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
-    el("statusCount").style.display="inline-block";
-    el("statusCount").textContent=pend.length+serverRows.length;
+    updateStatusBadge();
   }
 
   function renderImports(list){
+    lastImports = list || [];
     if(!list || !list.length){
       importRows.innerHTML='<tr><td colspan="5" class="empty">No URL imports yet.</td></tr>';
+      if(activeTab === "status" || Object.keys(pendingUploads).length) render();
       return;
     }
     importRows.innerHTML = list.map(function(i){
@@ -1141,6 +1177,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         '<td class="mono">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase)+'</td>'+
         '<td>'+esc(i.message||"")+'</td></tr>';
     }).join("");
+    if(activeTab !== "status") render();
   }
 
   function refreshImports(){
@@ -1232,7 +1269,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var fill=el("storageFill");
     fill.style.width=Math.max(0,Math.min(100,pct))+"%";
     fill.className="storage-fill"+(pct>=90?" crit":(pct>=75?" warn":""));
-    el("storageStat").innerHTML='<span class="mono">'+pct+'%</span> used &middot; <span class="mono">'+
+    el("storageStat").innerHTML='<span class="mono">'+pct+'%</span> used &ndash; <span class="mono">'+
       fmtGB(s.freeBytes)+'</span> free of <span class="mono">'+fmtGB(s.totalBytes)+'</span>';
   }
 
@@ -1286,7 +1323,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     bootDone();
   });
 
-  setInterval(function(){ if(activeTab==="status"){ refresh(); refreshImports(); } }, 5000);
+  setInterval(function(){
+    if(activeTab==="status"){ refresh(); refreshImports(); }
+    else { updateStatusBadge(); }
+  }, 5000);
 })();
 </script>
 </body>

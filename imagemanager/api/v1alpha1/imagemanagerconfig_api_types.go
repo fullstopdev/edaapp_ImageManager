@@ -91,6 +91,10 @@ type TrackedArtifact struct {
 	// Name is the Artifact CR name (equals the upload id).
 	Name string `json:"name"`
 
+	// DisplayName is the human-friendly image name shown in the UI
+	// (e.g. "srlinux-26.3.1"), which may differ from the Artifact CR name.
+	DisplayName string `json:"displayName,omitempty"`
+
 	// Namespace is the Artifact CR namespace.
 	Namespace string `json:"namespace"`
 
@@ -99,6 +103,9 @@ type TrackedArtifact struct {
 
 	// FilePath is the destination path/filename in the artifact server.
 	FilePath string `json:"filePath"`
+
+	// SizeBytes is the on-disk size of the uploaded image file(s).
+	SizeBytes int64 `json:"sizeBytes,omitempty"`
 
 	// DownloadStatus mirrors Artifact.status.downloadStatus
 	// (InProgress, Available, Error, or Failed).
