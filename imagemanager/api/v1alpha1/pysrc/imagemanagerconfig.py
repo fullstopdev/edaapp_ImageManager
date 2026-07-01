@@ -17,14 +17,14 @@ Y_UPLOADSSTORED = 'uploadsStored'
 Y_BYTESSTORED = 'bytesStored'
 Y_ARTIFACTS = 'artifacts'
 Y_VERSION = 'version'
+Y_DISPLAYNAME = 'displayName'
 Y_NAMESPACE = 'namespace'
 Y_REPO = 'repo'
 Y_FILEPATH = 'filePath'
+Y_SIZEBYTES = 'sizeBytes'
 Y_DOWNLOADSTATUS = 'downloadStatus'
 Y_STATUSREASON = 'statusReason'
 Y_EXTERNALURL = 'externalUrl'
-Y_DISPLAYNAME = 'displayName'
-Y_SIZEBYTES = 'sizeBytes'
 # Package objects (GVK Schemas)
 IMAGEMANAGERCONFIG_SCHEMA = eda.Schema(group='imagemanager.eda.edacommunity.com', version='v1alpha1', kind='ImageManagerConfig')
 
@@ -77,21 +77,21 @@ class TrackedArtifact:
         namespace: str,
         repo: str,
         filePath: str,
+        displayName: str | None = None,
+        sizeBytes: int | None = None,
         downloadStatus: str | None = None,
         statusReason: str | None = None,
         externalUrl: str | None = None,
-        displayName: str | None = None,
-        sizeBytes: int | None = None,
     ):
         self.name = name
         self.namespace = namespace
         self.repo = repo
         self.filePath = filePath
+        self.displayName = displayName
+        self.sizeBytes = sizeBytes
         self.downloadStatus = downloadStatus
         self.statusReason = statusReason
         self.externalUrl = externalUrl
-        self.displayName = displayName
-        self.sizeBytes = sizeBytes
 
     def to_input(self):  # pragma: no cover
         _rval = {}
@@ -103,16 +103,16 @@ class TrackedArtifact:
             _rval[Y_REPO] = self.repo
         if self.filePath is not None:
             _rval[Y_FILEPATH] = self.filePath
+        if self.displayName is not None:
+            _rval[Y_DISPLAYNAME] = self.displayName
+        if self.sizeBytes is not None:
+            _rval[Y_SIZEBYTES] = self.sizeBytes
         if self.downloadStatus is not None:
             _rval[Y_DOWNLOADSTATUS] = self.downloadStatus
         if self.statusReason is not None:
             _rval[Y_STATUSREASON] = self.statusReason
         if self.externalUrl is not None:
             _rval[Y_EXTERNALURL] = self.externalUrl
-        if self.displayName is not None:
-            _rval[Y_DISPLAYNAME] = self.displayName
-        if self.sizeBytes is not None:
-            _rval[Y_SIZEBYTES] = self.sizeBytes
         return _rval
 
     @staticmethod
@@ -122,21 +122,21 @@ class TrackedArtifact:
             _namespace = obj.get(Y_NAMESPACE)
             _repo = obj.get(Y_REPO)
             _filePath = obj.get(Y_FILEPATH)
+            _displayName = obj.get(Y_DISPLAYNAME)
+            _sizeBytes = obj.get(Y_SIZEBYTES)
             _downloadStatus = obj.get(Y_DOWNLOADSTATUS)
             _statusReason = obj.get(Y_STATUSREASON)
             _externalUrl = obj.get(Y_EXTERNALURL)
-            _displayName = obj.get(Y_DISPLAYNAME)
-            _sizeBytes = obj.get(Y_SIZEBYTES)
             return TrackedArtifact(
                 name=_name,
                 namespace=_namespace,
                 repo=_repo,
                 filePath=_filePath,
+                displayName=_displayName,
+                sizeBytes=_sizeBytes,
                 downloadStatus=_downloadStatus,
                 statusReason=_statusReason,
                 externalUrl=_externalUrl,
-                displayName=_displayName,
-                sizeBytes=_sizeBytes,
             )
         return None  # pragma: no cover
 

@@ -105,6 +105,11 @@ spec:
                     TrackedArtifact is a denormalized record of one Artifact CR created by this
                     app, including the live download status mirrored from the Artifact.
                   properties:
+                    displayName:
+                      description: |-
+                        DisplayName is the human-friendly image name shown in the UI
+                        (e.g. "srlinux-26.3.1"), which may differ from the Artifact CR name.
+                      type: string
                     downloadStatus:
                       description: |-
                         DownloadStatus mirrors Artifact.status.downloadStatus
@@ -121,10 +126,6 @@ spec:
                     name:
                       description: Name is the Artifact CR name (equals the upload
                         id).
-                      type: string
-                    displayName:
-                      description: DisplayName is the human-friendly image name shown
-                        in the UI (e.g. "srlinux-26.3.1").
                       type: string
                     namespace:
                       description: Namespace is the Artifact CR namespace.

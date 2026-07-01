@@ -94,6 +94,10 @@
               "repo"
             ],
             "properties": {
+              "displayName": {
+                "description": "DisplayName is the human-friendly image name shown in the UI\n(e.g. \"srlinux-26.3.1\"), which may differ from the Artifact CR name.",
+                "type": "string"
+              },
               "downloadStatus": {
                 "description": "DownloadStatus mirrors Artifact.status.downloadStatus\n(InProgress, Available, Error, or Failed).",
                 "type": "string"
@@ -117,6 +121,11 @@
               "repo": {
                 "description": "Repo is the artifact repo.",
                 "type": "string"
+              },
+              "sizeBytes": {
+                "description": "SizeBytes is the on-disk size of the uploaded image file(s).",
+                "type": "integer",
+                "format": "int64"
               },
               "statusReason": {
                 "description": "StatusReason mirrors Artifact.status.statusReason on Error/Failed.",
