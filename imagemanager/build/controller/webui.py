@@ -74,46 +74,74 @@ INDEX_HTML = r"""<!DOCTYPE html>
   @keyframes badgePop { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
   @keyframes indet { 0%{margin-left:-42%} 100%{margin-left:102%} }
 
-  /* AppBar */
+  /* AppBar — cable-map MUI AppBar parity (dense, flat, border-only) */
   .appbar {
-    position:sticky; top:0; z-index:30; height:56px; padding:0 20px;
+    position:sticky; top:0; z-index:30; height:52px; padding:0 16px 0 18px;
     background:var(--surface); border-bottom:1px solid var(--line);
-    display:flex; align-items:center; gap:12px;
+    display:flex; align-items:center; gap:16px; flex-shrink:0;
   }
-  .brand-mark {
-    width:10px; height:10px; border-radius:50%; background:var(--accent);
-    box-shadow:0 0 0 4px var(--accent-soft); flex:none;
+  .brand { display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 auto; }
+  .brand-logo {
+    width:28px; height:28px; flex:none; display:flex; align-items:center; justify-content:center;
+    border-radius:6px; background:linear-gradient(145deg, var(--eda-blue-400), var(--eda-blue-600));
+    box-shadow:0 0 0 1px rgba(0,90,255,.22);
   }
-  .brand-name { font-size:16px; font-weight:600; letter-spacing:.01em; }
-  .appbar .sub { color:var(--muted); font-size:12px; max-width:520px; line-height:1.35; }
-  @media (max-width:960px){ .appbar .sub { display:none; } }
-  .appbar-actions { margin-left:auto; display:flex; align-items:center; gap:6px; }
+  .brand-logo svg { width:17px; height:17px; display:block; }
+  .brand-text { display:flex; flex-direction:column; gap:1px; min-width:0; }
+  .brand-name {
+    font-size:15px; font-weight:500; letter-spacing:.015em; line-height:1.2; color:var(--fg);
+  }
+  .brand-sub {
+    font-size:11px; font-weight:400; color:var(--muted); line-height:1.25;
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:min(440px, 42vw);
+  }
+  @media (max-width:720px){ .brand-sub { display:none; } }
+  .appbar-actions { margin-left:auto; display:flex; align-items:center; gap:4px; flex:none; }
+  .live-pill {
+    display:inline-flex; align-items:center; gap:6px;
+    padding:4px 10px 4px 8px; border-radius:999px;
+    font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
+    color:var(--muted); background:var(--panel); border:1px solid var(--line);
+    transition:color var(--transition), border-color var(--transition), background var(--transition);
+  }
+  .live-pill.active { color:var(--ok-fg); border-color:var(--ok-bd); background:var(--ok-bg); }
+  .live-pill .live-dot {
+    width:6px; height:6px; border-radius:50%; background:var(--muted); flex:none;
+    transition:background var(--transition);
+  }
+  .live-pill.active .live-dot { background:var(--eda-green-500); animation:pulse 1.4s ease-in-out infinite; }
+  @media (max-width:640px){ .live-pill .live-label { display:none; } }
   .user-chip {
-    display:inline-flex; align-items:center; gap:7px; padding:4px 12px 4px 6px;
+    display:inline-flex; align-items:center; gap:8px;
+    padding:3px 12px 3px 4px; margin-left:2px;
     border-radius:999px; background:var(--panel); border:1px solid var(--line);
     color:var(--fg); font-size:12px; font-weight:500;
+    transition:border-color var(--transition), background var(--transition);
   }
+  .user-chip:hover { border-color:color-mix(in srgb, var(--line) 55%, var(--accent)); }
   .user-chip .avatar {
-    width:24px; height:24px; border-radius:50%; background:var(--accent); color:#fff;
-    font-size:11px; font-weight:700; display:flex; align-items:center; justify-content:center;
-    text-transform:uppercase;
+    width:26px; height:26px; border-radius:50%;
+    background:linear-gradient(135deg, var(--eda-blue-500), var(--eda-teal-400));
+    color:#fff; font-size:11px; font-weight:700;
+    display:flex; align-items:center; justify-content:center;
+    text-transform:uppercase; letter-spacing:.02em;
+    box-shadow:0 0 0 2px var(--accent-soft);
   }
   @media (max-width:560px){ .user-chip .uname { display:none; } }
 
-  /* Theme switch */
-  .switch { display:inline-flex; align-items:center; gap:8px; cursor:pointer;
-    padding:6px 8px; border-radius:var(--radius-sm); user-select:none; transition:background var(--transition); }
-  .switch:hover { background:var(--state); }
-  .switch input { position:absolute; opacity:0; width:0; height:0; }
-  .switch .track { position:relative; width:36px; height:14px; border-radius:7px;
-    background:var(--neutral-bd); transition:background var(--transition); flex:none; }
-  .switch .thumb { position:absolute; top:-3px; left:-1px; width:20px; height:20px;
-    border-radius:50%; background:#fafafa; box-shadow:var(--shadow-sm);
-    transition:transform var(--transition), background var(--transition); }
-  .switch input:checked + .track { background:color-mix(in srgb,var(--accent) 55%,transparent); }
-  .switch input:checked + .track .thumb { transform:translateX(18px); background:var(--accent); }
-  .switch input:focus-visible + .track .thumb { box-shadow:0 0 0 8px var(--state-strong); }
-  .switch .swlabel { font-size:12px; color:var(--muted); min-width:34px; }
+  /* Theme toggle — EDA icon button (cable-map parity) */
+  .theme-btn {
+    width:32px; height:32px; padding:0; border:0; border-radius:var(--radius-sm);
+    background:transparent; color:var(--muted); cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center;
+    transition:background var(--transition), color var(--transition);
+  }
+  .theme-btn:hover { background:var(--state); color:var(--fg); }
+  .theme-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .theme-btn svg { width:18px; height:18px; display:block; }
+  .theme-btn .icon-sun { display:none; }
+  html[data-theme="dark"] .theme-btn .icon-moon { display:none; }
+  html[data-theme="dark"] .theme-btn .icon-sun { display:block; }
 
   /* Buttons */
   .btn {
@@ -355,7 +383,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   html.eda-embedded .appbar { display:none; }
   html.eda-embedded .app-shell { max-width:none; padding:16px 18px 40px; min-height:60vh; }
   html.eda-embedded .page-head { margin-top:0; }
-  html.eda-embedded .switch { display:none; }
+  html.eda-embedded .theme-btn { display:none; }
+  html.eda-embedded .live-pill { display:none; }
   #boot-shell { padding:12px 4px 8px; color:var(--muted); font-size:13px; }
   #boot-shell.hide { display:none; }
   .auth-banner {
@@ -415,16 +444,27 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <a href="/core/httpproxy/v1/imagemanager/" style="color:#4d8dff">/core/httpproxy/v1/imagemanager/</a>
   in a new tab.</div></noscript>
 <header class="appbar">
-  <span class="brand-mark"></span>
-  <span class="brand-name">EDA Image Manager</span>
-  <span class="sub">Upload a NOS image (SR Linux / SR OS / SR-SIM) &rarr; hosted in-cluster &rarr; ready for EDA bootstrap or the Digital Twin</span>
+  <div class="brand">
+    <span class="brand-logo" aria-hidden="true">
+      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <path d="M6.5 5h11v2.25h-11V5zm0 5.5h11V12.75h-11V10.5zm0 5.5h8.25V18.5H6.5V16z" fill="#fff" opacity=".95"/>
+        <circle cx="17.25" cy="16.75" r="2.1" fill="#fff"/>
+      </svg>
+    </span>
+    <div class="brand-text">
+      <span class="brand-name">Image Manager</span>
+      <span class="brand-sub">Vendor NOS images for EDA bootstrap &amp; Digital Twin</span>
+    </div>
+  </div>
   <div class="appbar-actions">
+    <span id="liveIndicator" class="live-pill" title="Status polling active on the Status tab">
+      <span class="live-dot" aria-hidden="true"></span><span class="live-label">Live</span>
+    </span>
     <span id="userInfo" class="user-chip" style="display:none"><span class="avatar" id="avatar"></span><span class="uname" id="uname"></span></span>
-    <label class="switch" title="Toggle light / dark appearance">
-      <input type="checkbox" id="themeToggle">
-      <span class="track"><span class="thumb"></span></span>
-      <span class="swlabel" id="themeLabel">Dark</span>
-    </label>
+    <button type="button" id="themeBtn" class="theme-btn" title="Toggle light / dark appearance" aria-label="Toggle theme">
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.5 5.5 0 0 1-4.4 2.26 5.5 5.5 0 0 1-5.45-6.19A9 9 0 0 0 12 3z"/></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></svg>
+    </button>
     <a id="signoutLink" class="btn text subtle ripple" title="Sign out of Image Manager">Sign out</a>
   </div>
 </header>
@@ -805,6 +845,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     if(name === "status"){ refresh(); refreshImports(); }
     if(name === "settings"){ loadSettings(); }
+    syncLiveIndicator();
   }
   document.querySelectorAll(".tab").forEach(function(t){
     t.addEventListener("click", function(){ showTab(t.getAttribute("data-tab")); });
@@ -1476,20 +1517,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   }
 
-  // ---------- theme switch ----------
+  // ---------- theme toggle ----------
+  function syncLiveIndicator(){
+    var pill=el("liveIndicator");
+    if(pill) pill.classList.toggle("active", activeTab==="status");
+  }
   (function(){
-    var t=el("themeToggle"), lab=el("themeLabel");
-    if(!t || !lab) return;
-    function sync(){
+    var btn=el("themeBtn");
+    if(!btn) return;
+    btn.addEventListener("click", function(){
       var dark=document.documentElement.getAttribute("data-theme")==="dark";
-      t.checked=dark; lab.textContent=dark?"Light":"Dark";
-    }
-    sync();
-    t.addEventListener("change", function(){
-      var next=t.checked?"dark":"light";
+      var next=dark?"light":"dark";
       document.documentElement.setAttribute("data-theme", next);
       try{ localStorage.setItem("imagemanager-theme", next); }catch(e){}
-      sync();
     });
   })();
 
@@ -1502,7 +1542,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   setInterval(function(){
     if(activeTab==="status"){ refresh(); refreshImports(); }
     else { updateStatusBadge(); }
+    syncLiveIndicator();
   }, 5000);
+  syncLiveIndicator();
 })();
 </script>
 </body>
