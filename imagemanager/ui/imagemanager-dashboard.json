@@ -1,7 +1,7 @@
 {
   "uuid": "64140263-840c-4da6-af3e-84907686cd63",
   "name": "Image Manager",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "displayName": "Image Manager",
   "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
   "showNavigationToolbar": true,
@@ -47,12 +47,12 @@
                     "initialModel": {
                       "schema": "v1",
                       "modelName": "ImageManagerArtifact",
-                      "primaryKey": "metadata.name",
+                      "primaryKey": "name",
                       "showGroupDisplay": "no",
                       "flat": true,
                       "fields": [
                         {
-                          "fieldName": "status.displayName",
+                          "fieldName": "displayName",
                           "label": "Name",
                           "type": "string",
                           "sortable": true,
@@ -60,7 +60,7 @@
                           "flex": 1.6
                         },
                         {
-                          "fieldName": "status.sizeBytes",
+                          "fieldName": "sizeBytes",
                           "label": "Size",
                           "type": "number",
                           "sortable": true,
@@ -68,7 +68,7 @@
                           "flex": 0.9
                         },
                         {
-                          "fieldName": "status.downloadStatus",
+                          "fieldName": "downloadStatus",
                           "label": "Status",
                           "type": "string",
                           "sortable": true,
@@ -76,7 +76,7 @@
                           "flex": 1
                         },
                         {
-                          "fieldName": "status.open",
+                          "fieldName": "open",
                           "label": "View",
                           "type": "string",
                           "sortable": false,
@@ -84,7 +84,7 @@
                           "flex": 0.7
                         },
                         {
-                          "fieldName": "status.namespace",
+                          "fieldName": "namespace",
                           "label": "Namespace",
                           "type": "string",
                           "visible": false,
@@ -93,7 +93,7 @@
                           "flex": 1.1
                         },
                         {
-                          "fieldName": "status.statusReason",
+                          "fieldName": "statusReason",
                           "label": "Message",
                           "type": "string",
                           "visible": false,
@@ -101,7 +101,7 @@
                           "width": "260px"
                         },
                         {
-                          "fieldName": "status.artifactName",
+                          "fieldName": "artifactName",
                           "label": "Artifact ID",
                           "type": "string",
                           "visible": false,
