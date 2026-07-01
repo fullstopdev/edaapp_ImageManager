@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.8
+
+Fix missing EDA left-nav entry (regression from v0.0.6):
+
+- Revert manifest `ui.category` from **System** to **Topology** (cable-map and all
+  working catalog apps use Topology; `System` is not registered for custom app views —
+  same failure mode as the pre-v0.0.4 custom `Image Manager` category).
+- Revert launcher EQL to `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs`
+  (always has a `default` row; empty `imagemanagerartifacts` list can prevent view
+  registration on fresh installs).
+- Regenerate dashboard UUIDs and bump dashboard `version` to `0.0.8`.
+- Keep `icon: CloudUpgrade` and cable-map structural clone (`flexRow` → `dashletDataView`).
+
 ## v0.0.7
 
 Stability and API-load reduction (see `docs/STABILITY.md`):

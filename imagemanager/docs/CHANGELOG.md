@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.8
+
+Fix missing EDA left-nav entry (regression from v0.0.6):
+
+- Revert manifest `ui.category` from **System** to **Topology** (cable-map and all
+  working catalog apps use Topology; `System` is not registered for custom app views —
+  same failure mode as the pre-v0.0.4 custom `Image Manager` category).
+- Revert launcher EQL to `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs`
+  (always has a `default` row; empty `imagemanagerartifacts` list can prevent view
+  registration on fresh installs).
+- Regenerate dashboard UUIDs and bump dashboard `version` to `0.0.8`.
+- Keep `icon: CloudUpgrade` and cable-map structural clone (`flexRow` → `dashletDataView`).
+
 ## v0.0.7
 
 Stability and API-load reduction (see `docs/STABILITY.md`):
@@ -8,7 +21,7 @@ Stability and API-load reduction (see `docs/STABILITY.md`):
 - Reconcile interval 60s (env `RECONCILE_INTERVAL`); skip status PUT when unchanged.
 - ImageImport URL downloads run in a background thread (uploads no longer block).
 - Artifact list cache (8s) and Status tab poll interval 10s (was 5s).
-- Node-agent: `NODE_AGENT_ENABLED=false` skips `hosts.toml` writes; resync 120s; document scale-to-zero for non-SR-SIM labs.
+- Node-agent: App Store setting `nodeAgentEnabled` (default true); `NODE_AGENT_ENABLED=false` skips `hosts.toml` writes; resync 120s; document scale-to-zero for non-SR-SIM labs.
 - Uninstall: DaemonSet pods use `eda.nokia.com/app: eda-imagemanager` (same as Deployment) so EDA deletes both workloads; removed blocking `preStop` hook (SIGTERM cleanup only); shorter `terminationGracePeriodSeconds`.
 
 ## v0.0.6

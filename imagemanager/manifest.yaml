@@ -22,7 +22,7 @@ spec:
     central image store or data lake; this app is a self-contained alternative for
     labs and PoCs where standing up that external store is unnecessary friction.
   author: EDACommunity
-  image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-app:v0.0.7
+  image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-app:v0.0.8
   supportedCoreVersions:
     - "v5.0.0-0"
   appInfo:
@@ -82,7 +82,7 @@ spec:
     - view:
         path: imagemanager/ui/imagemanager-dashboard.json
         ui:
-          category: System
+          category: Topology
           icon: CloudUpgrade
           name: Image Manager
   dependencies:

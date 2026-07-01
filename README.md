@@ -84,11 +84,11 @@ Within a few minutes the Catalog shows **Operational = true** and **EDA Image Ma
 
 ### EDA navigation panel (launcher dashboard)
 
-From **v0.0.6** onward, the launcher appears under **System → Image Manager** (CloudUpgrade icon). The status card lists uploaded images (**Name, Size, Status**) with a **View** link that opens the full upload UI in a new tab.
+From **v0.0.8** onward, the launcher appears under **Topology → Image Manager** (CloudUpgrade icon). The status card shows controller health (**Name, Status**) with a **View** link that opens the full upload UI in a new tab.
 
-**Upgrade to v0.0.6** from the App Store (or reinstall), then hard-refresh your browser (Ctrl+Shift+R / Cmd+Shift+R). Confirm **System → Image Manager** shows the launcher card. Non-admin users need the `imagemanager-viewer` EDA role (assigned automatically with default install settings) or `system-administrator`.
+**Upgrade to v0.0.8** from the App Store (or reinstall), then hard-refresh your browser (Ctrl+Shift+R / Cmd+Shift+R). Confirm **Topology → Image Manager** shows the launcher card. Non-admin users need the `imagemanager-viewer` EDA role (assigned automatically with default install settings) or `system-administrator`.
 
-If you installed **v0.0.3** or earlier, the nav entry used a custom `Image Manager` category that EDA does not render — upgrade to **v0.0.4+** to see the panel at all.
+If you installed **v0.0.6** or **v0.0.7**, the nav entry used `ui.category: System`, which EDA does not register for custom app views — upgrade to **v0.0.8**. If you installed **v0.0.3** or earlier, the nav entry used a custom `Image Manager` category that EDA does not render — upgrade to **v0.0.4+** to see the panel at all.
 
 ### Direct HttpProxy URL
 
@@ -236,7 +236,14 @@ Its **status** also reports overall health and a list of every artifact the app 
 
 ## Uninstalling
 
-Uninstall from the EDA Store (or remove the `AppInstaller`). This removes the controller, its Service/proxy/RBAC, and **its PersistentVolumeClaim** — i.e. the app's stored images are deleted. Because this app is the **durable origin** `eda-asvr` pulls from (see _What it's for_ above), uninstalling breaks every Artifact it created: `eda-asvr` keeps no permanent copy of its own and will fail to re‑pull the files the next time its pod restarts. Before uninstalling, move any images you still need into a permanent store and re‑point their Artifacts there.
+Uninstall from the EDA Store (or remove the `AppInstaller`). This removes **both** workloads — the `eda-imagemanager` Deployment and the `eda-imagemanager-node-agent` DaemonSet — plus Service/proxy/RBAC and **its PersistentVolumeClaim** (i.e. the app's stored images are deleted). Because this app is the **durable origin** `eda-asvr` pulls from (see _What it's for_ above), uninstalling breaks every Artifact it created: `eda-asvr` keeps no permanent copy of its own and will fail to re‑pull the files the next time its pod restarts. Before uninstalling, move any images you still need into a permanent store and re‑point their Artifacts there.
+
+**Stuck pod after uninstall (v0.0.6 and earlier):** the node-agent DaemonSet pod (`eda-imagemanager-node-agent-*`) could remain `Running` or hang in `Terminating` because its pod labels did not match EDA's app lifecycle (`eda.nokia.com/app` must be `eda-imagemanager` on every workload pod). Fixed in **v0.0.7**. If an orphan remains after upgrading from an older release:
+
+```bash
+kubectl delete daemonset eda-imagemanager-node-agent -n eda-system --ignore-not-found
+kubectl delete pod -n eda-system -l 'eda.nokia.com/app=eda-imagemanager,eda.nokia.com/component=node-agent' --ignore-not-found
+```
 
 ---
 
