@@ -46,6 +46,10 @@ logger = logging.getLogger("auth")
 POD_NAMESPACE = os.environ.get("POD_NAMESPACE", "eda-system")
 REALM = "eda"
 CLIENT_ID = "eda"
+# Public browser client used by keycloak-js for silent SSO inside the EDA GUI
+# iframe (same pattern as cable-map.eda.labs).
+BROWSER_CLIENT_ID = "auth"
+IDENTITY_PROXY_PATH = "/core/proxy/v1/identity"
 KC_PROXY_PATH = "/core/httpproxy/v1/keycloak"
 # In-cluster Keycloak (server-to-server: admin token, client-secret, code exchange).
 KC_INTERNAL_BASE = f"https://eda-api.{POD_NAMESPACE}.svc{KC_PROXY_PATH}"
@@ -216,8 +220,12 @@ def _decode_jwt(token):
 
 def token_identity(token_resp):
     """(username, set_of_roles) from a token response, or (None, set())."""
-    at = token_resp.get("access_token", "")
-    p = _decode_jwt(at)
+    return jwt_identity(token_resp.get("access_token", ""))
+
+
+def jwt_identity(access_token):
+    """(username, set_of_roles) from a bearer access token, or (None, set())."""
+    p = _decode_jwt(access_token or "")
     if not p:
         return None, set()
     if p.get("exp", 0) < time.time():
@@ -225,6 +233,15 @@ def token_identity(token_resp):
     user = p.get("preferred_username") or p.get("sub")
     roles = set((p.get("realm_access") or {}).get("roles") or [])
     return user, roles
+
+
+def identity_base(headers):
+    """Browser-facing Keycloak base URL for keycloak-js (EDA identity proxy)."""
+    return external_base(headers) + IDENTITY_PROXY_PATH
+
+
+def silent_sso_redirect_uri(headers):
+    return external_base(headers) + APP_PROXY_PREFIX + "/oauth/silent-sso.html"
 
 
 def is_allowed(roles):

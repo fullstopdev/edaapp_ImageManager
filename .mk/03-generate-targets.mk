@@ -1,4 +1,5 @@
 REGISTRY ?= ghcr.io/kkayhan/edaapp_imagemanager
+CATALOG_REPO ?= $(shell git config --get remote.origin.url)
 
 # operators
 # $1 app dir where the manifest.yaml is.
@@ -46,7 +47,8 @@ HELP_TARGETS += $(1)-publish
 HELP_$(1)-publish := Build and publish app $(1)
 .PHONY: $(1)-publish
 $(1)-publish:
-	edabuilder --app "$(1)" build-publish
+	edabuilder build-push --app "$(1)"
+	edabuilder publish app $(CATALOG_REPO) --app "$(1)"
 
 LIST_MOD_TIDY += $(1)-mod-tidy
 HELP_TARGETS += $(1)-mod-tidy

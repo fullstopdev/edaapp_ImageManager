@@ -1,0 +1,215 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.19.0
+  name: imageimports.imagemanager.eda.edacommunity.com
+spec:
+  group: imagemanager.eda.edacommunity.com
+  names:
+    kind: ImageImport
+    listKind: ImageImportList
+    plural: imageimports
+    shortNames:
+    - imgimport
+    singular: imageimport
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - jsonPath: .status.phase
+      name: Phase
+      type: string
+    - jsonPath: .status.detectedNos
+      name: NOS
+      type: string
+    - jsonPath: .status.sizeBytes
+      name: Size
+      type: integer
+    - jsonPath: .status.message
+      name: Message
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1alpha1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          ImageImport is the Schema for the imageimports API. Creating one is the
+          declarative equivalent of using the app's "Upload Image From File" dialog:
+          the controller fetches spec.sourceUrl, auto-detects the image kind, and
+          creates the same Artifact(s) a manual upload would, targeting this CR's
+          own namespace.
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              ImageImportSpec defines the desired state of ImageImport.
+
+              Creating an ImageImport is the declarative equivalent of using the
+              "Upload Image From File" dialog in the app's web UI: the controller
+              downloads SourceUrl, detects whether it's an SR Linux, SR OS (TiMOS), or
+              SR-SIM vendor zip, and creates the same Artifact(s) the manual upload path
+              creates. The CR's own namespace is used as the target Artifact namespace
+              (the same choice the upload dialog's namespace dropdown makes).
+            properties:
+              insecureSkipTLSVerify:
+                default: false
+                description: |-
+                  InsecureSkipTLSVerify skips TLS certificate verification when
+                  fetching SourceUrl. Only intended for lab source servers using
+                  self-signed certs; leave false otherwise.
+                type: boolean
+              licenseKey:
+                description: |-
+                  LicenseKey is an optional Nokia SR OS / SR Linux simulator license
+                  key, pasted the same way as the upload dialog's License field
+                  (surrounding whitespace/quotes/labels are parsed out). Stored as a
+                  ConfigMap in eda-system and wired into the generated NodeProfile via
+                  spec.license, exactly like a manual upload.
+
+                  NOTE: this field is plaintext in the CR spec (kubectl get/describe
+                  will show it). Prefer LicenseKeySecretRef in namespaces where that
+                  matters; this field remains for parity with the upload dialog.
+                type: string
+              licenseKeySecretRef:
+                description: |-
+                  LicenseKeySecretRef names a Secret (in the same namespace as this
+                  ImageImport) whose "license.key" data key holds the license, as an
+                  alternative to the inline LicenseKey field above.
+                type: string
+              name:
+                description: |-
+                  Name overrides the auto-derived artifact name (default: derived from
+                  the detected version, e.g. "srlinux-26.3.9"). Always lowercased.
+                type: string
+              repo:
+                description: |-
+                  Repo overrides ImageManagerConfig.spec.defaultRepo for SR Linux
+                  images. SR OS boot images always go to "srosimages" and schema
+                  profiles to "schemaprofiles" regardless of this field.
+                type: string
+              sourceUrl:
+                description: |-
+                  SourceUrl is the HTTP(S) URL of the vendor .zip to import (SR Linux,
+                  SR OS 7750 TiMOS hardware, or SR-SIM). Must be reachable from inside
+                  the cluster. The image type is auto-detected from the zip contents,
+                  exactly like a manual upload.
+                pattern: ^https?://.+
+                type: string
+            required:
+            - sourceUrl
+            type: object
+          status:
+            description: |-
+              ImageImportStatus defines the observed state of ImageImport.
+              The controller is the sole writer of this status.
+            properties:
+              artifacts:
+                description: |-
+                  Artifacts lists the Artifact CR(s) this import created, mirroring
+                  each one's live eda-asvr download status (same shape ImageManager
+                  already exposes on ImageManagerConfig.status.artifacts).
+                items:
+                  description: |-
+                    TrackedArtifact is a denormalized record of one Artifact CR created by this
+                    app, including the live download status mirrored from the Artifact.
+                  properties:
+                    downloadStatus:
+                      description: |-
+                        DownloadStatus mirrors Artifact.status.downloadStatus
+                        (InProgress, Available, Error, or Failed).
+                      type: string
+                    externalUrl:
+                      description: ExternalUrl mirrors Artifact.status.externalUrl
+                        once Available.
+                      type: string
+                    filePath:
+                      description: FilePath is the destination path/filename in the
+                        artifact server.
+                      type: string
+                    name:
+                      description: Name is the Artifact CR name (equals the upload
+                        id).
+                      type: string
+                    namespace:
+                      description: Namespace is the Artifact CR namespace.
+                      type: string
+                    repo:
+                      description: Repo is the artifact repo.
+                      type: string
+                    statusReason:
+                      description: StatusReason mirrors Artifact.status.statusReason
+                        on Error/Failed.
+                      type: string
+                  required:
+                  - filePath
+                  - name
+                  - namespace
+                  - repo
+                  type: object
+                type: array
+              completionTime:
+                description: |-
+                  CompletionTime is when the import reached a terminal phase
+                  (Available, Ready, Failed, or Error).
+                type: string
+              detectedNos:
+                description: 'DetectedNos is the auto-detected image kind: srlinux,
+                  sros, or srsim.'
+                type: string
+              message:
+                description: |-
+                  Message is a human-readable detail for the current phase (e.g. the
+                  download error, or the MD5 mismatch reason).
+                type: string
+              nodeProfileSnippet:
+                description: |-
+                  NodeProfileSnippet is a ready-to-paste spec.images block once
+                  Available/Ready, identical to what the "node profile" popup shows
+                  in the web UI.
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the spec generation last reconciled, so the UI
+                  can tell a stale status from a fresh one after a spec edit.
+                format: int64
+                type: integer
+              phase:
+                description: |-
+                  Phase is the current stage of the import:
+                  Pending, Downloading, Extracting, InProgress, Available, Ready,
+                  Failed, or Error. Mirrors the same states shown in the web UI's
+                  Status column.
+                type: string
+              sizeBytes:
+                description: SizeBytes is the total downloaded size once known.
+                format: int64
+                type: integer
+              startTime:
+                description: StartTime is when the controller began processing this
+                  import.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}

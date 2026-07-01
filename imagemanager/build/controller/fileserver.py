@@ -32,6 +32,7 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
 
 import artifact
 import auth
+import import_common
 import k8s
 import schemaprofile
 import uploads
@@ -176,6 +177,37 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._redirect(url, cookies=[(auth.STATE_COOKIE, state, 600)])
 
+    def _handle_oauth_session(self):
+        """Exchange a keycloak-js access token for an HTTP-only session cookie."""
+        auth_hdr = self.headers.get("Authorization", "")
+        token = ""
+        if auth_hdr.lower().startswith("bearer "):
+            token = auth_hdr[7:].strip()
+        if not token:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            body = self.rfile.read(n) if n else b""
+            try:
+                token = (json.loads(body.decode("utf-8")) if body else {}).get("token", "")
+            except Exception:
+                token = ""
+        user, roles = auth.jwt_identity(token)
+        if not user:
+            self._send_json({"ok": False, "error": "invalid or expired token"}, 401)
+            return
+        if not auth.is_allowed(roles):
+            self._send_json({
+                "ok": False,
+                "error": "forbidden",
+                "user": user,
+                "allowedRoles": auth.allowed_roles(),
+            }, 403)
+            return
+        self.send_response(200)
+        self._set_cookie(auth.SESSION_COOKIE, auth.make_session(user), auth.SESSION_TTL)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"ok": True, "user": user}).encode("utf-8"))
+
     def _handle_oauth_callback(self, q):
         code = (q.get("code") or [None])[0]
         state = (q.get("state") or [None])[0]
@@ -263,16 +295,21 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/oauth/login":
                 self._redirect_to_login()
                 return
-            # Everything else requires a valid EDA session.
+            if path == "/oauth/silent-sso.html":
+                self._send_text(webui.SILENT_SSO_HTML, ctype="text/html; charset=utf-8")
+                return
+            # UI shell loads without a session so keycloak-js can perform silent SSO
+            # inside the EDA iframe (cable-map.eda.labs pattern). Data APIs stay gated.
+            if path == "/":
+                self._send_text(webui.INDEX_HTML, ctype="text/html; charset=utf-8")
+                return
             if auth.enabled() and not self._authed_user():
                 if path.startswith("/api/"):
                     self._send_json({"ok": False, "error": "not authenticated"}, 401)
                 else:
-                    self._redirect_to_login()
+                    self.send_error(404, "Not Found")
                 return
-            if path == "/":
-                self._send_text(webui.INDEX_HTML, ctype="text/html; charset=utf-8")
-            elif path == "/api/config":
+            if path == "/api/config":
                 self._serve_config()
             elif path == "/api/namespaces":
                 self._serve_namespaces()
@@ -504,7 +541,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, q = self._route()
         try:
-            # All POSTs are user actions — require a valid EDA session.
+            if path == "/oauth/session":
+                self._handle_oauth_session()
+                return
+            # All other POSTs are user actions — require a valid EDA session.
             if auth.enabled() and not self._authed_user():
                 self._send_json({"ok": False, "error": "not authenticated"}, 401)
                 return
@@ -560,84 +600,8 @@ class Handler(BaseHTTPRequestHandler):
                              "error": "license file too large (expected a small key file)"}, 413)
             return
         raw = self.rfile.read(content_length)
-        key = uploads.normalize_license(raw)   # robust parse: tolerates surrounding junk
-        if not key:
-            self._send_json({"ok": False,
-                             "error": "could not find a valid license key in the text "
-                                      "(expected a line like '<node-id> <key>')"}, 400)
-            return
-        image_nos = meta.get("nos") or "srl"
-        expect = "srl" if image_nos == "srl" else "sros"   # srsim is an SR OS license
-        lic_nos = uploads.detect_license_nos(key, src_filename)
-        mismatch = bool(lic_nos and lic_nos != expect)
-        cm_name = uploads.license_cm_name(upload_id)
-        labels = {artifact.MANAGED_LABEL: "true"}
-        data = {uploads.LICENSE_KEY: key}
-        # OWNERSHIP GUARD: the derived name "<image>-license" could collide with a
-        # ConfigMap this app does NOT own -- e.g. EDA ships its own license CMs in
-        # eda-system (cx-srl-<ver>-ghcr-license, sros-ghcr-<ver>-dummy-license). NEVER
-        # overwrite or adopt one of those. Only create a new CM, or replace one that
-        # already carries our managed label. Refuse otherwise (and never delete a
-        # non-managed CM later, see _handle_delete).
-        try:
-            existing = k8s.read_configmap(cm_name, LICENSE_NS)
-        except Exception as e:  # noqa: BLE001
-            self._send_json({"ok": False, "error": f"could not read existing ConfigMap: {e}"}, 502)
-            return
-        if existing is not None and \
-                ((existing.get("metadata") or {}).get("labels") or {}).get(
-                    artifact.MANAGED_LABEL) != "true":
-            self._send_json({"ok": False,
-                             "error": f"a ConfigMap named '{cm_name}' already exists in "
-                                      f"{LICENSE_NS} and is not managed by Image Manager (it may "
-                                      f"be an EDA-owned license). Rename the image and retry."}, 409)
-            return
-        fresh = existing is None
-        try:
-            if fresh:
-                k8s.create_configmap(cm_name, LICENSE_NS, data, labels)
-            else:
-                k8s.replace_configmap(cm_name, LICENSE_NS, data, labels)
-        except urllib.error.HTTPError as e:
-            detail = ""
-            try:
-                detail = e.read().decode("utf-8", "replace")[:200]
-            except Exception:  # noqa: BLE001
-                pass
-            self._send_json({"ok": False,
-                             "error": f"license ConfigMap write failed (HTTP {e.code}): "
-                                      f"{detail}"}, 502)
-            return
-        except Exception as e:  # noqa: BLE001
-            self._send_json({"ok": False, "error": f"license ConfigMap write failed: {e}"}, 502)
-            return
-        uploads.store_license_file(upload_id, key)
-        lic_rec = {"configMap": cm_name, "namespace": LICENSE_NS, "key": uploads.LICENSE_KEY,
-                   "nos": lic_nos or expect, "sourceFilename": src_filename or None,
-                   "sizeBytes": len(key)}
-        # Record the license on the image. If this fails -- meta write error (PVC
-        # full) or the image was deleted between our read and now -- don't leak a CM
-        # we just freshly created: compensate by deleting it, so it can't orphan.
-        recorded = None
-        try:
-            recorded = uploads.set_license_meta(upload_id, lic_rec)
-        except OSError as e:
-            logger.warning("license meta write failed for %s: %s", upload_id, e)
-        if recorded is None:
-            if fresh:
-                try:
-                    k8s.delete_configmap(cm_name, LICENSE_NS)
-                except Exception:  # noqa: BLE001
-                    pass
-            self._send_json({"ok": False,
-                             "error": "could not record the license on the image (it may have "
-                                      "been deleted, or storage is full)"}, 409)
-            return
-        logger.info("License attached to %s -> ConfigMap %s/%s (%d bytes, nos=%s, mismatch=%s)",
-                    upload_id, LICENSE_NS, cm_name, len(key), lic_nos, mismatch)
-        self._send_json({"ok": True, "uploadId": upload_id, "configMap": cm_name,
-                         "namespace": LICENSE_NS, "licenseNos": lic_nos,
-                         "imageNos": image_nos, "mismatch": mismatch})
+        result = import_common.attach_license(upload_id, raw, raw_lic_fn)
+        self._send_json(result, result.get("status", 200 if result.get("ok") else 400))
 
     def _handle_delete(self, q):
         def one(name):
@@ -749,320 +713,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False,
                                  "error": "the uploaded file is not a valid .zip archive"}, 400)
                 return
-            nos = uploads.detect_nos_from_zip(tmp_zip)
-            if nos == "srsim":
-                self._finish_srsim_upload(tmp_zip, filename, namespace, name_override)
-            elif nos == "sros":
-                self._finish_sros_upload(tmp_dir, tmp_zip, namespace, name_override)
-            elif nos == "srl":
-                self._finish_srl_upload(tmp_zip, filename, namespace, name_override)
-            else:
-                self._send_json({"ok": False,
-                                 "error": "could not detect an SR Linux (.bin), SR OS 7750 "
-                                          "TiMOS, or SR-SIM (srsim.tar.xz) image inside the "
-                                          "zip"}, 400)
+            result = import_common.process_zip(tmp_dir, tmp_zip, filename, namespace,
+                                               name_override, CONFIG)
+            self._send_json(result, result.get("status", 200 if result.get("ok") else 400))
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)
 
-    def _finish_srl_upload(self, tmp_zip, filename, namespace, name_override):
-        """SR Linux: extract the .bin (+ its packaged md5) from the temp zip into
-        the image dir, create the image (+md5) Artifact, then resolve the YANG."""
-        repo = (CONFIG.get("defaultRepo") or "images").strip()
-        # Lowercase everywhere: this name becomes the Artifact name and the
-        # NodeProfile name, so capitals must never get through.
-        display_name = (name_override or uploads.derive_name(filename)).strip().lower()
-        artifact_name = uploads.to_k8s_name(display_name)
-        if not artifact_name:
-            self._send_json({"ok": False, "error": "could not derive a valid image name"}, 400)
-            return
-        upload_dir = os.path.join(UPLOAD_DIR, artifact_name)
-        if os.path.isfile(os.path.join(upload_dir, "meta.json")):
-            self._send_json({"ok": False,
-                             "error": f"An image named '{display_name}' already exists. "
-                                      f"Delete it first to replace it."}, 409)
-            return
-        shutil.rmtree(upload_dir, ignore_errors=True)
-        os.makedirs(upload_dir, exist_ok=True)
-        try:
-            bin_filename, md5 = uploads.extract_image_from_zip(tmp_zip, upload_dir)
-        except uploads.BadZip as e:
-            shutil.rmtree(upload_dir, ignore_errors=True)
-            self._send_json({"ok": False, "error": f"could not read the zip: {e}"}, 400)
-            return
-        written = os.path.getsize(os.path.join(upload_dir, bin_filename))
-        md5_artifact_name = (artifact_name + "-md5") if md5 else ""
-        # Re-host each artifact under its real shipped filename: eda-asvr serves it at
-        # <ns>/<repo>/<artifactName>/<filePath>, so filePath carries the extension SR
-        # Linux ZTP expects -- the image as <name>.bin and its checksum as <name>.bin.md5.
-        # The same value is recorded in meta.json so the UI matches what is served.
-        image_file_path = bin_filename
-        md5_file_path = bin_filename + ".md5"
-        uploads.finalize_upload(artifact_name, bin_filename, md5, repo, image_file_path,
-                                namespace, written, artifact_name, display_name, md5_artifact_name)
-        base_url = CONFIG.get("filePullBaseUrl") or artifact.default_base_url(POD_NAMESPACE)
-        file_url, md5_url = artifact.file_urls(base_url, artifact_name, bin_filename)
-        try:
-            artifact.create_artifact(namespace, artifact_name, repo, image_file_path,
-                                     file_url, md5_url if md5 else None)
-        except urllib.error.HTTPError as e:
-            shutil.rmtree(upload_dir, ignore_errors=True)
-            if e.code == 409:
-                self._send_json({"ok": False,
-                                 "error": f"An Artifact named '{artifact_name}' already exists "
-                                          f"in {namespace}. Delete it first."}, 409)
-                return
-            detail = ""
-            try:
-                detail = e.read().decode("utf-8", errors="replace")[:300]
-            except Exception:  # noqa: BLE001
-                pass
-            self._send_json({"ok": False,
-                             "error": f"Artifact create failed (HTTP {e.code}): {detail}"}, 502)
-            return
-        except Exception as e:  # noqa: BLE001 - URLError/timeout: don't orphan
-            shutil.rmtree(upload_dir, ignore_errors=True)
-            self._send_json({"ok": False, "error": f"Artifact create failed: {e}"}, 502)
-            return
-        if md5:
-            try:
-                artifact.create_artifact(namespace, md5_artifact_name, repo,
-                                         md5_file_path, md5_url, None)
-            except Exception as e:  # noqa: BLE001 - md5 sidecar Artifact is best-effort
-                logger.warning("md5 Artifact %s/%s create failed: %s",
-                               namespace, md5_artifact_name, e)
-        # YANG (best-effort, never aborts the image): auto-resolve from the version.
-        yang_created = False
-        try:
-            vm = _VER_RE.search(display_name)
-            srl_ver = vm.group(1).split("-")[0] if vm else ""
-            if srl_ver:
-                yfn, _src = schemaprofile.resolve_yang("srl", srl_ver, upload_dir)
-                if yfn:
-                    ok, yrec = self._create_yang_artifact(namespace, artifact_name,
-                                                          artifact_name + "-yang", yfn, base_url)
-                    if ok:
-                        m = uploads.read_meta(artifact_name) or {}
-                        m["yang"] = yrec
-                        m["nos"] = "srl"
-                        m["version"] = srl_ver
-                        uploads.rewrite_meta(artifact_name, m)
-                        yang_created = True
-        except Exception as e:  # noqa: BLE001 - YANG is best-effort
-            logger.warning("SRL YANG handling failed for %s: %s", artifact_name, e)
-        logger.info("Upload complete: %s (%d bytes, md5=%s, yang=%s) -> Artifact %s/%s",
-                    bin_filename, written, bool(md5), yang_created, namespace, artifact_name)
-        self._send_json({"ok": True, "uploadId": artifact_name, "artifactName": artifact_name,
-                         "displayName": display_name, "namespace": namespace, "repo": repo,
-                         "nos": "srl", "filePath": image_file_path, "md5": md5 or "",
-                         "sizeBytes": written, "fromZip": True, "filename": bin_filename,
-                         "yangCreated": yang_created})
-
-    # ---------------------- SR OS (7750 TiMOS) upload ----------------------
-
-    def _create_yang_artifact(self, namespace, upload_id, yname, yang_filename, base_url):
-        """Create the schema-profile (yang) Artifact. The file is hosted by us at
-        /files/<upload_id>/<yang_filename>; the Artifact is named `yname` (SR OS:
-        the group id sros-<ver> -> reference path; SR Linux: <img>-yang to avoid
-        clashing with the image Artifact). Returns (ok, record); never raises (a
-        YANG failure must not abort the image upload)."""
-        file_url, _ = artifact.file_urls(base_url, upload_id, yang_filename)
-        for attempt in range(4):
-            try:
-                artifact.create_artifact(namespace, yname, artifact.SCHEMAPROFILE_REPO,
-                                         yang_filename, file_url, None)
-                return True, {"artifactName": yname, "filename": yang_filename,
-                              "filePath": yang_filename, "repo": artifact.SCHEMAPROFILE_REPO}
-            except urllib.error.HTTPError as e:
-                # On a re-upload we delete the same-named Artifact first; it may still
-                # be Terminating (finalizer) -> 409. Back off and retry a few times.
-                if e.code == 409 and attempt < 3:
-                    time.sleep(1.0)
-                    continue
-                logger.warning("YANG Artifact %s/%s create failed (HTTP %s)",
-                               namespace, yname, e.code)
-                return False, None
-            except Exception as e:  # noqa: BLE001 - YANG is best-effort
-                logger.warning("YANG Artifact %s/%s create error: %s", namespace, yname, e)
-                return False, None
-
-    def _finish_sros_upload(self, tmp_dir, tmp_zip, namespace, name_override):
-        """SR OS (7750 TiMOS): extract the boot-image set from the temp zip, create
-        one Artifact per file plus a per-file md5 Artifact (md5 from the zip's
-        md5sums.txt), then resolve the YANG (fetch nokia-eda, else build from 7x50).
-        The display name is editable; the version (for yang) comes from the zip."""
-        try:
-            version_disp, extracted = uploads.extract_sros_images(tmp_zip, tmp_dir)
-        except uploads.BadZip as e:
-            self._send_json({"ok": False, "error": f"not a 7750 SR OS image: {e}"}, 400)
-            return
-        version = version_disp.lower()
-        # Lowercase everywhere (Artifact names, served filePaths, NodeProfile name).
-        display_name = (name_override or ("sros-" + version)).strip().lower()
-        group_id = uploads.to_k8s_name(display_name)
-        if not group_id:
-            self._send_json({"ok": False, "error": "could not derive a valid image name"}, 400)
-            return
-        group_dir = os.path.join(UPLOAD_DIR, group_id)
-        if os.path.isfile(os.path.join(group_dir, "meta.json")):
-            self._send_json({"ok": False,
-                             "error": f"An image named '{display_name}' already exists. "
-                                      f"Delete it first to replace it."}, 409)
-            return
-        shutil.rmtree(group_dir, ignore_errors=True)
-        os.makedirs(group_dir, exist_ok=True)
-        total = 0
-        for it in extracted:
-            os.replace(os.path.join(tmp_dir, it["filename"]),
-                       os.path.join(group_dir, it["filename"]))
-            total += int(it.get("size") or 0)
-
-        base_url = CONFIG.get("filePullBaseUrl") or artifact.default_base_url(POD_NAMESPACE)
-        created = []
-        art_records = []
-
-        def rollback():
-            for ns_, nm_ in created:
-                try:
-                    artifact.delete_artifact(ns_, nm_)
-                except Exception:  # noqa: BLE001
-                    pass
-            shutil.rmtree(group_dir, ignore_errors=True)
-
-        for it in extracted:
-            fn = it["filename"]
-            md5 = it.get("md5")
-            art_name = uploads.to_k8s_name(group_id + "-" + fn)
-            file_url, md5_url = artifact.file_urls(base_url, group_id, fn)
-            if md5:
-                with open(os.path.join(group_dir, fn + ".md5"), "w") as f:
-                    f.write(md5 + "\n")
-            try:
-                artifact.create_artifact(namespace, art_name, artifact.SROS_REPO,
-                                         fn, file_url, md5_url if md5 else None)
-            except urllib.error.HTTPError as e:
-                rollback()
-                detail = ""
-                try:
-                    detail = e.read().decode("utf-8", "replace")[:200]
-                except Exception:  # noqa: BLE001
-                    pass
-                code = 409 if e.code == 409 else 502
-                self._send_json({"ok": False,
-                                 "error": f"Artifact {art_name} create failed "
-                                          f"(HTTP {e.code}): {detail}"}, code)
-                return
-            except Exception as e:  # noqa: BLE001 - roll back, never orphan
-                rollback()
-                self._send_json({"ok": False,
-                                 "error": f"Artifact {art_name} create failed: {e}"}, 502)
-                return
-            created.append((namespace, art_name))
-            rec = {"artifactName": art_name, "filename": fn, "filePath": fn}
-            if md5:
-                md5_art = uploads.to_k8s_name(art_name + "-md5")
-                try:
-                    artifact.create_artifact(namespace, md5_art, artifact.SROS_REPO,
-                                             fn + ".md5", md5_url, None)
-                    created.append((namespace, md5_art))
-                    rec["md5ArtifactName"] = md5_art
-                except Exception as e:  # noqa: BLE001 - md5 sidecar Artifact is best-effort
-                    logger.warning("md5 Artifact %s/%s create failed: %s", namespace, md5_art, e)
-            art_records.append(rec)
-
-        # YANG schema profile (best-effort): fetch published, else build from 7x50.
-        yang_meta = None
-        try:
-            yfn, src = schemaprofile.resolve_yang("sros", version, group_dir)
-            if yfn:
-                ok, yang_meta = self._create_yang_artifact(namespace, group_id, group_id,
-                                                           yfn, base_url)
-                if ok:
-                    total += os.path.getsize(os.path.join(group_dir, yfn))
-                    note = ("YANG schema profile auto-fetched from nokia-eda/schema-profiles."
-                            if src == "published" else
-                            "YANG schema profile built from nokia/7x50_YangModels.")
-                else:
-                    note = "Image artifacts created, but the YANG schema-profile Artifact failed."
-            else:
-                note = (f"Image artifacts created. Could not obtain a YANG schema profile for "
-                        f"{version} (not published upstream and no 7x50 tag).")
-        except Exception as e:  # noqa: BLE001 - YANG is best-effort; keep the image artifacts
-            logger.warning("YANG handling failed for %s: %s", group_id, e)
-            yang_meta = None
-            note = "Image artifacts created; the YANG step failed."
-
-        uploads.finalize_group(group_id, display_name, "sros", namespace, artifact.SROS_REPO,
-                               art_records, yang_meta, total, version)
-        logger.info("SR OS upload complete: %s (%d files, %d bytes) -> %d Artifact(s) in %s/%s (yang=%s)",
-                    display_name, len(extracted), total, len(created), namespace,
-                    artifact.SROS_REPO, bool(yang_meta))
-        self._send_json({"ok": True, "uploadId": group_id, "artifactName": group_id,
-                         "displayName": display_name, "namespace": namespace,
-                         "repo": artifact.SROS_REPO, "nos": "sros", "version": version,
-                         "fileCount": len(extracted), "sizeBytes": total,
-                         "yangCreated": bool(yang_meta), "note": note})
-
-    # ---------------------- SR-SIM (SR OS simulator container image) ----------------------
-
-    def _finish_srsim_upload(self, tmp_zip, filename, namespace, name_override):
-        """SR-SIM: unpack srsim.tar.xz into an OCI layout on the PVC (served from
-        our /v2 endpoint -- eda-cx pulls it by tag, no eda-asvr Artifact), then
-        best-effort resolve the SR OS YANG schema profile so the emitted sim
-        NodeProfile carries a working yang: URL. Name drives the served repo path
-        and the NodeProfile name; kept lowercase."""
-        display_name = (name_override or uploads.derive_name(filename)).strip().lower()
-        artifact_name = uploads.to_k8s_name(display_name)
-        if not artifact_name:
-            self._send_json({"ok": False, "error": "could not derive a valid image name"}, 400)
-            return
-        image_dir = os.path.join(UPLOAD_DIR, artifact_name)
-        if os.path.isfile(os.path.join(image_dir, "meta.json")):
-            self._send_json({"ok": False,
-                             "error": f"An image named '{display_name}' already exists. "
-                                      f"Delete it first to replace it."}, 409)
-            return
-        shutil.rmtree(image_dir, ignore_errors=True)
-        os.makedirs(image_dir, exist_ok=True)
-        try:
-            oci = uploads.extract_srsim_image(tmp_zip, image_dir)
-        except uploads.BadZip as e:
-            shutil.rmtree(image_dir, ignore_errors=True)
-            self._send_json({"ok": False, "error": f"could not read the SR-SIM image: {e}"}, 400)
-            return
-        except Exception as e:  # noqa: BLE001 - never leave a partial OCI layout on the PVC
-            shutil.rmtree(image_dir, ignore_errors=True)
-            logger.warning("SR-SIM extract failed for %s: %s", artifact_name, e)
-            self._send_json({"ok": False, "error": f"failed to unpack the SR-SIM image: {e}"}, 500)
-            return
-        # YANG schema profile (best-effort, via eda-asvr) so the NodeProfile's
-        # required yang: field has a working URL. Same resolver as SR OS HW.
-        version = oci.get("version") or ""
-        yang_meta = None
-        base_url = CONFIG.get("filePullBaseUrl") or artifact.default_base_url(POD_NAMESPACE)
-        try:
-            if version:
-                yfn, _src = schemaprofile.resolve_yang("sros", version, image_dir)
-                if yfn:
-                    ok, yang_meta = self._create_yang_artifact(namespace, artifact_name,
-                                                               artifact_name + "-yang", yfn, base_url)
-                    if not ok:
-                        yang_meta = None
-        except Exception as e:  # noqa: BLE001 - YANG is best-effort, never abort the image
-            logger.warning("SR-SIM YANG handling failed for %s: %s", artifact_name, e)
-            yang_meta = None
-        uploads.finalize_srsim(artifact_name, display_name, namespace, oci, yang_meta)
-        container_image = f"{sim_registry_host()}/{artifact_name}:{oci.get('tag')}"
-        logger.info("SR-SIM upload complete: %s (%d bytes, tag %s, yang=%s) -> /v2/%s",
-                    display_name, oci.get("sizeBytes") or 0, oci.get("tag"),
-                    bool(yang_meta), artifact_name)
-        self._send_json({"ok": True, "uploadId": artifact_name, "artifactName": artifact_name,
-                         "displayName": display_name, "namespace": namespace, "nos": "srsim",
-                         "version": version, "imageTag": oci.get("tag"),
-                         "containerImage": container_image,
-                         "sizeBytes": oci.get("sizeBytes"), "yangCreated": bool(yang_meta)})
-
-
-_VER_RE = re.compile(r"(\d+\.\d+\.[A-Za-z]?\d+(?:-\d+)?)")
 
 
 def _nodeprofile_yaml(nos, version, namespace, prof_name, image_entries, yang_url,
@@ -1118,6 +774,9 @@ def _nodeprofile_yaml(nos, version, namespace, prof_name, image_entries, yang_ur
         "      - <ntp-server-ip>",
     ]
     return "\n".join(L)
+
+
+_VER_RE = import_common._VER_RE  # noqa: SLF001 - shared regex, single source of truth
 
 
 def _single_row(m, status_by_key):

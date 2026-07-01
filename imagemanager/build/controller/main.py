@@ -26,6 +26,7 @@ import time
 from datetime import datetime, timezone
 
 import fileserver
+import imports
 import k8s
 import uploads
 
@@ -182,6 +183,11 @@ def main():
         now_str = datetime.now(timezone.utc).isoformat(timespec="seconds")
         fileserver.write_healthz(health, now_str)
         _update_status(health, message, tracked)
+
+        try:
+            imports.reconcile(cfg)
+        except Exception as e:  # noqa: BLE001 - ImageImport bugs must not kill the app
+            logger.warning("ImageImport reconcile failed: %s", e)
 
         logger.info("Reconcile done: %d tracked upload(s), health=%s (%dms)",
                     len(tracked), health, int((time.time() - cycle_start) * 1000))

@@ -1,0 +1,27 @@
+[
+  {
+    "name": "Phase",
+    "type": "string",
+    "jsonPath": ".status.phase"
+  },
+  {
+    "name": "NOS",
+    "type": "string",
+    "jsonPath": ".status.detectedNos"
+  },
+  {
+    "name": "Size",
+    "type": "integer",
+    "jsonPath": ".status.sizeBytes"
+  },
+  {
+    "name": "Message",
+    "type": "string",
+    "jsonPath": ".status.message"
+  },
+  {
+    "name": "Age",
+    "type": "date",
+    "jsonPath": ".metadata.creationTimestamp"
+  }
+]

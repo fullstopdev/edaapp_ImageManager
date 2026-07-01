@@ -11,6 +11,10 @@ motion. Colors come from EDA's own appearance themes (light surfaces
 #F7F9FD/#FFFFFF + Nokia-blue #005AFF; dark surfaces #101824/#1A222E + #4D8DFF),
 so it still reads as native inside the EDA GUI."""
 
+SILENT_SSO_HTML = r"""<!doctype html><html><body><script>
+parent.postMessage(location.href, location.origin);
+</script></body></html>"""
+
 INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -293,8 +297,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
     font:600 12.5px inherit; letter-spacing:.04em; text-transform:uppercase; cursor:pointer;
     padding:6px 10px; border-radius:6px; }
   .snackbar .saction:hover { background:rgba(127,127,127,.18); }
+
+  /* ---------- EDA embedded (iframe) mode — hide duplicate chrome ---------- */
+  html.eda-embedded .appbar { display:none; }
+  html.eda-embedded main { max-width:none; padding:18px 20px 48px; }
+  html.eda-embedded .page-head { margin-top:0; }
+  html.eda-embedded .switch { display:none; }
+  .auth-pending main { opacity:.55; pointer-events:none; }
+  .auth-pending::after { content:"Signing in\u2026"; position:fixed; inset:0; display:flex;
+    align-items:center; justify-content:center; font-size:15px; color:var(--muted);
+    background:rgba(247,249,253,.72); z-index:80; }
+  html[data-theme="dark"].auth-pending::after { background:rgba(16,24,36,.72); color:var(--muted); }
 </style>
-<script>try{var _t=localStorage.getItem("imagemanager-theme")||"light";document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
+<script>try{var _e=window.self!==window.top;if(_e)document.documentElement.classList.add("eda-embedded");var _t=localStorage.getItem("imagemanager-theme")||(_e&&window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
 </head>
 <body>
 <header class="appbar">
@@ -435,6 +450,58 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var apiBase = location.pathname.replace(/\/+$/, "");
   function api(p){ return apiBase + p; }
   var maxBytes = 4096*1024*1024;
+  var embedded = window.self !== window.top;
+  var authReady = false;
+
+  function loadScript(src){
+    return new Promise(function(resolve, reject){
+      var s = document.createElement("script");
+      s.src = src; s.async = true;
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ reject(new Error("script load failed: "+src)); };
+      document.head.appendChild(s);
+    });
+  }
+  function exchangeToken(token){
+    return fetch(api("/oauth/session"), {
+      method: "POST",
+      headers: { "Authorization": "Bearer "+token, "Content-Type": "application/json" }
+    }).then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }); });
+  }
+  function silentSso(){
+    document.documentElement.classList.add("auth-pending");
+    return loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
+      var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
+      return kc.init({
+        onLoad: "check-sso",
+        silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
+        checkLoginIframe: false
+      }).then(function(ok){
+        if(ok && kc.token) return exchangeToken(kc.token);
+        return null;
+      });
+    }).finally(function(){ document.documentElement.classList.remove("auth-pending"); });
+  }
+  function ensureAuth(){
+    if(authReady) return Promise.resolve();
+    return fetch(api("/api/config")).then(function(r){
+      if(r.status === 200){ authReady = true; return r.json(); }
+      if(r.status !== 401) throw new Error("config unavailable");
+      if(embedded){
+        return silentSso().then(function(ex){
+          if(!ex || ex.status < 200 || ex.status >= 300 || !ex.body.ok)
+            throw new Error("sso failed");
+          authReady = true;
+          return fetch(api("/api/config")).then(function(r2){
+            if(r2.status !== 200) throw new Error("config after sso");
+            return r2.json();
+          });
+        });
+      }
+      window.location = apiBase + "/oauth/login";
+      throw new Error("redirect");
+    });
+  }
 
   var el = function(id){ return document.getElementById(id); };
   var binFile=el("binFile"), ns=el("namespace"), imageName=el("imageName"),
@@ -542,7 +609,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---------- config + namespaces ----------
-  fetch(api("/api/config")).then(function(r){return r.json();}).then(function(c){
+  ensureAuth().then(function(c){
     // No default namespace: the user must pick one from the dropdown.
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+c.maxUploadMiB+" MiB.";
@@ -551,13 +618,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
       el("uname").textContent=c.user;
       el("avatar").textContent=(c.user||"?").slice(0,1);
     }
-  }).catch(function(){});
-
-  fetch(api("/api/namespaces")).then(function(r){return r.json();}).then(function(d){
-    (d.namespaces||[]).forEach(function(n){
-      var o=document.createElement("option"); o.value=n; o.textContent=n; ns.appendChild(o);
-    });
-  }).catch(function(){});
+    fetch(api("/api/namespaces")).then(function(r){
+      if(r.status===401) return null;
+      return r.json();
+    }).then(function(d){
+      if(!d) return;
+      (d.namespaces||[]).forEach(function(n){
+        var o=document.createElement("option"); o.value=n; o.textContent=n; ns.appendChild(o);
+      });
+    }).catch(function(){});
+    refresh();
+  }).catch(function(){
+    if(!embedded) snack("err","Sign-in required to use Image Manager.", true);
+  });
 
   // ---------- file selection ----------
   binFile.addEventListener("change", function(){
@@ -864,7 +937,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   function refresh(){
     fetch(api("/api/artifacts")).then(function(r){
-      if(r.status===401){ location.reload(); return null; }  // session expired -> re-login
+      if(r.status===401){
+        authReady=false;
+        return ensureAuth().then(function(){ refresh(); return null; });
+      }
       return r.json();
     }).then(function(d){
       if(!d) return;
@@ -896,7 +972,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   })();
 
-  refresh(); setInterval(refresh, 5000);
+  setInterval(refresh, 5000);
 })();
 </script>
 </body>

@@ -1,0 +1,7 @@
+{
+  "type": "iframe",
+  "title": "Image Manager",
+  "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
+  "url": "/core/httpproxy/v1/imagemanager/",
+  "sameOrigin": true
+}

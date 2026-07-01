@@ -43,6 +43,24 @@ rules:
   - apiGroups: ["imagemanager.eda.edacommunity.com"]
     resources: ["imagemanagerconfigs/status"]
     verbs: ["get", "update", "patch"]
+  # ImageImport: list across all namespaces (reconcile loop), read/write status
+  # per-namespace via the namespaced status subresource.
+  - apiGroups: ["imagemanager.eda.edacommunity.com"]
+    resources: ["imageimports"]
+    verbs: ["get", "list", "watch", "update", "patch"]
+  - apiGroups: ["imagemanager.eda.edacommunity.com"]
+    resources: ["imageimports/status"]
+    verbs: ["get", "update", "patch"]
+  # licenseKeySecretRef needs cross-namespace Secret reads (k8s.read_secret in
+  # imports.py). This mirrors the ConfigMap rule's existing cluster-wide scope,
+  # but note it is broader than the auth Role below (which is name-scoped):
+  # any ImageImport author can make this controller read any Secret's
+  # "license.key" key in their own namespace by naming it in spec. Prefer the
+  # inline `licenseKey` field, or drop this rule and only support inline
+  # licenses, if that's too broad for your cluster's threat model.
+  - apiGroups: [""]
+    resources: ["secrets"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding

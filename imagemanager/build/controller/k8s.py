@@ -99,6 +99,15 @@ def read_namespaced_cr(group, version, namespace, plural, name):
         raise
 
 
+def update_namespaced_cr_status(group, version, namespace, plural, name, full_obj):
+    """Same as update_cr_status(), for namespaced CRs (used by ImageImport)."""
+    path = (
+        f"/apis/{group}/{version}/namespaces/{quote(namespace, safe='')}"
+        f"/{plural}/{quote(name, safe='')}/status"
+    )
+    return _request("PUT", path, full_obj)
+
+
 def list_cr_all_namespaces(group, version, plural, label_selector=None):
     """Cluster-wide list of a namespaced resource. Returns the list .items."""
     path = f"/apis/{group}/{version}/{plural}"

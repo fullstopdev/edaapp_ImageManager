@@ -1,0 +1,169 @@
+{
+  "description": "ImageImport is the Schema for the imageimports API. Creating one is the\ndeclarative equivalent of using the app's \"Upload Image From File\" dialog:\nthe controller fetches spec.sourceUrl, auto-detects the image kind, and\ncreates the same Artifact(s) a manual upload would, targeting this CR's\nown namespace.",
+  "type": "object",
+  "properties": {
+    "apiVersion": {
+      "description": "APIVersion defines the versioned schema of this representation of an object.\nServers should convert recognized schemas to the latest internal value, and\nmay reject unrecognized values.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources",
+      "type": "string"
+    },
+    "kind": {
+      "description": "Kind is a string value representing the REST resource this object represents.\nServers may infer this from the endpoint the client submits requests to.\nCannot be updated.\nIn CamelCase.\nMore info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds",
+      "type": "string"
+    },
+    "metadata": {
+      "type": "object"
+    },
+    "spec": {
+      "description": "ImageImportSpec defines the desired state of ImageImport.\n\nCreating an ImageImport is the declarative equivalent of using the\n\"Upload Image From File\" dialog in the app's web UI: the controller\ndownloads SourceUrl, detects whether it's an SR Linux, SR OS (TiMOS), or\nSR-SIM vendor zip, and creates the same Artifact(s) the manual upload path\ncreates. The CR's own namespace is used as the target Artifact namespace\n(the same choice the upload dialog's namespace dropdown makes).",
+      "type": "object",
+      "title": "Specification",
+      "required": [
+        "sourceUrl"
+      ],
+      "properties": {
+        "insecureSkipTLSVerify": {
+          "description": "InsecureSkipTLSVerify skips TLS certificate verification when\nfetching SourceUrl. Only intended for lab source servers using\nself-signed certs; leave false otherwise.",
+          "type": "boolean",
+          "title": "Skip TLS verify on source",
+          "default": false,
+          "x-eda-nokia-com": {
+            "ui-order-priority": 500
+          }
+        },
+        "licenseKey": {
+          "description": "LicenseKey is an optional Nokia SR OS / SR Linux simulator license\nkey, pasted the same way as the upload dialog's License field\n(surrounding whitespace/quotes/labels are parsed out). Stored as a\nConfigMap in eda-system and wired into the generated NodeProfile via\nspec.license, exactly like a manual upload.\n\nNOTE: this field is plaintext in the CR spec (kubectl get/describe\nwill show it). Prefer LicenseKeySecretRef in namespaces where that\nmatters; this field remains for parity with the upload dialog.",
+          "type": "string",
+          "title": "License key (inline)",
+          "x-eda-nokia-com": {
+            "ui-order-priority": 400
+          }
+        },
+        "licenseKeySecretRef": {
+          "description": "LicenseKeySecretRef names a Secret (in the same namespace as this\nImageImport) whose \"license.key\" data key holds the license, as an\nalternative to the inline LicenseKey field above.",
+          "type": "string",
+          "title": "License key (Secret reference)",
+          "x-eda-nokia-com": {
+            "ui-order-priority": 410
+          }
+        },
+        "name": {
+          "description": "Name overrides the auto-derived artifact name (default: derived from\nthe detected version, e.g. \"srlinux-26.3.9\"). Always lowercased.",
+          "type": "string",
+          "title": "Name override",
+          "x-eda-nokia-com": {
+            "ui-order-priority": 200
+          }
+        },
+        "repo": {
+          "description": "Repo overrides ImageManagerConfig.spec.defaultRepo for SR Linux\nimages. SR OS boot images always go to \"srosimages\" and schema\nprofiles to \"schemaprofiles\" regardless of this field.",
+          "type": "string",
+          "title": "Repo override",
+          "x-eda-nokia-com": {
+            "ui-order-priority": 300
+          }
+        },
+        "sourceUrl": {
+          "description": "SourceUrl is the HTTP(S) URL of the vendor .zip to import (SR Linux,\nSR OS 7750 TiMOS hardware, or SR-SIM). Must be reachable from inside\nthe cluster. The image type is auto-detected from the zip contents,\nexactly like a manual upload.",
+          "type": "string",
+          "title": "Source URL",
+          "pattern": "^https?://.+",
+          "x-eda-nokia-com": {
+            "ui-order-priority": 100
+          }
+        }
+      },
+      "x-eda-nokia-com": {
+        "ui-order-priority": 30
+      }
+    },
+    "status": {
+      "description": "ImageImportStatus defines the observed state of ImageImport.\nThe controller is the sole writer of this status.",
+      "type": "object",
+      "title": "Status",
+      "properties": {
+        "artifacts": {
+          "description": "Artifacts lists the Artifact CR(s) this import created, mirroring\neach one's live eda-asvr download status (same shape ImageManager\nalready exposes on ImageManagerConfig.status.artifacts).",
+          "type": "array",
+          "items": {
+            "description": "TrackedArtifact is a denormalized record of one Artifact CR created by this\napp, including the live download status mirrored from the Artifact.",
+            "type": "object",
+            "required": [
+              "filePath",
+              "name",
+              "namespace",
+              "repo"
+            ],
+            "properties": {
+              "downloadStatus": {
+                "description": "DownloadStatus mirrors Artifact.status.downloadStatus\n(InProgress, Available, Error, or Failed).",
+                "type": "string"
+              },
+              "externalUrl": {
+                "description": "ExternalUrl mirrors Artifact.status.externalUrl once Available.",
+                "type": "string"
+              },
+              "filePath": {
+                "description": "FilePath is the destination path/filename in the artifact server.",
+                "type": "string"
+              },
+              "name": {
+                "description": "Name is the Artifact CR name (equals the upload id).",
+                "type": "string"
+              },
+              "namespace": {
+                "description": "Namespace is the Artifact CR namespace.",
+                "type": "string"
+              },
+              "repo": {
+                "description": "Repo is the artifact repo.",
+                "type": "string"
+              },
+              "statusReason": {
+                "description": "StatusReason mirrors Artifact.status.statusReason on Error/Failed.",
+                "type": "string"
+              }
+            }
+          }
+        },
+        "completionTime": {
+          "description": "CompletionTime is when the import reached a terminal phase\n(Available, Ready, Failed, or Error).",
+          "type": "string"
+        },
+        "detectedNos": {
+          "description": "DetectedNos is the auto-detected image kind: srlinux, sros, or srsim.",
+          "type": "string"
+        },
+        "message": {
+          "description": "Message is a human-readable detail for the current phase (e.g. the\ndownload error, or the MD5 mismatch reason).",
+          "type": "string"
+        },
+        "nodeProfileSnippet": {
+          "description": "NodeProfileSnippet is a ready-to-paste spec.images block once\nAvailable/Ready, identical to what the \"node profile\" popup shows\nin the web UI.",
+          "type": "string"
+        },
+        "observedGeneration": {
+          "description": "ObservedGeneration is the spec generation last reconciled, so the UI\ncan tell a stale status from a fresh one after a spec edit.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "phase": {
+          "description": "Phase is the current stage of the import:\nPending, Downloading, Extracting, InProgress, Available, Ready,\nFailed, or Error. Mirrors the same states shown in the web UI's\nStatus column.",
+          "type": "string"
+        },
+        "sizeBytes": {
+          "description": "SizeBytes is the total downloaded size once known.",
+          "type": "integer",
+          "format": "int64"
+        },
+        "startTime": {
+          "description": "StartTime is when the controller began processing this import.",
+          "type": "string"
+        }
+      },
+      "readOnly": true,
+      "x-eda-nokia-com": {
+        "ui-order-priority": 20
+      }
+    }
+  }
+}
