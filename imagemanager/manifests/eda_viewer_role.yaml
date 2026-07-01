@@ -12,7 +12,6 @@ spec:
         - imagemanager.eda.edacommunity.com/v1alpha1
       resources:
         - imagemanagerconfigs
-        - imagemanagerartifacts
       permissions: read
     - apiGroups:
         - core.eda.nokia.com/v1
@@ -21,8 +20,6 @@ spec:
       permissions: read
   tableRules:
     - path: .cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs.**
-      permissions: read
-    - path: .cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerartifacts.**
       permissions: read
   urlRules:
     - path: /core/httpproxy/v1/imagemanager

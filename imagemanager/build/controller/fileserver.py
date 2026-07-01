@@ -1245,6 +1245,7 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
             "storedAt": md.get("creationTimestamp", ""),
             "downloadStatus": st.get("downloadStatus", ""),
             "statusReason": st.get("statusReason", ""),
+            "externalUrl": st.get("externalUrl", ""),
         })
     return list(groups.values())
 

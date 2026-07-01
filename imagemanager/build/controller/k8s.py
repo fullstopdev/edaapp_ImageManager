@@ -122,25 +122,6 @@ def list_cr_all_namespaces(group, version, plural, label_selector=None):
     return (obj or {}).get("items", [])
 
 
-def list_cluster_cr(group, version, plural, label_selector=None):
-    """List a cluster-scoped CR type. Returns .items."""
-    path = f"/apis/{group}/{version}/{plural}"
-    if label_selector:
-        path += "?" + urlencode({"labelSelector": label_selector})
-    obj = _request("GET", path)
-    return (obj or {}).get("items", [])
-
-
-def delete_cr(group, version, plural, name):
-    path = f"/apis/{group}/{version}/{plural}/{quote(name, safe='')}"
-    try:
-        return _request("DELETE", path)
-    except urllib.error.HTTPError as e:
-        if e.code == 404:
-            return None
-        raise
-
-
 def delete_namespaced_cr(group, version, namespace, plural, name):
     path = (
         f"/apis/{group}/{version}/namespaces/{quote(namespace, safe='')}"
