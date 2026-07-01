@@ -21,7 +21,7 @@ Stability and API-load reduction (see `docs/STABILITY.md`):
 - Reconcile interval 60s (env `RECONCILE_INTERVAL`); skip status PUT when unchanged.
 - ImageImport URL downloads run in a background thread (uploads no longer block).
 - Artifact list cache (8s) and Status tab poll interval 10s (was 5s).
-- Node-agent: `NODE_AGENT_ENABLED=false` skips `hosts.toml` writes; resync 120s; document scale-to-zero for non-SR-SIM labs.
+- Node-agent: App Store setting `nodeAgentEnabled` (default true); `NODE_AGENT_ENABLED=false` skips `hosts.toml` writes; resync 120s; document scale-to-zero for non-SR-SIM labs.
 - Uninstall: DaemonSet pods use `eda.nokia.com/app: eda-imagemanager` (same as Deployment) so EDA deletes both workloads; removed blocking `preStop` hook (SIGTERM cleanup only); shorter `terminationGracePeriodSeconds`.
 
 ## v0.0.6
