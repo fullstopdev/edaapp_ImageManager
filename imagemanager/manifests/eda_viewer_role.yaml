@@ -1,0 +1,28 @@
+apiVersion: core.eda.nokia.com/v1
+kind: ClusterRole
+metadata:
+  labels:
+    eda.nokia.com/app: eda-imagemanager
+  name: imagemanager-viewer
+  namespace: eda-system
+spec:
+  description: Read-only access to the Image Manager launcher and HttpProxy UI.
+  resourceRules:
+    - apiGroups:
+        - imagemanager.eda.edacommunity.com/v1alpha1
+      resources:
+        - imagemanagerconfigs
+      permissions: read
+    - apiGroups:
+        - core.eda.nokia.com/v1
+      resources:
+        - httpproxies
+      permissions: read
+  tableRules:
+    - path: .cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs.**
+      permissions: read
+  urlRules:
+    - path: /core/httpproxy/v1/imagemanager
+      permissions: read
+    - path: /core/httpproxy/v1/imagemanager/**
+      permissions: read

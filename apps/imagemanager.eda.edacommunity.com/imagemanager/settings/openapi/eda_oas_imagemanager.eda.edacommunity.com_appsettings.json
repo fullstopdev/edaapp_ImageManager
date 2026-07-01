@@ -22,7 +22,7 @@
           "description": "EDA role(s) allowed to use Image Manager, comma-separated (a user is allowed\nif they hold ANY listed role). Names match EDA's Roles screen; the internal\n\"edarole_\" prefix is handled automatically. Defaults to the system\nadministrator role. The whole UI (view, upload, delete) requires one of these.",
           "type": "string",
           "title": "Allowed EDA role(s)",
-          "default": "system-administrator"
+          "default": "imagemanager-viewer,system-administrator"
         },
         "controllerCpuLimit": {
           "description": "CPU limit for the Image Manager controller pod (Kubernetes quantity, e.g. \"500m\").",

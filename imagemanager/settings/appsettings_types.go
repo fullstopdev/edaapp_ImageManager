@@ -29,7 +29,7 @@ type AppSettingsSpec struct {
 	// if they hold ANY listed role). Names match EDA's Roles screen; the internal
 	// "edarole_" prefix is handled automatically. Defaults to the system
 	// administrator role. The whole UI (view, upload, delete) requires one of these.
-	// +kubebuilder:default="system-administrator"
+	// +kubebuilder:default="imagemanager-viewer,system-administrator"
 	// +eda:ui:title="Allowed EDA role(s)"
 	AllowedRoles string `json:"allowedRoles,omitempty"`
 }
