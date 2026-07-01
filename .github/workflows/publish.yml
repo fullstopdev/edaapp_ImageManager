@@ -2,7 +2,7 @@
 #
 # Versioning: bump spec.image in imagemanager/manifest.yaml (and matching
 # controller refs in imagemanager/manifests/) before pushing to main — e.g.
-# v26.4.2-27. edabuilder publish creates git tag
+# v0.0.0, v0.0.1, … (semver patch bump per release). edabuilder publish creates git tag
 # apps/imagemanager.eda.edacommunity.com/<version>.
 #
 # EDABUILDER_VERSION should match PROJECT builderVersion (currently v26.4.2).
