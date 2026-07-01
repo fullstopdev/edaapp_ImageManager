@@ -135,6 +135,11 @@ spec:
                     TrackedArtifact is a denormalized record of one Artifact CR created by this
                     app, including the live download status mirrored from the Artifact.
                   properties:
+                    displayName:
+                      description: |-
+                        DisplayName is the human-friendly image name shown in the UI
+                        (e.g. "srlinux-26.3.1"), which may differ from the Artifact CR name.
+                      type: string
                     downloadStatus:
                       description: |-
                         DownloadStatus mirrors Artifact.status.downloadStatus
@@ -158,6 +163,11 @@ spec:
                     repo:
                       description: Repo is the artifact repo.
                       type: string
+                    sizeBytes:
+                      description: SizeBytes is the on-disk size of the uploaded image
+                        file(s).
+                      format: int64
+                      type: integer
                     statusReason:
                       description: StatusReason mirrors Artifact.status.statusReason
                         on Error/Failed.
