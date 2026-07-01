@@ -47,7 +47,7 @@ rules:
   # per-namespace via the namespaced status subresource.
   - apiGroups: ["imagemanager.eda.edacommunity.com"]
     resources: ["imageimports"]
-    verbs: ["get", "list", "watch", "update", "patch"]
+    verbs: ["get", "list", "watch", "create", "update", "patch"]
   - apiGroups: ["imagemanager.eda.edacommunity.com"]
     resources: ["imageimports/status"]
     verbs: ["get", "update", "patch"]

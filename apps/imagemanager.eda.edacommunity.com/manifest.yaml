@@ -22,7 +22,7 @@ spec:
     central image store or data lake; this app is a self-contained alternative for
     labs and PoCs where standing up that external store is unnecessary friction.
   author: EDACommunity
-  image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-app:v26.4.2-28
+  image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-app:v26.4.2-29
   supportedCoreVersions:
     - "v5.0.0-0"
   appInfo:
@@ -38,9 +38,6 @@ spec:
         path: imagemanager/crds/imagemanager.eda.edacommunity.com_imagemanagerconfigs.yaml
         schema: imagemanager/openapiv3/eda_oas_imagemanager.eda.edacommunity.com_imagemanagerconfigs.json
         namespaced: false
-        ui:
-          category: Image Manager
-          name: Settings
         names:
           kind: ImageManagerConfig
           listKind: ImageManagerConfigList
@@ -52,10 +49,6 @@ spec:
         path: imagemanager/crds/imagemanager.eda.edacommunity.com_imageimports.yaml
         schema: imagemanager/openapiv3/eda_oas_imagemanager.eda.edacommunity.com_imageimports.json
         namespaced: true
-        ui:
-          category: Image Manager
-          name: URL Import
-          icon: auto-crd
         names:
           kind: ImageImport
           listKind: ImageImportList

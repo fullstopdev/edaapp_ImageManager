@@ -1,15 +1,7 @@
-"""Self-contained upload web UI (no external assets), served at GET /.
+"""Self-contained Image Manager web UI (no external assets), served at GET /.
 
-Material Design layout (vanilla HTML/CSS/JS, no React/build step) dressed in the
-Nokia EDA palette: a top AppBar with a Material switch for Light/Dark, the
-artifacts list rendered as a sortable Material data table, the upload form moved
-into a modal Dialog, and result notifications shown as Material snackbar toasts.
-
-Material is expressed in pure CSS/JS: elevation (dp shadow scale), state-layer
-hovers, click ripples, the type scale, rounded surfaces, and dialog/snackbar
-motion. Colors come from EDA's own appearance themes (light surfaces
-#F7F9FD/#FFFFFF + Nokia-blue #005AFF; dark surfaces #101824/#1A222E + #4D8DFF),
-so it still reads as native inside the EDA GUI."""
+Unified single-page app with tabs: Upload | URL Import | Settings | Status.
+Material Design layout in the Nokia EDA palette; embedded in EDA via iframe."""
 
 SILENT_SSO_HTML = r"""<!doctype html><html><body><script>
 parent.postMessage(location.href, location.origin);
@@ -308,6 +300,27 @@ INDEX_HTML = r"""<!DOCTYPE html>
     align-items:center; justify-content:center; font-size:15px; color:var(--muted);
     background:rgba(247,249,253,.72); z-index:80; }
   html[data-theme="dark"].auth-pending::after { background:rgba(16,24,36,.72); color:var(--muted); }
+
+  /* ---------- tabs ---------- */
+  .tabs { display:flex; gap:4px; margin:0 2px 18px; border-bottom:1px solid var(--line);
+    overflow-x:auto; }
+  .tab { background:transparent; border:0; border-bottom:2px solid transparent;
+    color:var(--muted); cursor:pointer; font:600 13px inherit; padding:10px 16px 12px;
+    white-space:nowrap; border-radius:8px 8px 0 0; }
+  .tab:hover { color:var(--fg); background:var(--state); }
+  .tab.active { color:var(--accent); border-bottom-color:var(--accent); }
+  .tab-panel { display:none; }
+  .tab-panel.active { display:block; }
+  .section-title { margin:0 0 14px; font-size:16px; font-weight:600; }
+  .form-card { padding:20px 22px 22px; }
+  .form-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; }
+  .status-meta { font-size:12.5px; color:var(--muted); margin:0 0 16px; }
+  .status-meta .mono { color:var(--fg); }
+  .imports-table { margin-top:20px; }
+  .imports-table h3 { margin:0 0 10px; font-size:14px; font-weight:600; }
+  .chk-row { display:flex; align-items:center; gap:9px; margin-top:14px;
+    font-size:13px; color:var(--muted); }
+  .chk-row input { accent-color:var(--accent); }
 </style>
 <script>try{var _e=window.self!==window.top;if(_e)document.documentElement.classList.add("eda-embedded");var _t=localStorage.getItem("imagemanager-theme")||(_e&&window.matchMedia&&window.matchMedia("(prefers-color-scheme:dark)").matches?"dark":"light");document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
 </head>
@@ -330,36 +343,144 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <main>
   <div class="page-head">
     <div>
-      <h1 class="page-title">Images <span class="count" id="refreshNote" style="display:none"></span></h1>
-      <p class="page-sub">Once <span class="mono">eda-asvr</span> reports an image <span class="mono">Available</span>, open its <b>node profile</b> for a ready-to-use NodeProfile.</p>
+      <h1 class="page-title">Image Manager</h1>
+      <p class="page-sub">Upload vendor NOS images, import by URL, tune settings, and track Artifact status — all in one place.</p>
     </div>
-    <div class="grow"></div>
-    <button class="btn contained ripple" id="openUpload">
-      <svg class="ic" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>
-      Upload Image From File
-    </button>
   </div>
 
-  <div class="card storage-card">
-    <div class="storage-row">
-      <span class="storage-label">App storage</span>
-      <span class="storage-stat" id="storageStat">&mdash;</span>
+  <nav class="tabs" role="tablist">
+    <button type="button" class="tab active ripple" data-tab="upload" role="tab" aria-selected="true">Upload</button>
+    <button type="button" class="tab ripple" data-tab="url-import" role="tab">URL Import</button>
+    <button type="button" class="tab ripple" data-tab="settings" role="tab">Settings</button>
+    <button type="button" class="tab ripple" data-tab="status" role="tab">Status <span class="count" id="statusCount" style="display:none"></span></button>
+  </nav>
+
+  <!-- Upload tab -->
+  <div id="panel-upload" class="tab-panel active" role="tabpanel">
+    <div class="card form-card">
+      <h2 class="section-title">Upload image from file</h2>
+      <div class="filefield">
+        <span class="lbl">Vendor image &mdash; <span class="mono">.zip</span> (required)</span>
+        <div class="filebox">
+          <input type="file" id="binFile" accept=".zip">
+        </div>
+        <div class="helper" id="binHint"></div>
+      </div>
+      <div class="tf select">
+        <select id="namespace" required>
+          <option value="" disabled selected>Select a namespace&hellip;</option>
+        </select>
+        <label for="namespace">Namespace</label>
+        <div class="helper">Choose the EDA namespace where the Artifact(s) will be created.</div>
+      </div>
+      <div class="tf">
+        <input type="text" id="imageName" placeholder=" " autocomplete="off">
+        <label for="imageName">Image name (auto-generated &mdash; edit if you like)</label>
+        <div class="helper" id="nameHint">SR Linux, SR OS (7750 TiMOS) or SR-SIM is detected automatically from the zip.</div>
+      </div>
+      <div class="tf">
+        <textarea id="licText" placeholder=" " rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <label for="licText">License key (optional)</label>
+        <div class="helper" id="licHint">Paste the SR OS / SR Linux simulator license key if needed.</div>
+      </div>
+      <div class="form-actions">
+        <button class="btn contained ripple" id="uploadBtn">Upload &amp; create Artifact</button>
+      </div>
     </div>
-    <div class="storage-track"><div class="storage-fill" id="storageFill"></div></div>
   </div>
 
-  <div class="card">
-    <div class="table-wrap">
-      <table class="mtable">
-        <thead><tr>
-          <th class="sortable" data-sort="displayName">Name <span class="arr"></span></th>
-          <th class="sortable" data-sort="namespace">Namespace <span class="arr"></span></th>
-          <th class="sortable num" data-sort="sizeBytes">Size <span class="arr"></span></th>
-          <th class="sortable" data-sort="downloadStatus">Status <span class="arr"></span></th>
-          <th></th>
-        </tr></thead>
-        <tbody id="rows"><tr><td colspan="5" class="empty">Loading&hellip;</td></tr></tbody>
-      </table>
+  <!-- URL Import tab -->
+  <div id="panel-url-import" class="tab-panel" role="tabpanel">
+    <div class="card form-card">
+      <h2 class="section-title">Import image from URL</h2>
+      <p class="status-meta">The controller downloads the vendor <span class="mono">.zip</span> from your URL and creates the same Artifact(s) as a file upload.</p>
+      <div class="tf">
+        <input type="url" id="urlSource" placeholder=" " autocomplete="off">
+        <label for="urlSource">Source URL (http or https)</label>
+      </div>
+      <div class="tf select">
+        <select id="urlNamespace" required>
+          <option value="" disabled selected>Select a namespace&hellip;</option>
+        </select>
+        <label for="urlNamespace">Namespace</label>
+      </div>
+      <div class="tf">
+        <input type="text" id="urlName" placeholder=" " autocomplete="off">
+        <label for="urlName">Name override (optional)</label>
+      </div>
+      <div class="tf">
+        <textarea id="urlLicText" placeholder=" " rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <label for="urlLicText">License key (optional)</label>
+      </div>
+      <label class="chk-row"><input type="checkbox" id="urlInsecure"> Skip TLS certificate verification on source URL (lab only)</label>
+      <div class="form-actions">
+        <button class="btn contained ripple" id="urlImportBtn">Start URL import</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Settings tab -->
+  <div id="panel-settings" class="tab-panel" role="tabpanel">
+    <div class="card form-card">
+      <h2 class="section-title">Image Manager settings</h2>
+      <p class="status-meta" id="settingsMeta">&mdash;</p>
+      <div class="tf">
+        <input type="text" id="setDefaultNs" placeholder=" " autocomplete="off">
+        <label for="setDefaultNs">Default artifact namespace</label>
+      </div>
+      <div class="tf">
+        <input type="text" id="setDefaultRepo" placeholder=" " autocomplete="off">
+        <label for="setDefaultRepo">Default repo</label>
+      </div>
+      <div class="tf">
+        <input type="number" id="setMaxMiB" placeholder=" " min="1" max="65536" step="1">
+        <label for="setMaxMiB">Max upload size (MiB)</label>
+      </div>
+      <div class="tf">
+        <input type="text" id="setPullBase" placeholder=" " autocomplete="off">
+        <label for="setPullBase">File-pull base URL (advanced, optional)</label>
+        <div class="helper">Leave empty to auto-derive from the in-cluster Service.</div>
+      </div>
+      <div class="form-actions">
+        <button class="btn text subtle ripple" id="settingsReload">Reload</button>
+        <button class="btn contained ripple" id="settingsSave">Save settings</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Status tab -->
+  <div id="panel-status" class="tab-panel" role="tabpanel">
+    <div class="card storage-card">
+      <div class="storage-row">
+        <span class="storage-label">App storage</span>
+        <span class="storage-stat" id="storageStat">&mdash;</span>
+      </div>
+      <div class="storage-track"><div class="storage-fill" id="storageFill"></div></div>
+    </div>
+    <div class="card">
+      <div class="table-wrap">
+        <table class="mtable">
+          <thead><tr>
+            <th class="sortable" data-sort="displayName">Name <span class="arr"></span></th>
+            <th class="sortable" data-sort="namespace">Namespace <span class="arr"></span></th>
+            <th class="sortable num" data-sort="sizeBytes">Size <span class="arr"></span></th>
+            <th class="sortable" data-sort="downloadStatus">Status <span class="arr"></span></th>
+            <th></th>
+          </tr></thead>
+          <tbody id="rows"><tr><td colspan="5" class="empty">Loading&hellip;</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+    <div class="card imports-table" style="padding:16px 18px 18px">
+      <h3>URL imports</h3>
+      <div class="table-wrap">
+        <table class="mtable">
+          <thead><tr>
+            <th>Name</th><th>Namespace</th><th>Source URL</th><th>Phase</th><th>Message</th>
+          </tr></thead>
+          <tbody id="importRows"><tr><td colspan="5" class="empty">Loading&hellip;</td></tr></tbody>
+        </table>
+      </div>
     </div>
   </div>
 </main>
@@ -367,43 +488,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <!-- scrim shared by all dialogs -->
 <div class="scrim" id="scrim"></div>
 
-<!-- upload dialog -->
-<div class="dialog" id="uploadDialog" role="dialog" aria-modal="true" aria-labelledby="dlgTitle">
-  <h2 class="dialog-title" id="dlgTitle">Upload image</h2>
-  <div class="dialog-body">
-    <div class="filefield">
-      <span class="lbl">Vendor image &mdash; <span class="mono">.zip</span> (required)</span>
-      <div class="filebox">
-        <input type="file" id="binFile" accept=".zip">
-      </div>
-      <div class="helper" id="binHint"></div>
-    </div>
-
-    <div class="tf select">
-      <select id="namespace" required>
-        <option value="" disabled selected>Select a namespace&hellip;</option>
-      </select>
-      <label for="namespace">Namespace</label>
-      <div class="helper">Choose the EDA namespace where the Artifact(s) will be created.</div>
-    </div>
-
-    <div class="tf">
-      <input type="text" id="imageName" placeholder=" " autocomplete="off">
-      <label for="imageName">Image name (auto-generated &mdash; edit if you like)</label>
-      <div class="helper" id="nameHint">SR Linux, SR OS (7750 TiMOS) or SR-SIM (SR OS simulator) is detected automatically from the zip; the md5 and YANG schema profile are handled for you.</div>
-    </div>
-
-    <div class="tf" style="margin-top:18px">
-      <textarea id="licText" placeholder=" " rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
-      <label for="licText">License key (optional) &mdash; paste it here</label>
-      <div class="helper" id="licHint">Paste the SR OS / SR Linux <b>simulator license key</b> if this image needs one. Extra spaces, quotes or a leading label are fine &mdash; Image Manager parses out the key, stores it as a <span class="mono">license.key</span> ConfigMap in <span class="mono">eda-system</span>, and wires <span class="mono">spec.license</span> into the generated NodeProfile. The free SR Linux sim and SR-SIM boot without one.</div>
-    </div>
-  </div>
-  <div class="dialog-actions">
-    <button class="btn text subtle ripple" id="cancelUpload">Cancel</button>
-    <button class="btn contained ripple" id="uploadBtn">Upload &amp; create Artifact</button>
-  </div>
-</div>
+<!-- upload dialog removed — inline on Upload tab -->
 
 <!-- nodeprofile dialog -->
 <div class="dialog wide" id="npDialog" role="dialog" aria-modal="true" aria-labelledby="npTitle">
@@ -449,8 +534,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
 (function(){
   var API_PROXY_PREFIX = "/core/httpproxy/v1/imagemanager";
   var apiBase = location.pathname.replace(/\/+$/, "");
-  if (!apiBase || apiBase === "/") apiBase = API_PROXY_PREFIX;
+  if (!apiBase || apiBase === "/" || apiBase.indexOf("imagemanager") < 0) apiBase = API_PROXY_PREFIX;
   function api(p){ return apiBase + p; }
+  function fetchJson(url, opts){
+    return fetch(url, opts).then(function(r){
+      return r.json().then(function(j){ return {ok:r.ok, status:r.status, body:j}; })
+        .catch(function(){ return {ok:r.ok, status:r.status, body:null}; });
+    });
+  }
   var maxBytes = 4096*1024*1024;
   var embedded = window.self !== window.top;
   var authReady = false;
@@ -526,8 +617,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   var el = function(id){ return document.getElementById(id); };
-  var binFile=el("binFile"), ns=el("namespace"), imageName=el("imageName"),
-      btn=el("uploadBtn"), binHint=el("binHint"), rows=el("rows"), licText=el("licText");
+  var binFile=el("binFile"), ns=el("namespace"), urlNs=el("urlNamespace"),
+      imageName=el("imageName"), btn=el("uploadBtn"), binHint=el("binHint"),
+      rows=el("rows"), importRows=el("importRows"), licText=el("licText");
 
   // Lenient structure check: does ANY single line contain a "<node-id> <key>"
   // entry? Surrounding labels / quotes / blank lines don't matter. Tested per-line
@@ -538,6 +630,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return (t||"").split(/\r?\n/).some(function(l){ return RE.test(l); });
   }
   var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
+
+  // ---------- tabs ----------
+  var activeTab = "upload";
+  function showTab(name){
+    activeTab = name;
+    document.querySelectorAll(".tab").forEach(function(t){
+      var on = t.getAttribute("data-tab") === name;
+      t.classList.toggle("active", on);
+      t.setAttribute("aria-selected", on ? "true" : "false");
+    });
+    document.querySelectorAll(".tab-panel").forEach(function(p){
+      p.classList.toggle("active", p.id === "panel-" + name);
+    });
+    if(name === "status"){ refresh(); refreshImports(); }
+    if(name === "settings"){ loadSettings(); }
+  }
+  document.querySelectorAll(".tab").forEach(function(t){
+    t.addEventListener("click", function(){ showTab(t.getAttribute("data-tab")); });
+  });
 
   // ---------- ripple ----------
   document.body.addEventListener("pointerdown", function(e){
@@ -609,11 +720,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   scrim.addEventListener("click", closeModal);
   document.addEventListener("keydown", function(e){ if(e.key==="Escape" && openDlg) closeModal(); });
 
-  el("openUpload").addEventListener("click", function(){ openModal(el("uploadDialog")); });
-  el("cancelUpload").addEventListener("click", closeModal);
-
   // ---------- delete-artifact confirm dialog ----------
-  // The destructive Delete button stays disabled until the user ticks the
   // acknowledgement, so deletion is always an informed, explicit action.
   var confirmLead=el("confirmLead"), confirmList=el("confirmList"),
       confirmAck=el("confirmAck"), confirmOk=el("confirmOk"), pendingConfirm=null;
@@ -630,6 +737,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
     openModal(el("confirmDialog"));
   }
 
+  function fillNamespaceSelects(names, defaultNs){
+    [ns, urlNs].forEach(function(sel){
+      if(!sel) return;
+      while(sel.options.length > 1) sel.remove(1);
+      (names||[]).forEach(function(n){
+        var o=document.createElement("option"); o.value=n; o.textContent=n; sel.appendChild(o);
+      });
+      if(defaultNs){
+        for(var i=0;i<sel.options.length;i++){
+          if(sel.options[i].value===defaultNs){ sel.selectedIndex=i; break; }
+        }
+      }
+    });
+  }
+
   // ---------- config + namespaces ----------
   ensureAuth().then(function(c){
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
@@ -640,21 +762,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
       el("avatar").textContent=(c.user||"?").slice(0,1);
     }
     var defaultNs=(c.defaultArtifactNamespace||"").trim();
-    fetch(api("/api/namespaces")).then(function(r){
-      if(r.status===401) return null;
-      return r.json();
-    }).then(function(d){
-      if(!d) return;
-      (d.namespaces||[]).forEach(function(n){
-        var o=document.createElement("option"); o.value=n; o.textContent=n; ns.appendChild(o);
-      });
-      if(defaultNs){
-        for(var i=0;i<ns.options.length;i++){
-          if(ns.options[i].value===defaultNs){ ns.selectedIndex=i; break; }
-        }
+    fetchJson(api("/api/namespaces")).then(function(res){
+      if(res.status===401) return;
+      if(!res.ok){
+        snack("err","Could not load namespaces (HTTP "+res.status+").", true);
+        return;
       }
-    }).catch(function(){});
+      fillNamespaceSelects((res.body||{}).namespaces, defaultNs);
+    });
     refresh();
+    refreshImports();
   }).catch(function(err){
     var msg = (err && err.exchange) ? authErrorMessage(err.exchange)
             : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
@@ -744,7 +861,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var key="u"+(++uploadSeq);
     var p={ key:key, displayName:name, namespace:namespace, total:f.size, isZip:true,
             phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0 };
-    pendingUploads[key]=p; closeModal(); resetUploadForm(); render();
+    pendingUploads[key]=p; showTab("status"); resetUploadForm(); render();
     sendUpload(api("/api/upload")+"?"+qs.toString(), f, p, {
       onBodySent:function(){ p.phase="Unzipping"; paintPendingCell(p); },
       onDone:function(status, r){
@@ -946,13 +1063,107 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(!seen[p.displayName+"|"+p.namespace]) pend.push(p);  // hide once the real artifact appears
     });
     if(!(pend.length+serverRows.length)){
-      rows.innerHTML='<tr><td colspan="5" class="empty">No images yet. Click <b>Upload Image From File</b> to add one.</td></tr>';
-      el("refreshNote").style.display="none"; return;
+      rows.innerHTML='<tr><td colspan="5" class="empty">No images yet. Use the <b>Upload</b> or <b>URL Import</b> tab to add one.</td></tr>';
+      el("statusCount").style.display="none"; return;
     }
     rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
-    el("refreshNote").style.display="inline-block";
-    el("refreshNote").textContent=pend.length+serverRows.length;
+    el("statusCount").style.display="inline-block";
+    el("statusCount").textContent=pend.length+serverRows.length;
   }
+
+  function renderImports(list){
+    if(!list || !list.length){
+      importRows.innerHTML='<tr><td colspan="5" class="empty">No URL imports yet.</td></tr>';
+      return;
+    }
+    importRows.innerHTML = list.map(function(i){
+      return '<tr><td class="mono">'+esc(i.name)+'</td><td>'+esc(i.namespace)+'</td>'+
+        '<td class="mono">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase)+'</td>'+
+        '<td>'+esc(i.message||"")+'</td></tr>';
+    }).join("");
+  }
+
+  function refreshImports(){
+    fetchJson(api("/api/imports")).then(function(res){
+      if(res.status===401){ authReady=false; return ensureAuth().then(function(){ refreshImports(); }); }
+      if(!res.ok){
+        importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
+          "Could not load URL imports (HTTP "+res.status+").")+'</td></tr>';
+        return;
+      }
+      renderImports((res.body||{}).imports||[]);
+    }).catch(function(e){
+      importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
+        "Failed to load URL imports: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
+    });
+  }
+
+  function loadSettings(){
+    fetchJson(api("/api/settings")).then(function(res){
+      if(!res.ok){ snack("err","Could not load settings (HTTP "+res.status+").", true); return; }
+      var s=res.body||{};
+      el("setDefaultNs").value=s.defaultArtifactNamespace||"";
+      el("setDefaultRepo").value=s.defaultRepo||"";
+      el("setMaxMiB").value=s.maxUploadMiB||4096;
+      el("setPullBase").value=s.filePullBaseUrl||"";
+      var meta=[];
+      if(s.health) meta.push("Health: <span class='mono'>"+esc(s.health)+"</span>");
+      if(s.version) meta.push("Controller: <span class='mono'>"+esc(s.version)+"</span>");
+      if(s.message) meta.push(esc(s.message));
+      el("settingsMeta").innerHTML = meta.length ? meta.join(" &middot; ") : "&mdash;";
+    });
+  }
+  el("settingsReload").addEventListener("click", loadSettings);
+  el("settingsSave").addEventListener("click", function(){
+    var body={
+      defaultArtifactNamespace:(el("setDefaultNs").value||"").trim(),
+      defaultRepo:(el("setDefaultRepo").value||"").trim(),
+      maxUploadMiB:parseInt(el("setMaxMiB").value,10),
+      filePullBaseUrl:(el("setPullBase").value||"").trim()
+    };
+    fetchJson(api("/api/settings"), {
+      method:"PUT",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(body)
+    }).then(function(res){
+      if(res.ok && res.body && res.body.ok){
+        if(res.body.settings && res.body.settings.maxUploadMiB)
+          maxBytes=res.body.settings.maxUploadMiB*1024*1024;
+        snack("ok","Settings saved.");
+        loadSettings();
+      } else {
+        snack("err",(res.body&&res.body.error)||("Save failed (HTTP "+res.status+")"), true);
+      }
+    }).catch(function(){ snack("err","Save failed (network).", true); });
+  });
+
+  el("urlImportBtn").addEventListener("click", function(){
+    var url=(el("urlSource").value||"").trim();
+    var namespace=(urlNs.value||"").trim();
+    var lic=(el("urlLicText").value||"").trim();
+    if(!url){ snack("err","Enter a source URL."); return; }
+    if(!/^https?:\/\//i.test(url)){ snack("err","URL must start with http:// or https://"); return; }
+    if(!namespace){ snack("err","Choose a namespace first."); return; }
+    if(lic && !looksLikeLicense(lic)){ snack("err","License text does not look valid."); return; }
+    var payload={ url:url, namespace:namespace, insecureSkipTLSVerify:!!el("urlInsecure").checked };
+    var nm=(el("urlName").value||"").trim();
+    if(nm) payload.name=nm.toLowerCase();
+    if(lic) payload.licenseKey=lic;
+    fetchJson(api("/api/url-import"), {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    }).then(function(res){
+      if(res.ok && res.body && res.body.ok){
+        snack("ok","URL import started: "+res.body.namespace+"/"+res.body.name);
+        el("urlSource").value=""; el("urlName").value=""; el("urlLicText").value="";
+        showTab("status");
+        refreshImports();
+      } else {
+        snack("err",(res.body&&res.body.error)||("Import failed (HTTP "+res.status+")"), true);
+      }
+    }).catch(function(){ snack("err","Import failed (network).", true); });
+  });
 
   function fmtGB(b){ return ((b||0)/1073741824).toFixed(1)+" GB"; }
   function updateStorage(s){
@@ -966,24 +1177,30 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   function refresh(){
-    fetch(api("/api/artifacts")).then(function(r){
-      if(r.status===401){
+    fetchJson(api("/api/artifacts")).then(function(res){
+      if(res.status===401){
         authReady=false;
-        return ensureAuth().then(function(){ refresh(); return null; });
+        return ensureAuth().then(function(){ refresh(); });
       }
-      return r.json();
-    }).then(function(d){
-      if(!d) return;
+      if(!res.ok){
+        rows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
+          "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>';
+        snack("err","Could not load artifacts (HTTP "+res.status+").", true);
+        return;
+      }
+      var d=res.body||{};
       currentData=d.artifacts||[];
       updateStorage(d.storage);
-      // drop any in-flight upload that the controller has now turned into an Artifact
       Object.keys(pendingUploads).forEach(function(k){
         var p=pendingUploads[k];
         if(currentData.some(function(t){ return (t.displayName||t.name)===p.displayName && t.namespace===p.namespace; }))
           delete pendingUploads[k];
       });
       render();
-    }).catch(function(){});
+    }).catch(function(e){
+      rows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
+        "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
+    });
   }
 
   // ---------- theme switch ----------
@@ -1002,7 +1219,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   })();
 
-  setInterval(refresh, 5000);
+  setInterval(function(){ if(activeTab==="status"){ refresh(); refreshImports(); } }, 5000);
 })();
 </script>
 </body>

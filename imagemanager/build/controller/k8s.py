@@ -74,6 +74,11 @@ def create_cr(group, version, plural, body):
     return _request("POST", path, body)
 
 
+def update_cr(group, version, plural, name, full_obj):
+    path = f"/apis/{group}/{version}/{plural}/{quote(name, safe='')}"
+    return _request("PUT", path, full_obj)
+
+
 def update_cr_status(group, version, plural, name, full_obj):
     path = f"/apis/{group}/{version}/{plural}/{quote(name, safe='')}/status"
     return _request("PUT", path, full_obj)

@@ -6,9 +6,13 @@ Serves three audiences on one port:
       GET  /                 the upload web UI
       GET  /healthz          liveness/readiness (also used by kubelet probes)
       GET  /api/config       defaults for the UI form
+      GET  /api/settings     ImageManagerConfig spec + status (Settings tab)
+      PUT  /api/settings     update ImageManagerConfig/default
       GET  /api/namespaces   namespace names for the UI (best-effort)
       GET  /api/artifacts    tracked uploads + live Artifact download status
+      GET  /api/imports      ImageImport CR list (Status tab)
       POST /api/upload       raw-body file upload -> store on PVC -> create Artifact
+      POST /api/url-import   create ImageImport CR from URL (URL Import tab)
   * eda-asvr, connecting directly to the Service to PULL an uploaded file:
       GET/HEAD /files/<uploadId>/<filename>[.md5]
 TLS: serving cert from the cert-manager CSI mount (issuer eda-internal-issuer),
@@ -45,6 +49,12 @@ HEALTHZ_FILE = os.path.join(UPLOAD_DIR, ".healthz.json")
 PROXY_PREFIX = "/core/httpproxy/v1/imagemanager"
 TLS_DIR = "/var/run/eda/tls/serving"
 _SERVE_CHUNK = 256 * 1024
+
+IM_CRD_GROUP = "imagemanager.eda.edacommunity.com"
+IM_CRD_VERSION = "v1alpha1"
+IM_CONFIG_PLURAL = "imagemanagerconfigs"
+IM_IMPORT_PLURAL = "imageimports"
+IM_CONFIG_NAME = "default"
 
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
@@ -311,10 +321,14 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/config":
                 self._serve_config()
+            elif path == "/api/settings":
+                self._serve_settings()
             elif path == "/api/namespaces":
                 self._serve_namespaces()
             elif path == "/api/artifacts":
                 self._serve_artifacts()
+            elif path == "/api/imports":
+                self._serve_imports()
             else:
                 self.send_error(404, "Not Found")
         except BrokenPipeError:
@@ -358,6 +372,107 @@ class Handler(BaseHTTPRequestHandler):
             "maxUploadMiB": c.get("maxUploadMiB", 4096),
             "user": self._authed_user() or "",
         })
+
+    def _serve_settings(self):
+        """Read ImageManagerConfig/default spec + live status for the Settings tab."""
+        spec = dict(CONFIG)
+        health, message, version = "", "", ""
+        try:
+            cr = k8s.read_cr(IM_CRD_GROUP, IM_CRD_VERSION, IM_CONFIG_PLURAL, IM_CONFIG_NAME)
+            if cr:
+                spec.update({k: v for k, v in (cr.get("spec") or {}).items()
+                             if v not in (None, "")})
+                st = cr.get("status") or {}
+                health = st.get("health") or ""
+                message = st.get("message") or ""
+                version = st.get("version") or ""
+        except Exception as e:
+            logger.warning("settings read failed: %s", e)
+        self._send_json({
+            "defaultArtifactNamespace": spec.get("defaultArtifactNamespace", "eda"),
+            "defaultRepo": spec.get("defaultRepo", "images"),
+            "maxUploadMiB": int(spec.get("maxUploadMiB", 4096)),
+            "filePullBaseUrl": spec.get("filePullBaseUrl") or "",
+            "health": health,
+            "message": message,
+            "version": version,
+        })
+
+    def _apply_settings(self, body):
+        """Merge validated settings into ImageManagerConfig/default spec."""
+        cr = k8s.read_cr(IM_CRD_GROUP, IM_CRD_VERSION, IM_CONFIG_PLURAL, IM_CONFIG_NAME)
+        if not cr:
+            self._send_json({"ok": False, "error": "ImageManagerConfig/default not found"}, 404)
+            return
+        spec = dict(cr.get("spec") or {})
+        if "defaultArtifactNamespace" in body:
+            ns = (body.get("defaultArtifactNamespace") or "").strip()
+            if not ns:
+                self._send_json({"ok": False, "error": "defaultArtifactNamespace is required"}, 400)
+                return
+            spec["defaultArtifactNamespace"] = ns
+        if "defaultRepo" in body:
+            repo = (body.get("defaultRepo") or "").strip()
+            if not repo:
+                self._send_json({"ok": False, "error": "defaultRepo is required"}, 400)
+                return
+            spec["defaultRepo"] = repo
+        if "maxUploadMiB" in body:
+            try:
+                mib = int(body.get("maxUploadMiB"))
+            except (TypeError, ValueError):
+                self._send_json({"ok": False, "error": "maxUploadMiB must be an integer"}, 400)
+                return
+            if mib < 1 or mib > 65536:
+                self._send_json({"ok": False,
+                                 "error": "maxUploadMiB must be between 1 and 65536"}, 400)
+                return
+            spec["maxUploadMiB"] = mib
+        if "filePullBaseUrl" in body:
+            spec["filePullBaseUrl"] = (body.get("filePullBaseUrl") or "").strip()
+        cr["spec"] = spec
+        try:
+            k8s.update_cr(IM_CRD_GROUP, IM_CRD_VERSION, IM_CONFIG_PLURAL, IM_CONFIG_NAME, cr)
+        except Exception as e:
+            logger.error("settings update failed: %s", e)
+            self._send_json({"ok": False, "error": str(e)}, 502)
+            return
+        merged = dict(CONFIG)
+        merged.update({k: v for k, v in spec.items() if v not in (None, "")})
+        merged["maxUploadMiB"] = max(1, min(65536, int(merged.get("maxUploadMiB", 4096))))
+        set_config(merged)
+        self._send_json({"ok": True, "settings": {
+            "defaultArtifactNamespace": merged.get("defaultArtifactNamespace", "eda"),
+            "defaultRepo": merged.get("defaultRepo", "images"),
+            "maxUploadMiB": merged.get("maxUploadMiB", 4096),
+            "filePullBaseUrl": merged.get("filePullBaseUrl") or "",
+        }})
+
+    def _serve_imports(self):
+        """List ImageImport CRs for the Status tab."""
+        out = []
+        try:
+            for cr in k8s.list_cr_all_namespaces(IM_CRD_GROUP, IM_CRD_VERSION, IM_IMPORT_PLURAL):
+                md = cr.get("metadata") or {}
+                spec = cr.get("spec") or {}
+                st = cr.get("status") or {}
+                out.append({
+                    "name": md.get("name", ""),
+                    "namespace": md.get("namespace", ""),
+                    "sourceUrl": spec.get("sourceUrl", ""),
+                    "phase": st.get("phase") or "Pending",
+                    "message": st.get("message", ""),
+                    "detectedNos": st.get("detectedNos", ""),
+                    "sizeBytes": st.get("sizeBytes"),
+                    "startTime": st.get("startTime", ""),
+                    "completionTime": st.get("completionTime", ""),
+                })
+        except Exception as e:
+            logger.warning("imports list failed: %s", e)
+            self._send_json({"ok": False, "error": str(e), "imports": []}, 502)
+            return
+        out.sort(key=lambda r: r.get("startTime") or r.get("name") or "", reverse=True)
+        self._send_json({"imports": out})
 
     def _serve_namespaces(self):
         import k8s
@@ -536,6 +651,34 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(buf)
                 remaining -= len(buf)
 
+    # --------------------------- PUT ---------------------------
+
+    def do_PUT(self):
+        path, _ = self._route()
+        try:
+            if auth.enabled() and not self._authed_user():
+                self._send_json({"ok": False, "error": "not authenticated"}, 401)
+                return
+            if path == "/api/settings":
+                n = int(self.headers.get("Content-Length", 0) or 0)
+                raw = self.rfile.read(n) if n else b""
+                try:
+                    body = json.loads(raw.decode("utf-8")) if raw else {}
+                except Exception:
+                    self._send_json({"ok": False, "error": "invalid JSON body"}, 400)
+                    return
+                self._apply_settings(body)
+            else:
+                self.send_error(405, "Method Not Allowed")
+        except BrokenPipeError:
+            pass
+        except Exception as e:
+            logger.error("PUT %s failed: %s", self.path, e)
+            try:
+                self._send_json({"ok": False, "error": str(e)}, 500)
+            except Exception:
+                pass
+
     # --------------------------- POST ---------------------------
 
     def do_POST(self):
@@ -550,6 +693,8 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/api/upload":
                 self._handle_upload(q)
+            elif path == "/api/url-import":
+                self._handle_url_import()
             elif path == "/api/license":
                 self._handle_license(q)
             elif path == "/api/delete":
@@ -564,6 +709,72 @@ class Handler(BaseHTTPRequestHandler):
                 self._send_json({"ok": False, "error": str(e)}, code=500)
             except Exception:
                 pass
+
+    def _handle_url_import(self):
+        """Create an ImageImport CR (declarative URL import) from the unified UI."""
+        try:
+            n = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(n) if n else b""
+            body = json.loads(raw.decode("utf-8")) if raw else {}
+        except Exception:
+            self._send_json({"ok": False, "error": "invalid JSON body"}, 400)
+            return
+        url = (body.get("url") or body.get("sourceUrl") or "").strip()
+        namespace = (body.get("namespace") or "").strip()
+        if not url or not url.lower().startswith(("http://", "https://")):
+            self._send_json({"ok": False, "error": "url must be an http(s) URL"}, 400)
+            return
+        if not namespace:
+            self._send_json({"ok": False, "error": "namespace is required"}, 400)
+            return
+        base_name = uploads.to_k8s_name(
+            (body.get("name") or "").strip()
+            or os.path.basename(url.split("?")[0]).replace(".zip", "")
+            or "import"
+        ) or "import"
+        cr_name = base_name
+        for attempt in range(5):
+            if not k8s.read_namespaced_cr(
+                    IM_CRD_GROUP, IM_CRD_VERSION, namespace, IM_IMPORT_PLURAL, cr_name):
+                break
+            cr_name = uploads.to_k8s_name(f"{base_name}-{int(time.time())}-{attempt}")
+        spec = {
+            "sourceUrl": url,
+            "insecureSkipTLSVerify": bool(body.get("insecureSkipTLSVerify")),
+        }
+        name_override = (body.get("name") or "").strip()
+        if name_override:
+            spec["name"] = name_override.lower()
+        repo = (body.get("repo") or "").strip()
+        if repo:
+            spec["repo"] = repo
+        lic = (body.get("licenseKey") or "").strip()
+        if lic:
+            spec["licenseKey"] = lic
+        cr_body = {
+            "apiVersion": f"{IM_CRD_GROUP}/{IM_CRD_VERSION}",
+            "kind": "ImageImport",
+            "metadata": {"name": cr_name, "namespace": namespace},
+            "spec": spec,
+        }
+        try:
+            k8s.create_namespaced_cr(
+                IM_CRD_GROUP, IM_CRD_VERSION, namespace, IM_IMPORT_PLURAL, cr_body)
+        except urllib.error.HTTPError as e:
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", errors="replace")[:300]
+            except Exception:
+                pass
+            self._send_json({"ok": False,
+                             "error": f"create ImageImport failed (HTTP {e.code}): {detail}"},
+                            502)
+            return
+        except Exception as e:
+            self._send_json({"ok": False, "error": str(e)}, 502)
+            return
+        logger.info("URL import requested: %s/%s -> %s", namespace, cr_name, url)
+        self._send_json({"ok": True, "name": cr_name, "namespace": namespace})
 
     def _handle_license(self, q):
         """Attach a NOS license key to an already-uploaded image. The request body
