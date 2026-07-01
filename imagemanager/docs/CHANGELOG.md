@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.0.5
+
+Rebuild EDA launcher dashboard from cable-map OCI reference (v0.2.2):
+
+- Structural clone of `cable-map-dashboard.json` with fresh UUIDs (no reuse from cable-map or prior imagemanager).
+- EQL on `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerartifacts` with columns Name, Size, Status, View.
+- Manifest view icon changed from `Import` to `CloudUpgrade` (`ui.category: Topology`, view component last).
+
 ## v0.0.4
 
 Fix missing EDA nav view (entire Image Manager panel absent):

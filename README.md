@@ -82,7 +82,17 @@ Within a few minutes the Catalog shows **Operational = true** and **EDA Image Ma
 
 ## Opening the app's web UI
 
-Image Manager is served **through the EDA API’s HTTP proxy**, so you reach it at a path under your EDA address while logged into the EDA UI:
+### EDA navigation panel (launcher dashboard)
+
+From **v0.0.5** onward, the launcher appears under **Topology → Image Manager** (CloudUpgrade icon, same category as Cable Map). The status card lists uploaded images (**Name, Size, Status**) with a **View** link that opens the full upload UI in a new tab.
+
+**Upgrade to v0.0.5** from the App Store (or reinstall), then hard-refresh your browser (Ctrl+Shift+R / Cmd+Shift+R). Confirm **Topology → Image Manager** shows the launcher card. Non-admin users need the `imagemanager-viewer` EDA role (assigned automatically with default install settings) or `system-administrator`.
+
+If you installed **v0.0.3** or earlier, the nav entry used a custom `Image Manager` category that EDA does not render — upgrade to **v0.0.4+** to see the panel at all.
+
+### Direct HttpProxy URL
+
+Image Manager is also served **through the EDA API’s HTTP proxy**, so you reach it at a path under your EDA address while logged into the EDA UI:
 
 ```
 https://<your-eda-address>/core/httpproxy/v1/imagemanager/
@@ -231,6 +241,17 @@ Uninstall from the EDA Store (or remove the `AppInstaller`). This removes the co
 ---
 
 ## How it works under the hood
+
+### Why two pods?
+
+Image Manager runs **two** workloads (Cable Map has only a single Deployment):
+
+| Pod | Kind | Purpose |
+|-----|------|---------|
+| `eda-imagemanager-*` | **Deployment** (1 replica) | **Controller** — web UI, upload handling, Artifact CR management, in-cluster file server, and built-in OCI registry for SR‑SIM images. |
+| `eda-imagemanager-node-agent-*` | **DaemonSet** (one per node) | **Node agent** — writes a containerd `hosts.toml` redirect on each node so sim pods can pull SR‑SIM images from the controller’s in-cluster registry (`eda-imagemanager.eda-system.svc`). Makes zero Kubernetes API calls. |
+
+The controller is cluster-scoped control-plane logic; the node agent is a per-node data-plane hook required only because containerd on each node must resolve and trust the app’s registry endpoint locally.
 
 - The controller is a small, dependency‑free Python 3 process (standard library only). It creates `Artifact` CRs and reports status through the **Kubernetes API**, authenticating with its pod ServiceAccount token. The **web UI** is protected by **EDA single sign‑on** — an OIDC Authorization‑Code flow against EDA's Keycloak (reached in‑cluster via `eda-api`) — and is restricted to users holding an allowed EDA role (default `system-administrator`).
 - It serves its file‑pull endpoint over **HTTPS** using a certificate issued by EDA's internal CA (via the cert‑manager CSI driver). Because `eda-asvr`'s download client does **not** trust that CA by default, the controller also creates a small trust‑bundle ConfigMap in each target namespace and sets `spec.trustBundle` on every Artifact — so `eda-asvr` can pull from it securely with no manual setup.

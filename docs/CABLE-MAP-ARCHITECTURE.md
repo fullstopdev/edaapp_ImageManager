@@ -16,6 +16,11 @@ which caused install/uninstall failures and EDA transaction errors.
 v0.0.3 aligns Image Manager with cable-map where applicable while keeping imagemanager-specific
 CRDs, PVC, and the node-agent DaemonSet.
 
+**v0.0.4** fixes the missing EDA nav panel: register the view under `ui.category: Topology`
+(not a custom top-level category), move the `view` component last in the manifest, and point
+the launcher dashlet at `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs`
+(always has a `default` row).
+
 ---
 
 ## Component comparison
@@ -26,7 +31,8 @@ CRDs, PVC, and the node-agent DaemonSet.
 | **Component order** | Deployment+SA → access → Service → HttpProxy → view | CRDs → view → RBAC → PVC → Service → Deployment → HttpProxy → DaemonSet |
 | **Deployment strategy** | `Recreate` (replicas=1) | `Recreate` (required for RWO PVC) |
 | **PVC** | None | `imagemanager-data` 20Gi RWO |
-| **DaemonSet** | None | Node-agent for SR-SIM containerd redirect |
+| **DaemonSet** | None | `eda-imagemanager-node-agent` — per-node containerd `hosts.toml` redirect for SR-SIM pulls |
+| **Pod count (typical)** | 1 Deployment pod | 1 Deployment pod **+** 1 DaemonSet pod per node |
 | **imagePullSecrets** | EDA-injected (`appstore-eda-apps-registry-image-pull`) | Removed hardcoded secret; EDA injects |
 | **Probes** | HTTP `/healthz`, readiness 5s / liveness 10s | Same pattern (HTTPS on 8443) |
 | **preStop** | None in OCI | `sleep 5` on controller; DaemonSet removes `hosts.toml` |

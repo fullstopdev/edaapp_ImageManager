@@ -1,29 +1,29 @@
 {
-  "uuid": "b4c8e2f1-9a3d-4f5e-8c7b-1d2e3f4a5b6c",
+  "uuid": "01d0e71c-4ada-4170-80fc-1e7485a78b53",
   "name": "Image Manager",
-  "version": "0.0.4",
+  "version": "0.0.5",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-01T19:00:00Z",
+  "lastChanged": "2026-07-01T21:15:00Z",
   "screens": [
     {
       "name": "Image Manager",
-      "uuid": "c5d9e3f2-0a4e-4f6f-9d8c-2e3f4a5b6c7d",
+      "uuid": "12d7f671-1377-45e8-96b6-6cbcc9bb7b43",
       "screenType": "dashboard",
       "partOfNav": true,
       "startScreen": true,
       "type": "screen",
       "components": [
         {
-          "uuid": "d6e0f4a3-1b5f-4070-ae9d-3f4a5b6c7d8e",
+          "uuid": "26ef4a85-f4dd-48f1-8149-d80d6253f574",
           "type": "flexRow",
           "flexDirection": "row",
           "horizontalAlignment": "start",
           "verticalAlignment": "start",
           "components": [
             {
-              "uuid": "e7f1a5b4-2c6f-4181-bf0e-4a5b6c7d8e9f",
+              "uuid": "f5cfb6be-3cbe-4c76-b021-025fe2911c38",
               "type": "dashletDataView",
               "title": "Image Manager",
               "subtitle": "Click on View link of this panel to open the Image Manager UI",
@@ -40,24 +40,40 @@
               },
               "componentConfiguration": {
                 "apiConfiguration": {
-                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs",
+                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerartifacts",
                   "queryType": "eql",
                   "requestType": "get",
                   "definition": {
                     "initialModel": {
                       "schema": "v1",
-                      "modelName": "ImageManagerConfig",
+                      "modelName": "ImageManagerArtifact",
                       "primaryKey": "name",
                       "showGroupDisplay": "no",
                       "flat": true,
                       "fields": [
                         {
-                          "fieldName": "name",
-                          "label": "Service",
+                          "fieldName": "displayName",
+                          "label": "Name",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 160,
-                          "flex": 1.4
+                          "minWidth": 200,
+                          "flex": 2
+                        },
+                        {
+                          "fieldName": "sizeBytes",
+                          "label": "Size",
+                          "type": "number",
+                          "sortable": true,
+                          "minWidth": 100,
+                          "flex": 0.8
+                        },
+                        {
+                          "fieldName": "downloadStatus",
+                          "label": "Status",
+                          "type": "string",
+                          "sortable": true,
+                          "minWidth": 140,
+                          "flex": 1.2
                         },
                         {
                           "fieldName": "open",
@@ -68,40 +84,24 @@
                           "flex": 0.7
                         },
                         {
-                          "fieldName": "health",
-                          "label": "Status",
+                          "fieldName": "namespace",
+                          "label": "Namespace",
                           "type": "string",
-                          "sortable": true,
-                          "minWidth": 170,
-                          "flex": 1.6
+                          "visible": false,
+                          "sortable": false,
+                          "width": "160px"
                         },
                         {
-                          "fieldName": "uploadsStored",
-                          "label": "Uploads",
-                          "type": "number",
-                          "sortable": true,
-                          "minWidth": 130,
-                          "flex": 1
-                        },
-                        {
-                          "fieldName": "bytesStored",
-                          "label": "Bytes",
-                          "type": "number",
-                          "sortable": true,
-                          "minWidth": 100,
-                          "flex": 0.8
-                        },
-                        {
-                          "fieldName": "message",
-                          "label": "Message",
+                          "fieldName": "statusReason",
+                          "label": "Reason",
                           "type": "string",
                           "visible": false,
                           "sortable": false,
                           "width": "260px"
                         },
                         {
-                          "fieldName": "version",
-                          "label": "Version",
+                          "fieldName": "artifactName",
+                          "label": "Artifact",
                           "type": "string",
                           "visible": false,
                           "sortable": false,
