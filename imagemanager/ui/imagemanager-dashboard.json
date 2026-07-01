@@ -1,7 +1,7 @@
 {
   "uuid": "64140263-840c-4da6-af3e-84907686cd63",
   "name": "Image Manager",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "displayName": "Image Manager",
   "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
   "showNavigationToolbar": true,
@@ -40,19 +40,19 @@
               },
               "componentConfiguration": {
                 "apiConfiguration": {
-                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs.default.status.artifacts",
+                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerartifacts",
                   "queryType": "eql",
                   "requestType": "get",
                   "definition": {
                     "initialModel": {
                       "schema": "v1",
                       "modelName": "ImageManagerArtifact",
-                      "primaryKey": "displayName",
+                      "primaryKey": "metadata.name",
                       "showGroupDisplay": "no",
                       "flat": true,
                       "fields": [
                         {
-                          "fieldName": "displayName",
+                          "fieldName": "status.displayName",
                           "label": "Name",
                           "type": "string",
                           "sortable": true,
@@ -60,7 +60,7 @@
                           "flex": 1.6
                         },
                         {
-                          "fieldName": "sizeBytes",
+                          "fieldName": "status.sizeBytes",
                           "label": "Size",
                           "type": "number",
                           "sortable": true,
@@ -68,7 +68,7 @@
                           "flex": 0.9
                         },
                         {
-                          "fieldName": "downloadStatus",
+                          "fieldName": "status.downloadStatus",
                           "label": "Status",
                           "type": "string",
                           "sortable": true,
@@ -76,7 +76,7 @@
                           "flex": 1
                         },
                         {
-                          "fieldName": "open",
+                          "fieldName": "status.open",
                           "label": "View",
                           "type": "string",
                           "sortable": false,
@@ -84,7 +84,7 @@
                           "flex": 0.7
                         },
                         {
-                          "fieldName": "namespace",
+                          "fieldName": "status.namespace",
                           "label": "Namespace",
                           "type": "string",
                           "visible": false,
@@ -93,7 +93,7 @@
                           "flex": 1.1
                         },
                         {
-                          "fieldName": "statusReason",
+                          "fieldName": "status.statusReason",
                           "label": "Message",
                           "type": "string",
                           "visible": false,
@@ -101,7 +101,7 @@
                           "width": "260px"
                         },
                         {
-                          "fieldName": "name",
+                          "fieldName": "status.artifactName",
                           "label": "Artifact ID",
                           "type": "string",
                           "visible": false,

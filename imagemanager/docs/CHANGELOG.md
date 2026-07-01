@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.6
+
+- Fix empty launcher dashlet: EDA EQL cannot expand nested `ImageManagerConfig.status.artifacts` arrays. Re-introduce cluster-scoped `ImageManagerArtifact` CRs (one row per tracked upload) synced by the controller; dashboard queries `.cluster...imagemanagerartifacts` with `status.*` column bindings (cable-map flat-table pattern). Add RBAC and `imagemanager-viewer` tableRules for the new CR.
+
 ## v0.0.5
 
 - Release bump: launcher (`status.artifacts` EQL) and Artifact CR fallback rows; publish workflow adds `edabuilder publish --force` for catalog republish safety.

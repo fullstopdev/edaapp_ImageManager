@@ -1,0 +1,22 @@
+[
+  {
+    "name": "Display",
+    "type": "string",
+    "jsonPath": ".status.displayName"
+  },
+  {
+    "name": "Namespace",
+    "type": "string",
+    "jsonPath": ".status.namespace"
+  },
+  {
+    "name": "Size",
+    "type": "integer",
+    "jsonPath": ".status.sizeBytes"
+  },
+  {
+    "name": "Status",
+    "type": "string",
+    "jsonPath": ".status.downloadStatus"
+  }
+]
