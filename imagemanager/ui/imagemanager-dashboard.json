@@ -1,29 +1,29 @@
 {
-  "uuid": "64140263-840c-4da6-af3e-84907686cd63",
+  "uuid": "65ee5ea8-6712-4401-8fa2-3ce557622430",
   "name": "Image Manager",
-  "version": "0.0.1",
+  "version": "0.0.2",
   "displayName": "Image Manager",
   "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-01T00:00:00Z",
+  "lastChanged": "2026-07-01T18:35:00Z",
   "screens": [
     {
       "name": "Image Manager",
-      "uuid": "984b76b3-2492-4366-a626-d529d3ed4b64",
+      "uuid": "f8a8d005-19a5-438f-817c-48f461edd3a5",
       "screenType": "dashboard",
       "partOfNav": true,
       "startScreen": true,
       "type": "screen",
       "components": [
         {
-          "uuid": "9b7a6039-3451-46cf-beb8-4c4dfd8a923f",
+          "uuid": "11cf9396-5fad-49b2-8c5f-5f2f24454794",
           "type": "flexRow",
           "flexDirection": "row",
           "horizontalAlignment": "start",
           "verticalAlignment": "start",
           "components": [
             {
-              "uuid": "3820e730-92d1-463a-b4cf-fc51e9a8fcab",
+              "uuid": "5f5a9072-8daa-4f96-a471-ac45cade2d6b",
               "type": "dashletDataView",
               "title": "Image Manager",
               "subtitle": "Tracked images and Artifact download status — click View to open the full UI",
