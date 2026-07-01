@@ -1,0 +1,151 @@
+# Build and publish EDA Image Manager to GHCR and the in-repo app catalog.
+#
+# Versioning: bump spec.image in imagemanager/manifest.yaml (and matching
+# controller refs in imagemanager/manifests/) before pushing to main — e.g.
+# v26.4.2-27. edabuilder publish creates git tag
+# apps/imagemanager.eda.edacommunity.com/<version>.
+#
+# EDABUILDER_VERSION should match PROJECT builderVersion (currently v26.4.2).
+
+name: Publish
+
+on:
+  push:
+    branches: [main]
+    tags:
+      - apps/imagemanager.eda.edacommunity.com/v*
+  workflow_dispatch:
+    inputs:
+      skip_catalog:
+        description: Build and push images only (skip catalog publish)
+        type: boolean
+        default: false
+      create_release:
+        description: Create a GitHub Release after publish
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: publish-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  REGISTRY: ghcr.io/fullstopdev/edaapp_imagemanager
+  APP: imagemanager
+  CATALOG_REPO: https://github.com/fullstopdev/edaapp_ImageManager.git
+  EDABUILDER_VERSION: v26.4.2
+  GOTOOLCHAIN: auto
+
+jobs:
+  publish:
+    # Catalog tags are created by edabuilder publish; skip the duplicate build.
+    if: >-
+      github.event_name == 'workflow_dispatch' ||
+      (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.value }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version
+        id: version
+        run: |
+          VERSION=$(grep '^\s*image:' imagemanager/manifest.yaml | head -1 | sed -E 's/.*:([^[:space:]]+)$/\1/')
+          if [[ -z "$VERSION" ]]; then
+            echo "Could not read image tag from imagemanager/manifest.yaml" >&2
+            exit 1
+          fi
+          echo "Publishing version: $VERSION"
+          echo "value=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Install edabuilder
+        run: |
+          curl -fsSL -o edabuilder \
+            "https://github.com/nokia-eda/edabuilder/releases/download/${EDABUILDER_VERSION}/edabuilder-${EDABUILDER_VERSION}-linux-amd64"
+          chmod +x edabuilder
+          sudo mv edabuilder /usr/local/bin/edabuilder
+          edabuilder version
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.2"
+          cache-dependency-path: |
+            imagemanager/go.sum
+            go.work.sum
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR (Docker)
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: fullstopdev
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Log in to GHCR (edabuilder)
+        run: |
+          edabuilder login registry ghcr.io \
+            -u "${{ github.actor }}" \
+            -p "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Build and push controller image
+        run: |
+          docker buildx build \
+            --platform linux/amd64 \
+            -f imagemanager/build/Dockerfile \
+            -t "${REGISTRY}/imagemanager-controller:${{ steps.version.outputs.value }}" \
+            --push \
+            imagemanager/build
+
+      - name: Build and push app bundle
+        run: edabuilder build-push --app "${APP}"
+
+      - name: Configure git for catalog publish
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.skip_catalog != true)
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+      - name: Log in to catalog (git)
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.skip_catalog != true)
+        run: |
+          edabuilder login git "${CATALOG_REPO}" \
+            -u "${{ github.actor }}" \
+            -p "${{ secrets.GITHUB_TOKEN }}"
+
+      - name: Publish catalog entry
+        if: >-
+          (github.event_name != 'workflow_dispatch' || inputs.skip_catalog != true)
+        run: |
+          edabuilder publish app "${CATALOG_REPO}" --app "${APP}"
+
+  release:
+    needs: publish
+    if: >-
+      always() &&
+      needs.publish.result == 'success' &&
+      (
+        (github.event_name == 'workflow_dispatch' && inputs.create_release == true) ||
+        (github.event_name == 'push' && github.ref == 'refs/heads/main')
+      )
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: apps/imagemanager.eda.edacommunity.com/${{ needs.publish.outputs.version }}
+          name: imagemanager ${{ needs.publish.outputs.version }}
+          generate_release_notes: true
+          # Offline bundle attachment is still a manual maintainer step today.

@@ -60,7 +60,7 @@ spec:
   enabled: true
   refreshInterval: 180
   remoteType: git
-  remoteURL: https://github.com/kkayhan/edaapp_ImageManager.git
+  remoteURL: https://github.com/fullstopdev/edaapp_ImageManager.git
   skipTLSVerify: false
   title: Image Manager
 ```
@@ -247,8 +247,38 @@ This repository is both the **source** and the **app catalog**.
 - Kubernetes manifests: [`imagemanager/manifests/`](imagemanager/manifests/).
 - Catalog entries (published by `edabuilder publish`): `apps/imagemanager.eda.edacommunity.com/`.
 
+### GHCR login (required once per machine)
+
+`make imagemanager-publish` runs `edabuilder build-push`, which **does not** use your git credentials. You must log in to the container registry separately. `edabuilder login list` should show `ghcr.io` under `registry` (credentials live in `~/.config/edabuilder/auth.json`). Operator/workflow images use `docker buildx --push`, so log Docker into GHCR as well.
+
+1. Create a GitHub **Personal Access Token** for user **fullstopdev**:
+   - **Classic PAT:** enable `write:packages`, `read:packages`, and `repo` (needed if the GitHub repo is private).
+   - **Fine-grained PAT:** grant **Packages** read/write and repository access to `fullstopdev/edaapp_ImageManager`.
+   - If the account uses **GitHub SSO** for an org, authorize the token for that org after creating it.
+
+2. Log in (username is your GitHub username, **not** your email; password is the PAT):
+
+```bash
+export GHCR_USER=fullstopdev
+read -rs GHCR_TOKEN && echo
+edabuilder login registry ghcr.io -u "$GHCR_USER" -p "$GHCR_TOKEN"
+printf '%s' "$GHCR_TOKEN" | docker login ghcr.io -u "$GHCR_USER" --password-stdin
+edabuilder login list   # expect a non-empty "registry" entry for ghcr.io
+unset GHCR_TOKEN
+```
+
+**Troubleshooting:** If verification prints `TOKEN EMPTY` after `read -rs`, stdin often isn't an interactive TTY (IDE panel, pasted whole script at once, or Enter before the PAT). Set the token explicitly — e.g. `export GHCR_TOKEN='…'` or `GHCR_TOKEN=$(gh auth token)` when `gh auth status` is logged in — then re-run login.
+
+```
+
+3. Push tags must stay under your namespace, as in `imagemanager/manifest.yaml`: `ghcr.io/fullstopdev/edaapp_imagemanager/...` (owner in the path must match the GitHub user or org that owns the repo and PAT).
+
 Build & publish flow (high level): `docker build/push` the controller image → `edabuilder build-push` the app bundle to GHCR → `edabuilder publish app` the catalog entry + version tag → attach the offline bundle to the GitHub Release.
 
 **Versioning:** the app version tracks the EDA release it targets, as `v<eda-release>-<build>` — e.g. `v26.4.2-1`, `v26.4.2-2`, … against EDA `26.4.2` (the leading `v` matches EDA's own version string and is required by `edabuilder`). EDA cuts major releases on the 4th/8th/12th month each year (`26.4.x`, `26.8.x`, `26.12.x`, then `27.4.x`, …); the `-<build>` increments per app change within a given EDA release. The controller image and app bundle share this tag.
+
+### CI/CD
+
+Pushes to `main` (and manual **Actions → Publish → Run workflow**) run [`.github/workflows/publish.yml`](.github/workflows/publish.yml): build/push `imagemanager-controller` and the app OCI image to GHCR, then `edabuilder publish app` updates the catalog under `apps/` and pushes the version tag. Bump `spec.image` in `imagemanager/manifest.yaml` before merging when you want a new release. Catalog-only commits under `apps/` do not re-trigger the workflow.
 
 **License:** MIT.
