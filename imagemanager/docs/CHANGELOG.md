@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.6
+
+Move EDA nav launcher from Topology to **System** category (`ui.category: System`,
+`icon: CloudUpgrade`). Regenerate dashboard UUIDs so EDA re-registers the view after
+the category change.
+
 ## v0.0.5
 
 Rebuild EDA launcher dashboard from cable-map OCI reference (v0.2.2):

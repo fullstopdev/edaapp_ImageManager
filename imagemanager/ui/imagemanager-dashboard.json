@@ -1,29 +1,29 @@
 {
-  "uuid": "01d0e71c-4ada-4170-80fc-1e7485a78b53",
+  "uuid": "7b8647d9-def6-4e48-95ae-3aebbe354399",
   "name": "Image Manager",
-  "version": "0.0.5",
+  "version": "0.0.6",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-01T21:15:00Z",
+  "lastChanged": "2026-07-01T22:00:00Z",
   "screens": [
     {
       "name": "Image Manager",
-      "uuid": "12d7f671-1377-45e8-96b6-6cbcc9bb7b43",
+      "uuid": "c6c8a898-d742-4d51-8007-c90d4b42fc06",
       "screenType": "dashboard",
       "partOfNav": true,
       "startScreen": true,
       "type": "screen",
       "components": [
         {
-          "uuid": "26ef4a85-f4dd-48f1-8149-d80d6253f574",
+          "uuid": "6bb42050-49d5-4c6a-8d58-2e346b9907f3",
           "type": "flexRow",
           "flexDirection": "row",
           "horizontalAlignment": "start",
           "verticalAlignment": "start",
           "components": [
             {
-              "uuid": "f5cfb6be-3cbe-4c76-b021-025fe2911c38",
+              "uuid": "4c927d81-3926-424c-bced-e9e455219a52",
               "type": "dashletDataView",
               "title": "Image Manager",
               "subtitle": "Click on View link of this panel to open the Image Manager UI",
