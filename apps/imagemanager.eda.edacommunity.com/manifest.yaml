@@ -54,6 +54,17 @@ spec:
           listKind: ImageImportList
           plural: imageimports
           singular: imageimport
+    - crd:
+        api:
+          expose: read
+        path: imagemanager/crds/imagemanager.eda.edacommunity.com_imagemanagerartifacts.yaml
+        schema: imagemanager/openapiv3/eda_oas_imagemanager.eda.edacommunity.com_imagemanagerartifacts.json
+        namespaced: false
+        names:
+          kind: ImageManagerArtifact
+          listKind: ImageManagerArtifactList
+          plural: imagemanagerartifacts
+          singular: imagemanagerartifact
     - view:
         path: imagemanager/ui/imagemanager-dashboard.json
         ui:
