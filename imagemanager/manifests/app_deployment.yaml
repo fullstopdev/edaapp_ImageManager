@@ -27,7 +27,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: imagemanager-controller
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v26.4.2-31
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v26.4.2-32
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAMESPACE
@@ -41,12 +41,10 @@ spec:
               containerPort: 8443
               protocol: TCP
           startupProbe:
-            httpGet:
-              path: /healthz
+            tcpSocket:
               port: serving
-              scheme: HTTPS
-            failureThreshold: 12
-            periodSeconds: 5
+            failureThreshold: 15
+            periodSeconds: 2
           livenessProbe:
             httpGet:
               path: /healthz

@@ -30,7 +30,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v26.4.2-31"
+VERSION = "v26.4.2-32"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -155,7 +155,7 @@ def main():
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
 
-    if not _wait_for_cert(timeout=30):
+    if not os.path.isfile(TLS_CRT) and not _wait_for_cert(timeout=30):
         logger.error("Serving cert %s not present after 30s; server will fall back "
                      "to HTTP (probes/pulls will fail until cert mounts)", TLS_CRT)
     fileserver.set_config(_read_config())
