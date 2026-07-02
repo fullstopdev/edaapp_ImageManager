@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.23
+
+Top header shows **Image Manager** next to the Nokia logo (replaces **Event Driven
+Automation**). Sub-bar keeps the **Node Onboarding** nav category only.
+
 ## v0.0.22
 
 EDA platform header parity for the standalone web UI (opened via **View** in a new tab):
