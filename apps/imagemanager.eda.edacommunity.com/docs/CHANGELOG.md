@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.43
+
+**Fix Keycloak script load breaking artifact refresh (v0.0.42 regression):**
+v0.0.42 periodic probes called `verifyKeycloakSession()`, which re-fetched
+`keycloak.min.js` every 15–30s. After EDA logout or identity-proxy
+unavailability the script load failed and the error bubbled into
+`refresh()` as “Failed to load artifacts: script load failed …” instead of
+a clean sign-in banner.
+
+- **Server-only session probes:** `probeSession()` uses `GET /api/config`
+  again; embedded iframe never loads Keycloak during background checks (only
+  on **Try again**). Standalone may attempt one quiet silent SSO on 401.
+- **Deduped Keycloak script load:** `loadKeycloakScript()` shares one in-flight
+  promise, skips reload when `Keycloak` is already defined, and stops retrying
+  after a failed load until the user clicks **Try again** (`forceScript`).
+- **Auth failures never break data refresh:** `handleAuthLoss()` always resolves
+  to `handleSessionLoss()` (`POST /oauth/session/logout` + banner); 401 refresh
+  retries only when `authReady` is restored.
+- **v0.0.42 retained:** One-time post-auth `initKeycloakWatch()` with
+  `checkLoginIframe` + `onAuthLogout`, Sign out button, storage/pageshow
+  revalidation, v0.0.40 bootstrap, and upload-in-flight guard unchanged.
+
 ## v0.0.42
 
 **Fix EDA logout not signing out the app (v0.0.41 regression):** v0.0.41 probes

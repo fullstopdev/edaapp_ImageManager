@@ -30,7 +30,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: imagemanager-controller
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.42
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.43
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAMESPACE

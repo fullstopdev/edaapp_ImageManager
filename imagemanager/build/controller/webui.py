@@ -882,6 +882,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var sessionWatchReady = false;
   var signOutPending = false;
   var signInRetryPending = false;
+  var keycloakScriptPromise = null;
+  var keycloakScriptFailed = false;
+  var KEYCLOAK_SCRIPT = "/core/proxy/v1/identity/js/keycloak.min.js";
   var el = function(id){ return document.getElementById(id); };
 
   function showAuthUser(user){
@@ -962,11 +965,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
       deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
       return Promise.resolve();
     }
-    return probeSession().then(function(ok){
+    return probeSession(true).then(function(ok){
       if(ok){
         authReady = true;
         return;
       }
+      handleSessionLoss("Your EDA session has ended. Sign in again.");
+    }).catch(function(){
       handleSessionLoss("Your EDA session has ended. Sign in again.");
     });
   }
@@ -985,7 +990,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var kc = getKeycloak();
       return Promise.resolve(!!(kc && kc.authenticated));
     }
-    return loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
+    return loadKeycloakScript(false).then(function(){
       var kc = getKeycloak();
       if(!kc) throw new Error("keycloak-js unavailable");
       return kc.init({
@@ -999,23 +1004,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return ok;
     });
   }
-  function verifyKeycloakSession(){
-    return loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
-      return initKeycloakWatch();
-    }).then(function(){
-      var kc = getKeycloak();
-      if(!kc || !kc.authenticated || !kc.token) return false;
-      return kc.updateToken(30).then(function(){
-        if(!kc.authenticated || !kc.token) return false;
-        return exchangeToken(kc.token).then(function(ex){
-          return !!(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok);
-        });
+  function probeSession(force){
+    if(uploadInFlight()) return Promise.resolve(true);
+    if(!authReady && !force) return Promise.resolve(true);
+    return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+      if(r.status === 200) return true;
+      if(r.status !== 401) return true;
+      if(embedded) return false;
+      return silentSso({ quiet: true }).then(function(ex){
+        if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
+          authReady = true;
+          return true;
+        }
+        return false;
       }).catch(function(){ return false; });
     }).catch(function(){ return false; });
-  }
-  function probeSession(){
-    if(!authReady || uploadInFlight()) return Promise.resolve(true);
-    return verifyKeycloakSession();
   }
   function startSessionWatchers(){
     if(!authReady) return;
@@ -1075,7 +1078,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(signInRetryPending) return;
     signInRetryPending = true;
     setAuthBanner("info", "Signing in\u2026");
-    silentSso().then(function(ex){
+    silentSso({ forceScript: true }).then(function(ex){
       if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
         authReady = true;
         startSessionWatchers();
@@ -1131,12 +1134,35 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   function loadScript(src){
     return new Promise(function(resolve, reject){
+      var existing = document.querySelector('script[src="'+src+'"]');
+      if(existing){
+        if(existing.getAttribute("data-loaded")==="1") return resolve();
+        existing.addEventListener("load", function(){ resolve(); }, { once: true });
+        existing.addEventListener("error", function(){
+          reject(new Error("script load failed: "+src));
+        }, { once: true });
+        return;
+      }
       var s = document.createElement("script");
       s.src = src; s.async = true;
-      s.onload = function(){ resolve(); };
+      s.onload = function(){ s.setAttribute("data-loaded","1"); resolve(); };
       s.onerror = function(){ reject(new Error("script load failed: "+src)); };
       document.head.appendChild(s);
     });
+  }
+  function loadKeycloakScript(forceRetry){
+    if(typeof Keycloak !== "undefined") return Promise.resolve();
+    if(!forceRetry && keycloakScriptFailed) return Promise.reject(new Error("keycloak script unavailable"));
+    if(!forceRetry && keycloakScriptPromise) return keycloakScriptPromise;
+    keycloakScriptPromise = loadScript(KEYCLOAK_SCRIPT).then(function(){
+      if(typeof Keycloak === "undefined") throw new Error("keycloak-js unavailable");
+      keycloakScriptFailed = false;
+    }).catch(function(e){
+      keycloakScriptPromise = null;
+      keycloakScriptFailed = true;
+      throw e;
+    });
+    return keycloakScriptPromise;
   }
   function exchangeToken(token){
     return fetch(api("/oauth/session"), Object.assign({
@@ -1146,11 +1172,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return r.json().then(function(j){ return {status:r.status, body:j}; });
     });
   }
-  function silentSso(){
-    setAuthBanner("info", "Signing in\u2026");
+  function silentSso(opts){
+    opts = opts || {};
+    var quiet = !!opts.quiet;
+    var forceScript = !!opts.forceScript;
+    if(!quiet) setAuthBanner("info", "Signing in\u2026");
     return withTimeout(
-      loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
-        if(typeof Keycloak === "undefined") throw new Error("keycloak-js unavailable");
+      loadKeycloakScript(forceScript).then(function(){
         var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
         return kc.init({
           onLoad: "check-sso",
@@ -1163,7 +1191,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }),
       SSO_TIMEOUT_MS,
       "Sign-in timed out after " + (SSO_TIMEOUT_MS / 1000) + "s"
-    ).finally(function(){ setAuthBanner("", ""); });
+    ).finally(function(){ if(!quiet) setAuthBanner("", ""); });
   }
   function authErrorMessage(ex){
     if(ex && ex.status === 403 && ex.body){
@@ -1874,7 +1902,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   function refreshImports(){
     fetchJson(api("/api/imports")).then(function(res){
-      if(res.status===401){ return handleAuthLoss().then(function(){ refreshImports(); }); }
+      if(res.status===401){ return handleAuthLoss().then(function(){ if(authReady) refreshImports(); }); }
       if(!res.ok){
         importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
           "Could not load URL imports (HTTP "+res.status+").")+'</td></tr>';
@@ -2033,7 +2061,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function refresh(){
     fetchJson(api("/api/artifacts")).then(function(res){
       if(res.status===401){
-        return handleAuthLoss().then(function(){ refresh(); });
+        return handleAuthLoss().then(function(){ if(authReady) refresh(); });
       }
       if(!res.ok){
         rows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
