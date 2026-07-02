@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.29
+
+Light mode page background updated to **`#f7f9fd`** (EDA soft off-white).
+
 ## v0.0.28
 
 App bar and browser tab use the new **logo.png** mark (30×30px in the header,
