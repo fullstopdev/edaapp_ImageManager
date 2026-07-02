@@ -253,6 +253,26 @@ def silent_sso_redirect_uri(headers):
     return external_base(headers) + APP_PROXY_PREFIX + "/oauth/silent-sso.html"
 
 
+def session_cookie_max_age(token_exp=None):
+    """HttpOnly session cookie Max-Age: min(app TTL, remaining access-token life)."""
+    if token_exp:
+        remaining = int(token_exp) - int(time.time())
+        if remaining > 0:
+            return min(SESSION_TTL, remaining)
+    return SESSION_TTL
+
+
+def end_session_url(headers, post_logout_redirect=None):
+    """Browser-facing Keycloak RP-initiated logout (public ``auth`` client)."""
+    redirect = post_logout_redirect or (external_base(headers) + APP_PROXY_PREFIX + "/")
+    q = urllib.parse.urlencode({
+        "client_id": BROWSER_CLIENT_ID,
+        "post_logout_redirect_uri": redirect,
+    })
+    return (identity_base(headers)
+            + f"/realms/{REALM}/protocol/openid-connect/logout?{q}")
+
+
 def is_allowed(roles):
     allow = allowed_roles()
     for r in allow:

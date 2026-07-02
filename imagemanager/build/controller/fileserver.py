@@ -260,10 +260,11 @@ class Handler(BaseHTTPRequestHandler):
                 "allowedRoles": auth.allowed_roles(),
             }, 403)
             return
+        tok_exp = auth.jwt_exp(token)
         self.send_response(200)
         self._set_cookie(auth.SESSION_COOKIE,
-                         auth.make_session(user, token_exp=auth.jwt_exp(token)),
-                         auth.SESSION_TTL)
+                         auth.make_session(user, token_exp=tok_exp),
+                         auth.session_cookie_max_age(tok_exp))
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps({"ok": True, "user": user}).encode("utf-8"))
@@ -300,28 +301,23 @@ class Handler(BaseHTTPRequestHandler):
             return
         logger.info("Sign-in OK: %s", user)
         access = tok.get("access_token", "")
+        tok_exp = auth.jwt_exp(access)
         self._redirect(auth.APP_PROXY_PREFIX + "/", cookies=[
             (auth.SESSION_COOKIE,
-             auth.make_session(user, token_exp=auth.jwt_exp(access)),
-             auth.SESSION_TTL),
+             auth.make_session(user, token_exp=tok_exp),
+             auth.session_cookie_max_age(tok_exp)),
             (auth.STATE_COOKIE, "", 0),
         ])
 
     def _handle_logout(self):
-        # Local logout: clear our session only; the EDA Keycloak session stays.
-        link = auth.APP_PROXY_PREFIX + "/oauth/login"
-        body = _MSG_PAGE.format(
-            title="Signed out",
-            heading="Signed out of Image Manager",
-            body="<p>You're still logged into EDA.</p>",
-            action=f"<a class='imbtn' href='{link}'>Sign in again</a>",
-        ).encode("utf-8")
-        self.send_response(200)
-        self._set_cookie(auth.SESSION_COOKIE, "", 0)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        """Clear local session and end the EDA Keycloak session (RP-initiated logout)."""
+        post = auth.external_base(self.headers) + auth.APP_PROXY_PREFIX + "/"
+        try:
+            url = auth.end_session_url(self.headers, post)
+        except Exception as e:
+            logger.warning("Cannot build end_session URL: %s", e)
+            url = auth.APP_PROXY_PREFIX + "/"
+        self._redirect(url, cookies=[(auth.SESSION_COOKIE, "", 0)])
 
     def _deny_page(self, user):
         roles = ", ".join(auth.allowed_roles())

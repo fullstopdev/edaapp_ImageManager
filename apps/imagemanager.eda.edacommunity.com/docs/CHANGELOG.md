@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.0.34
+
+**Auth hardening:** faster EDA logout detection and proper app sign-out.
+
+- **Keycloak session iframe:** enable `checkLoginIframe` (login-status-iframe,
+  ~5s) plus 30s backup polling — replaces the 2-minute-only interval.
+- **Tab hygiene:** re-validate SSO immediately on tab focus, `storage` events
+  (cross-tab EDA logout), and `pageshow` after bfcache restore.
+- **Sign out:** app-bar **Sign out** with confirm dialog — clears the local
+  `im_session` cookie, then `kc.logout({ redirectUri })` to end the EDA
+  Keycloak session; server `/oauth/logout` falls back to RP-initiated logout.
+- **Session cookies:** `Max-Age` is capped to the shorter of app TTL and access-
+  token expiry; APIs still reject expired/invalid signed sessions (HttpOnly,
+  Secure, SameSite=Lax unchanged).
+
 ## v0.0.33
 
 App bar and favicon use the **Nokia “N” mark** only (`nokia-n.png`, cropped from
