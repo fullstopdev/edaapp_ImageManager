@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.31
+
+Replace app bar **Nokia wordmark** with a cleaner cropped asset (`nokia-logo.png`:
+transparent background, tight crop around the blue letters).
+
 ## v0.0.30
 
 Light mode app bar matches EDA shell (**`#f7f9fd`** background). Replace the custom
