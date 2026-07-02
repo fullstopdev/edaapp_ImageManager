@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.16
+
+Deleted images now disappear from the dashboard immediately:
+
+- **Stale row after delete fixed:** the aggregator does not honor targeted
+  per-row deletes (`{.id=="..."}` predicates) sent over the StateDbUpdate
+  stream, so a deleted image's row stayed on the dashboard even though the
+  service row's image count dropped. Subtree deletes are reliable (the
+  reinstall purge always worked), so every publish now rebuilds the whole
+  `.cluster.apps.imagemanager.status` table: wipe the subtree, then re-add
+  the current rows in the same ordered stream. The single `.app` row is
+  simply overwritten in place.
+
 ## v0.0.15
 
 Two distinct dashboard tables + version surfaced everywhere:
