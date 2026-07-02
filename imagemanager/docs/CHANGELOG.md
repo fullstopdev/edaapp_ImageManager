@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.39
+
+**Durable embedded EDA sign-in (cable-map parity):** Simplify auth to two clear
+paths. Bootstrap: `GET /api/config` → 200 trusts `im_session` with no Keycloak;
+401 runs silent SSO once, exchanges the token, then retries config (with cookie
+commit retries). Periodic checks probe the server only; Keycloak runs on 401.
+All auth failures show a recoverable banner with **Try again** (embedded and
+standalone) — never the fatal "Sign-in failed inside EDA" table-empty state.
+Explicit `credentials: "same-origin"` on session fetches. v0.0.36 upload guard
+and v0.0.37 no-refresh polling unchanged.
+
 ## v0.0.38
 
 **Fix embedded EDA sign-in regression (v0.0.37):** Restore the v0.0.35 cable-map

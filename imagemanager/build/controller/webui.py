@@ -11,7 +11,8 @@ hygiene: Keycloak login-status iframe (standalone only), tab-focus revalidation,
 Sign out action that ends the EDA session via keycloak-js. Session loss clears the
 local cookie and shows an in-page sign-in banner (no navigation during polling).
 Embedded iframe mode uses server session probes + silent SSO instead of Keycloak
-iframe checks."""
+iframe checks. Auth failures always show a recoverable banner (never a fatal
+table-empty state)."""
 
 SILENT_SSO_HTML = r"""<!doctype html><html><body><script>
 parent.postMessage(location.href, location.origin);
@@ -852,6 +853,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <script>
 (function(){
   var API_PROXY_PREFIX = "/core/httpproxy/v1/imagemanager";
+  var FETCH_OPTS = { credentials: "same-origin" };
   function resolveApiBase(){
     var meta = document.querySelector('meta[name="imagemanager-api-base"]');
     if(meta && meta.content) return meta.content.replace(/\/+$/, "");
@@ -862,6 +864,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var apiBase = resolveApiBase();
   function api(p){ return apiBase + p; }
   function fetchJson(url, opts){
+    opts = opts || {};
+    if(!opts.credentials) opts.credentials = "same-origin";
     return fetch(url, opts).then(function(r){
       return r.json().then(function(j){ return {ok:r.ok, status:r.status, body:j}; })
         .catch(function(){ return {ok:r.ok, status:r.status, body:null}; });
@@ -936,16 +940,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!b) return;
     b.className = "auth-banner show err";
     var html = esc(msg || "Sign in required.");
+    html += '<span class="auth-actions">'+
+      '<button type="button" class="btn text subtle ripple" id="authRetryBtn">Try again</button>';
     if(!embedded){
-      html += '<span class="auth-actions">'+
-        '<button type="button" class="btn text subtle ripple" id="authRetryBtn">Try again</button>'+
-        '<button type="button" class="btn contained ripple" id="authSignInBtn">Sign in</button>'+
-        '</span>';
+      html += '<button type="button" class="btn contained ripple" id="authSignInBtn">Sign in</button>';
     }
+    html += '</span>';
     b.innerHTML = html;
+    var retryBtn = el("authRetryBtn");
+    if(retryBtn) retryBtn.addEventListener("click", retrySilentSignIn);
     if(!embedded){
-      var retryBtn = el("authRetryBtn");
-      if(retryBtn) retryBtn.addEventListener("click", retrySilentSignIn);
       var signInBtn = el("authSignInBtn");
       if(signInBtn) signInBtn.addEventListener("click", function(){
         window.location = apiBase + "/oauth/login";
@@ -979,28 +983,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function retrySilentSignIn(){
     if(signInRetryPending) return;
     signInRetryPending = true;
-    setAuthBanner("info", "Signing in\u2026");
-    silentSso().then(function(ex){
+    kcInitPromise = null;
+    silentSso(true).then(function(ex){
       if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
         authReady = true;
         if(!embedded) ensureKeycloakWatchers();
         scheduleSessionCheck();
-        return fetch(api("/api/config")).then(function(r){
-          if(r.status !== 200) throw new Error("config after sso");
-          return r.json();
-        }).then(function(c){
+        return loadConfigAfterExchange(3).then(function(c){
           applyAuthConfig(c);
           refresh();
           refreshImports();
         });
       }
       if(ex && ex.status === 403){
-        showFatal(authErrorMessage(ex));
+        showSignInBanner(authErrorMessage(ex));
         return;
       }
-      showSignInBanner("Sign-in failed. Try again or use Sign in.");
+      showSignInBanner(authErrorMessage(null));
     }).catch(function(){
-      showSignInBanner("Sign-in failed. Try again or use Sign in.");
+      showSignInBanner(authErrorMessage(null));
     }).finally(function(){ signInRetryPending = false; });
   }
   function resetAuthState(msg){
@@ -1011,18 +1012,29 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(msg) setAuthBanner("err", msg);
   }
   function clearServerSession(){
-    return fetch(api("/oauth/session/logout"), { method: "POST", credentials: "same-origin" })
+    return fetch(api("/oauth/session/logout"), Object.assign({ method: "POST" }, FETCH_OPTS))
       .catch(function(){ return null; });
   }
+  function fetchConfig(){
+    return fetch(api("/api/config"), FETCH_OPTS);
+  }
+  function loadConfigAfterExchange(retriesLeft){
+    return fetchConfig().then(function(r){
+      if(r.status === 200) return r.json();
+      if(retriesLeft > 0){
+        return new Promise(function(resolve){ setTimeout(resolve, 150); })
+          .then(function(){ return loadConfigAfterExchange(retriesLeft - 1); });
+      }
+      throw new Error("config after sso");
+    });
+  }
   function probeSession(){
-    // Periodic checks only — bootstrap trusts a valid im_session without Keycloak.
+    // Periodic checks: server probe only; Keycloak silent SSO runs only on 401.
     if(authBootstrapping || uploadInFlight()) return Promise.resolve(true);
-    // Server session probe + silent SSO re-exchange — no page navigation. Standalone
-    // EDA logout is detected via Keycloak onAuthLogout / checkLoginIframe watchers.
-    return fetch(api("/api/config")).then(function(r){
+    return fetchConfig().then(function(r){
       if(r.status === 200) return true;
       if(r.status !== 401) return true;
-      return silentSso().then(function(ex){
+      return silentSso(false).then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
           if(!embedded) ensureKeycloakWatchers();
@@ -1104,10 +1116,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   }
   function exchangeToken(token){
-    return fetch(api("/oauth/session"), {
+    return fetch(api("/oauth/session"), Object.assign({
       method: "POST",
       headers: { "Authorization": "Bearer "+token, "Content-Type": "application/json" }
-    }).then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }); });
+    }, FETCH_OPTS)).then(function(r){
+      return r.json().then(function(j){ return {status:r.status, body:j}; });
+    });
   }
   function getKeycloak(){
     if(typeof Keycloak === "undefined") return null;
@@ -1168,8 +1182,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     return kcInitPromise;
   }
-  function silentSso(){
-    setAuthBanner("info", "Signing in\u2026");
+  function silentSso(showUi){
+    if(showUi) setAuthBanner("info", "Signing in\u2026");
     return withTimeout(
       loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
         return initKeycloakCheck().then(function(ok){
@@ -1179,7 +1193,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }),
       SSO_TIMEOUT_MS,
       "Sign-in timed out after " + (SSO_TIMEOUT_MS / 1000) + "s"
-    ).finally(function(){ setAuthBanner("", ""); });
+    ).finally(function(){ if(showUi) setAuthBanner("", ""); });
   }
   function authErrorMessage(ex){
     if(ex && ex.status === 403 && ex.body){
@@ -1187,28 +1201,26 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return "Access denied"+(ex.body.user ? (" for "+ex.body.user) : "")+
         (roles ? (": Image Manager requires one of: "+roles+".") : ".");
     }
-    if(ex && ex.body && ex.body.error === "not authenticated")
-      return "Sign-in required. Reload this page or open Image Manager in a new browser tab.";
-    return "Sign-in failed inside EDA. Reload this page or open Image Manager in a new tab.";
+    if(embedded){
+      return "Sign-in required. Reload this page or open Image Manager from the EDA dashboard.";
+    }
+    return "Sign-in failed. Try again or use Sign in.";
   }
-  function showFatal(msg){
+  function showAuthFailure(msg){
     bootDone();
-    setAuthBanner("err", msg);
-    if(rows) rows.innerHTML = '<tr><td colspan="5" class="empty">'+esc(msg)+'</td></tr>';
-    snack("err", msg, true);
+    showSignInBanner(msg);
   }
-  function embeddedSignInBanner(){
-    showSignInBanner("Sign-in required. Reload this page or open Image Manager from the EDA dashboard.");
+  function requireSignIn(){
+    showSignInBanner(authErrorMessage(null));
     throw new Error("sign-in required");
   }
   function ensureAuth(){
     if(authReady) return Promise.resolve();
     authBootstrapping = true;
-    return fetch(api("/api/config")).then(function(r){
+    // Cable-map pattern: trust a valid im_session (200) without Keycloak on bootstrap.
+    return fetchConfig().then(function(r){
       if(r.status === 200){
         return r.json().then(function(c){
-          // Trust a valid im_session on first load; periodic probeSession() detects
-          // EDA logout without clearing the cookie on Keycloak iframe false-negatives.
           authReady = true;
           if(!embedded) ensureKeycloakWatchers();
           scheduleSessionCheck();
@@ -1216,40 +1228,32 @@ INDEX_HTML = r"""<!DOCTYPE html>
         });
       }
       if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
-      // Silent SSO first (works in the EDA iframe AND a new tab opened from the
-      // dashboard): reuse the browser's existing EDA Keycloak session, no
-      // redirect, no re-login. OIDC redirect is only offered via the sign-in banner.
-      return silentSso().then(function(ex){
+      return silentSso(true).then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
           if(!embedded) ensureKeycloakWatchers();
           scheduleSessionCheck();
-          return fetch(api("/api/config")).then(function(r2){
-            if(r2.status !== 200) throw new Error("config after sso");
-            return r2.json();
-          });
+          return loadConfigAfterExchange(3);
         }
         if(ex && ex.status === 403){
           var err = new Error("forbidden");
           err.exchange = ex;
-          throw err;   // role denied — redirecting would just loop
+          throw err;
         }
         if(uploadInFlight()){
           deferredSessionLoss = "Your EDA session has ended. Sign in again.";
           throw new Error("deferred");
         }
         kcInitPromise = null;
-        if(embedded) return embeddedSignInBanner();
-        showSignInBanner("Sign-in required. Use Try again for silent SSO or Sign in to open the EDA login page.");
-        throw new Error("sign-in required");
+        return requireSignIn();
       }, function(e){
         if(uploadInFlight()){
           deferredSessionLoss = "Your EDA session has ended. Sign in again.";
           throw new Error("deferred");
         }
         kcInitPromise = null;
-        if(embedded) return embeddedSignInBanner();
-        throw e;
+        if(e && e.message === "sign-in required") throw e;
+        return requireSignIn();
       });
     }).finally(function(){ authBootstrapping = false; });
   }
@@ -1434,16 +1438,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     syncLiveIndicator();
   }).catch(function(err){
     if(err && (err.message === "sign-in required" || err.message === "deferred")) return;
-    if(embedded){
-      kcInitPromise = null;
-      showSignInBanner("Sign-in required. Reload this page or open Image Manager from the EDA dashboard.");
-      return;
-    }
-    var msg = (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
-            : (err && err.exchange) ? authErrorMessage(err.exchange)
+    kcInitPromise = null;
+    var msg = (err && err.exchange) ? authErrorMessage(err.exchange)
+            : (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
             : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
             : authErrorMessage(null);
-    showFatal(msg);
+    showAuthFailure(msg);
   });
 
   // ---------- file selection ----------
@@ -1906,10 +1906,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         authReady = true;
         if(!embedded) ensureKeycloakWatchers();
         scheduleSessionCheck();
-        return fetch(api("/api/config")).then(function(r){
-          if(r.status !== 200) throw new Error("config after reauth");
-          return r.json();
-        }).then(function(c){
+        return loadConfigAfterExchange(2).then(function(c){
           applyAuthConfig(c);
         });
       }
