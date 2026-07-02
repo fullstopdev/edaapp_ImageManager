@@ -1,5 +1,33 @@
 # Changelog
 
+## v0.0.10
+
+Fix empty Image Manager launcher table (cable-map app-status parity):
+
+- **Root cause:** EQL on `imagemanagerconfigs` / `imagemanagerartifacts` returns no rows — CE logs
+  `InvalidNamespaceOrGvk` for cluster-scoped imagemanager CRDs, and nested
+  `ImageManagerConfig.status.artifacts` is not flat-table queryable.
+- Controller publishes per-artifact launcher rows to `.cluster.apps.imagemanager.status`
+  via bundled `status-publisher` daemon (persistent bidi `StateDbUpdate` +
+  `StreamingJsonSchema` to `eda-sa.eda-system.svc:51100` with internal mTLS,
+  reverse-engineered from cable-map EDK `dbStreamHandler`).
+- Dashboard EQL switched to `.cluster.apps.imagemanager.status` with columns Name (`service`),
+  Status (`status`), View (`open`) — matches cable-map dashlet field bindings.
+- Deployment: mount internal EDA mTLS certs + trust bundle for state-aggregator access.
+- `imagemanager-viewer` ClusterRole: `tableRules` for `.cluster.apps.imagemanager.**`.
+- Remove 5-minute `LAUNCHER_SYNC_GRACE_SECONDS` skip (default `0`); `artifact_launcher` still
+  syncs `ImageManagerArtifact` CRs every reconcile when uploads exist.
+
+**Replace / overwrite:** When the user confirms Replace and the image already exists on the PVC,
+the app now **republishes Artifact CRs from local storage** (eda-asvr re-pulls from the
+controller) instead of re-downloading the URL or wiping the upload directory. Full delete
+still removes PVC data via the Delete action.
+
+**Known limitation (v0.0.10):** Launcher rows require the bundled `status-publisher`
+daemon (persistent bidi `StateDbUpdate` + `StreamingJsonSchema` to `eda-sa`, cable-map
+EDK parity). Cluster must run controller image `v0.0.10` with internal TLS volume
+mounts from `app_deployment.yaml`.
+
 ## v0.0.9
 
 Fix CE crash on install/upgrade and reduce API load during bootstrap:
