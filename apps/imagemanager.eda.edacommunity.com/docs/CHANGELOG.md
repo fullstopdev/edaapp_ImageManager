@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.24
+
+Single top app bar (cable-map / EDA style) — removed the stacked two-tier header
+and duplicate page hero. One row: **Nokia logo | Image Manager | Live | theme |
+user | Sign out**.
+
 ## v0.0.23
 
 Top header shows **Image Manager** next to the Nokia logo (replaces **Event Driven
