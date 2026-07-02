@@ -548,7 +548,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></svg>
     </button>
     <span id="userInfo" class="user-chip" style="display:none"><span class="avatar" id="avatar"></span><span class="uname" id="uname"></span></span>
-    <a id="signoutLink" class="btn text subtle ripple" title="Sign out of Image Manager">Sign out</a>
   </div>
 </header>
 
@@ -984,8 +983,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var RE=/[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\s+[A-Za-z0-9+/=]{16,}/;
     return (t||"").split(/\r?\n/).some(function(l){ return RE.test(l); });
   }
-  var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
-
   // ---------- tabs ----------
   var activeTab = "status";
   function showTab(name){

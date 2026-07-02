@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.26
+
+Remove **Sign out** from the app bar; EDA platform sign-out stays in the main GUI.
+
 ## v0.0.25
 
 Replace the approximate Nokia wordmark with the same **`eda.svg`** connect logo
