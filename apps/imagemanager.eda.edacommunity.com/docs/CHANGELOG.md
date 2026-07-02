@@ -1,5 +1,29 @@
 # Changelog
 
+## v0.0.13
+
+Real-time dashboard sync fixes + row info panel:
+
+- **Ghost "Available" after delete fixed:** deleted images no longer resurrect
+  as fallback rows while their Artifact CR is still Terminating
+  (`deletionTimestamp` now skipped).
+- **Stale rows after reinstall fixed:** the first status sync of each process
+  wipes the whole `.cluster.apps.imagemanager.status` table before re-adding
+  current rows, so leftovers from a previous install (even with a deleted PVC)
+  disappear as soon as the new controller starts.
+- **Publisher self-healing:** the status-publisher daemon reconnects its gRPC
+  stream when eda-sa restarts (recv-loop breakage detection + reconnect/replay
+  on send failure), and the controller restarts the daemon if it dies.
+  Status sync loop tightened to 2s (`STATUS_SYNC_INTERVAL`).
+- **Row click shows YAML in the dashboard:** rows now publish a hidden
+  `details` field carrying the NodeProfile YAML and the dashlet enables
+  `showInfoPanel`, so clicking a row opens EDA's info panel (cable-map
+  hidden-details pattern) instead of leaving the dashboard. The View link
+  still deep-links into the app.
+- **URL re-import responds immediately:** creating an ImageImport from the UI
+  kicks the reconcile at once instead of waiting up to 60s, so a duplicate
+  import surfaces its "already exists — Replace?" outcome within seconds.
+
 ## v0.0.12
 
 Near-instant dashboard status + richer launcher columns:
