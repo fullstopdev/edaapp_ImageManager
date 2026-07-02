@@ -44,6 +44,16 @@ import webui
 
 logger = logging.getLogger("fileserver")
 
+
+def _sync_app_status_now():
+    """Push launcher rows immediately after upload/delete (don't wait for reconcile)."""
+    try:
+        import app_status
+        app_status.sync_app_status_rows(build_tracked_list())
+    except Exception as e:  # noqa: BLE001
+        logger.debug("immediate app status sync failed: %s", e)
+
+
 UPLOAD_DIR = "/data/uploads"
 HEALTHZ_FILE = os.path.join(UPLOAD_DIR, ".healthz.json")
 PROXY_PREFIX = "/core/httpproxy/v1/imagemanager"
@@ -751,6 +761,12 @@ class Handler(BaseHTTPRequestHandler):
             if conflict:
                 self._send_json(conflict, 409)
                 return
+        if replace and upload_id and import_common.image_exists_locally(upload_id):
+            result = import_common.repush_from_local(upload_id, CONFIG)
+            invalidate_tracked_cache()
+            _sync_app_status_now()
+            self._send_json(result, result.get("status", 200 if result.get("ok") else 400))
+            return
         base_name = uploads.to_k8s_name(
             (body.get("name") or "").strip()
             or os.path.basename(url.split("?")[0]).replace(".zip", "")
@@ -862,6 +878,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         logger.info("Delete %s/%s (%d artifact(s))", namespace, upload_id, len(names))
         invalidate_tracked_cache()
+        _sync_app_status_now()
         self._send_json({"ok": True, "artifactDeleted": bool(namespace),
                          "localRemoved": True})
 
@@ -916,6 +933,8 @@ class Handler(BaseHTTPRequestHandler):
             result = import_common.process_zip(tmp_dir, tmp_zip, filename, namespace,
                                                name_override, CONFIG, replace=replace)
             invalidate_tracked_cache()
+            if result.get("ok"):
+                _sync_app_status_now()
             self._send_json(result, result.get("status", 200 if result.get("ok") else 400))
         finally:
             shutil.rmtree(tmp_dir, ignore_errors=True)

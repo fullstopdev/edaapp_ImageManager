@@ -8,7 +8,6 @@ launcher columns (displayName, sizeBytes, downloadStatus, open).
 
 import logging
 import re
-import time
 
 import k8s
 
@@ -61,15 +60,7 @@ def _list_launcher_crs():
 
 def sync_launcher_rows(tracked_rows, startup_monotonic=None, grace_seconds=0):
     """Upsert/delete ImageManagerArtifact CRs to match tracked_rows."""
-    if grace_seconds > 0 and startup_monotonic is not None and not tracked_rows:
-        elapsed = time.monotonic() - startup_monotonic
-        if elapsed < grace_seconds:
-            logger.debug(
-                "skipping launcher sync (%ds/%ds grace, no uploads yet)",
-                int(elapsed), grace_seconds,
-            )
-            return
-
+    _ = startup_monotonic, grace_seconds  # retained for API compat; grace removed in v0.0.10
     desired = {}
     for row in tracked_rows:
         ns, uid = _row_key(row)

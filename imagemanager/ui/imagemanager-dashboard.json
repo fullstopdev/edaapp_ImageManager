@@ -1,11 +1,11 @@
 {
   "uuid": "1fc6d9e9-d2ab-425a-9c9e-f8dbbacdf793",
   "name": "Image Manager",
-  "version": "0.0.9",
+  "version": "0.0.10",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-02T09:00:00Z",
+  "lastChanged": "2026-07-02T09:30:00Z",
   "screens": [
     {
       "name": "Image Manager",
@@ -40,32 +40,24 @@
               },
               "componentConfiguration": {
                 "apiConfiguration": {
-                  "api": ".cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs",
+                  "api": ".cluster.apps.imagemanager.status",
                   "queryType": "eql",
                   "requestType": "get",
                   "definition": {
                     "initialModel": {
                       "schema": "v1",
-                      "modelName": "ImageManagerConfig",
-                      "primaryKey": "name",
+                      "modelName": "ImageManagerStatus",
+                      "primaryKey": "id",
                       "showGroupDisplay": "no",
                       "flat": true,
                       "fields": [
                         {
-                          "fieldName": "name",
+                          "fieldName": "service",
                           "label": "Name",
                           "type": "string",
                           "sortable": true,
                           "minWidth": 160,
                           "flex": 1.4
-                        },
-                        {
-                          "fieldName": "health",
-                          "label": "Status",
-                          "type": "string",
-                          "sortable": true,
-                          "minWidth": 170,
-                          "flex": 1.6
                         },
                         {
                           "fieldName": "open",
@@ -76,34 +68,24 @@
                           "flex": 0.7
                         },
                         {
-                          "fieldName": "uploadsStored",
-                          "label": "Uploads",
-                          "type": "number",
-                          "visible": false,
+                          "fieldName": "status",
+                          "label": "Status",
+                          "type": "string",
                           "sortable": true,
-                          "minWidth": 130,
-                          "flex": 1
+                          "minWidth": 170,
+                          "flex": 1.6
                         },
                         {
-                          "fieldName": "bytesStored",
-                          "label": "Bytes",
-                          "type": "number",
-                          "visible": false,
-                          "sortable": true,
-                          "minWidth": 100,
-                          "flex": 0.8
-                        },
-                        {
-                          "fieldName": "message",
-                          "label": "Message",
+                          "fieldName": "url",
+                          "label": "URL",
                           "type": "string",
                           "visible": false,
                           "sortable": false,
                           "width": "260px"
                         },
                         {
-                          "fieldName": "version",
-                          "label": "Version",
+                          "fieldName": "id",
+                          "label": "Id",
                           "type": "string",
                           "visible": false,
                           "sortable": false,

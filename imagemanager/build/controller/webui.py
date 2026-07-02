@@ -656,6 +656,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <h2 class="dialog-title" id="replaceTitle">Replace existing artifact?</h2>
   <div class="dialog-body">
     <p id="replaceLead"></p>
+    <p class="hint">If the image is already stored locally, Artifact CRs will be recreated from PVC storage (no re-download).</p>
   </div>
   <div class="dialog-actions">
     <button class="btn text subtle ripple" id="replaceCancel">Cancel</button>

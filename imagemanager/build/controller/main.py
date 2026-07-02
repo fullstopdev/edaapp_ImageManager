@@ -23,23 +23,25 @@ import json
 import logging
 import os
 import signal
+import subprocess
 import threading
 import time
 from datetime import datetime, timezone
 
+import app_status
 import artifact_launcher
 import fileserver
 import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.9"
+VERSION = "v0.0.10"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
 RECONCILE_INTERVAL = int(os.environ.get("RECONCILE_INTERVAL", "60"))
 STARTUP_DELAY_SECONDS = int(os.environ.get("STARTUP_DELAY_SECONDS", "45"))
-LAUNCHER_SYNC_GRACE_SECONDS = int(os.environ.get("LAUNCHER_SYNC_GRACE_SECONDS", "300"))
+LAUNCHER_SYNC_GRACE_SECONDS = int(os.environ.get("LAUNCHER_SYNC_GRACE_SECONDS", "0"))
 _MAX_RECONCILE_BACKOFF = int(os.environ.get("MAX_RECONCILE_BACKOFF", "300"))
 
 CRD_GROUP = "imagemanager.eda.edacommunity.com"
@@ -62,6 +64,47 @@ _import_lock = threading.Lock()
 _import_running = False
 _startup_monotonic = time.monotonic()
 _consecutive_reconcile_errors = 0
+_status_daemon_proc = None
+
+
+def _start_status_publisher_daemon():
+    """Start persistent status-publisher daemon (EDK dbStream parity)."""
+    global _status_daemon_proc
+    publisher = os.environ.get(
+        "STATUS_PUBLISHER_BIN",
+        os.path.join(os.path.dirname(__file__), "status-publisher"),
+    )
+    if not os.path.isfile(publisher):
+        logger.debug("status-publisher binary missing at %s", publisher)
+        return
+    try:
+        _status_daemon_proc = subprocess.Popen(
+            [publisher, "daemon"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.PIPE,
+        )
+        time.sleep(0.5)
+        if _status_daemon_proc.poll() is not None:
+            err = (_status_daemon_proc.stderr.read() or b"").decode("utf-8", errors="replace")
+            if err.strip():
+                logger.warning("status-publisher daemon stderr: %s", err[:500])
+            logger.warning("status-publisher daemon exited early (code %s)", _status_daemon_proc.returncode)
+            _status_daemon_proc = None
+            return
+        logger.info("status-publisher daemon started (pid %d)", _status_daemon_proc.pid)
+    except OSError as e:
+        logger.warning("failed to start status-publisher daemon: %s", e)
+
+
+def _stop_status_publisher_daemon():
+    global _status_daemon_proc
+    if _status_daemon_proc and _status_daemon_proc.poll() is None:
+        _status_daemon_proc.terminate()
+        try:
+            _status_daemon_proc.wait(timeout=5)
+        except subprocess.TimeoutExpired:
+            _status_daemon_proc.kill()
+    _status_daemon_proc = None
 
 
 def _setup_logging():
@@ -209,6 +252,7 @@ def main():
     fileserver.set_config(_read_config())
     fileserver.start_file_server(PORT)
     fileserver.write_healthz("starting", None)
+    _start_status_publisher_daemon()
 
     _ensure_default_cr()
 
@@ -218,6 +262,7 @@ def main():
         if shutdown_event.wait(timeout=STARTUP_DELAY_SECONDS):
             logger.info("Controller shutting down during startup delay")
             fileserver.stop_file_server()
+            _stop_status_publisher_daemon()
             return
 
     while not shutdown_event.is_set():
@@ -253,6 +298,10 @@ def main():
             )
         except Exception as e:
             logger.warning("Launcher artifact sync failed: %s", e)
+        try:
+            app_status.sync_app_status_rows(tracked)
+        except Exception as e:
+            logger.warning("App status sync failed: %s", e)
 
         _run_imports_async(cfg)
 
@@ -269,6 +318,7 @@ def main():
 
     logger.info("Controller shutting down")
     fileserver.stop_file_server()
+    _stop_status_publisher_daemon()
 
 
 if __name__ == "__main__":

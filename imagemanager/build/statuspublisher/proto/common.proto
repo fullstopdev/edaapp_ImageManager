@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package eda.proto.common;
+
+option go_package = "imagemanager/statuspublisher/proto";
+
+enum JsonSchemaRequest_ReqType {
+  REQ_TYPE_UNSPECIFIED = 0;
+  REQ_TYPE_CREATE = 1;
+  REQ_TYPE_DELETE = 2;
+}
+
+message JsonSchemaRequest {
+  string jspath = 1;
+  JsonSchemaRequest_ReqType type = 2;
+}
+
+message OneShotJsonSchemaRequest {
+  JsonSchemaRequest request = 3;
+}
+
+message StreamJsonSchemaGetRequest {
+  JsonSchemaRequest request = 3;
+}
+
+message StreamJsonSchemaAckRequest {}
+
+message StreamJsonSchemaRequest {
+  oneof poll_type {
+    StreamJsonSchemaGetRequest create = 1;
+    StreamJsonSchemaDelRequest delete = 2;
+    StreamJsonSchemaAckRequest ack = 3;
+  }
+}
+
+message StreamJsonSchemaDelRequest {}

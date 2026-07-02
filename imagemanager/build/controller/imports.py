@@ -100,6 +100,37 @@ def _process_one(cr, config):
                       message="spec.sourceUrl is required", completionTime=_now())
         return
 
+    replace = ((cr.get("metadata") or {}).get("annotations") or {}).get(
+            import_common.REPLACE_ANNOTATION) == "true"
+    name_hint = (spec.get("name") or "").strip().lower()
+    if not name_hint:
+        name_hint = uploads.derive_name(
+            os.path.basename(source_url.split("?")[0]) or "import.zip")
+    upload_id = uploads.to_k8s_name(name_hint) if name_hint else ""
+    if replace and upload_id and import_common.image_exists_locally(upload_id):
+        cr2 = k8s.read_namespaced_cr(GROUP, VERSION, namespace, PLURAL, name) or cr
+        _patch_status(namespace, name, cr2, phase="Republishing",
+                      message="Recreating Artifact(s) from local storage (no re-download)")
+        result = import_common.repush_from_local(upload_id, config)
+        cr3 = k8s.read_namespaced_cr(GROUP, VERSION, namespace, PLURAL, name) or cr2
+        if not result.get("ok"):
+            _patch_status(namespace, name, cr3, phase="Failed",
+                          message=result.get("error", "repush failed"), completionTime=_now())
+            return
+        phase = "Ready" if result.get("nos") == "srsim" else "Available"
+        _patch_status(
+            namespace, name, cr3,
+            phase=phase,
+            message="Republished from local storage",
+            detectedNos=result.get("nos", ""),
+            sizeBytes=int(result.get("sizeBytes") or 0),
+            nodeProfileSnippet=_node_profile_snippet(result),
+            completionTime=_now(),
+        )
+        logger.info("ImageImport %s/%s repushed from local (nos=%s)", namespace, name,
+                    result.get("nos"))
+        return
+
     _patch_status(namespace, name, cr, phase="Downloading",
                   message=f"Fetching {source_url}", startTime=_now())
 
@@ -119,8 +150,6 @@ def _process_one(cr, config):
                       message="Detecting image type and creating Artifact(s)")
 
         filename = os.path.basename(source_url.split("?")[0]) or "import.zip"
-        replace = ((cr.get("metadata") or {}).get("annotations") or {}).get(
-            import_common.REPLACE_ANNOTATION) == "true"
         result = import_common.process_zip(
             tmp_dir, tmp_zip, filename, namespace,
             (spec.get("name") or "").strip(),

@@ -1,0 +1,60 @@
+syntax = "proto3";
+
+package eda.proto.state_aggregator;
+
+import "proto/common.proto";
+
+option go_package = "imagemanager/statuspublisher/proto";
+
+// Matches eda.dev/edk/proto/state_aggregator (cable-map v0.2.2).
+service StateAggregatorIf {
+  // Bidi stream used by EDK dbStreamHandler (not unary).
+  rpc StateDbUpdate(stream StateDbRequest) returns (stream StateDbResponse);
+  rpc OneShotJsonSchema(eda.proto.common.OneShotJsonSchemaRequest)
+      returns (OpenApiV3JsonSchemaResponse);
+  rpc StreamingJsonSchema(stream eda.proto.common.StreamJsonSchemaRequest)
+      returns (stream OpenApiV3JsonSchemaResponse);
+}
+
+message StateDbRequest {
+  oneof req_type {
+    StateDbUpdateRequest update = 1;
+  }
+}
+
+message StateDbResponse {
+  oneof req_type {
+    StateDbUpdateResponse update = 1;
+  }
+}
+
+message StateDbUpdateRequest {
+  repeated string deletes = 1;
+  repeated StateDbEntry adds = 2;
+}
+
+message StateDbUpdateResponse {
+  repeated StateDbEntryResponse adds = 1;
+  repeated StateDbEntryResponse deletes = 2;
+}
+
+message StateDbEntryResponse {
+  string jspath = 1;
+  string error = 2;
+  bool is_hard_error = 3;
+}
+
+message StateDbEntry {
+  string jspath = 1;
+  oneof data_type {
+    string json = 2;
+  }
+}
+
+message OpenApiV3JsonSchemaResponse {
+  OpenApiV3SchemaResp schema = 2;
+}
+
+message OpenApiV3SchemaResp {
+  string schema = 1;
+}

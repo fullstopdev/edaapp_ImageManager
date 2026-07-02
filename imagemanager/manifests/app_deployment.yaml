@@ -30,7 +30,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: imagemanager-controller
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.9
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.10
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAMESPACE
@@ -41,8 +41,8 @@ spec:
               value: "60"
             - name: STARTUP_DELAY_SECONDS
               value: "45"
-            - name: LAUNCHER_SYNC_GRACE_SECONDS
-              value: "300"
+            - name: STATUS_PUBLISHER_BIN
+              value: /app/status-publisher
             - name: ALLOWED_ROLES
               value: "imagemanager-viewer,system-administrator" # app-set: ${allowedRoles}
           ports:
@@ -78,6 +78,13 @@ spec:
             - name: serving-cert
               mountPath: /var/run/eda/tls/serving
               readOnly: true
+            # EDK/state-aggregator mTLS (cable-map pattern) for launcher app status rows.
+            - name: internal-tls
+              mountPath: /var/run/eda/tls/internal/client
+              readOnly: true
+            - name: internal-trust
+              mountPath: /var/run/eda/tls/internal/trust
+              readOnly: true
           resources:
             limits:
               cpu: "500m" # app-set: ${controllerCpuLimit}
@@ -99,3 +106,18 @@ spec:
               csi.cert-manager.io/key-algorithm: ECDSA
               csi.cert-manager.io/duration: 720h0m0s
               csi.cert-manager.io/renew-before: 240h0m0s
+        - name: internal-tls
+          csi:
+            driver: csi.cert-manager.io
+            readOnly: true
+            volumeAttributes:
+              csi.cert-manager.io/dns-names: "eda-imagemanager.${POD_NAMESPACE}.svc,eda-imagemanager.${POD_NAMESPACE}.svc.cluster.local,eda-imagemanager,internal.eda.nokia.com"
+              csi.cert-manager.io/duration: 720h0m0s
+              csi.cert-manager.io/issuer-name: eda-internal-issuer
+              csi.cert-manager.io/key-algorithm: ECDSA
+              csi.cert-manager.io/renew-before: 240h0m0s
+        - name: internal-trust
+          configMap:
+            defaultMode: 420
+            name: eda-internal-trust-bundle
+            optional: false

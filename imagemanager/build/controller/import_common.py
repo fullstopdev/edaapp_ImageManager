@@ -96,10 +96,8 @@ def check_conflict(upload_id, namespace, display_name=None):
     return None
 
 
-def cleanup_existing(upload_id, namespace=None, primary_name=None):
-    """Delete Artifact CRs, license ConfigMap, and PVC storage for an upload."""
-    if not upload_id or any(c in upload_id for c in ("/", "\\", "..")):
-        return _err(400, "valid upload id required")
+def _artifact_names_for_upload(upload_id, namespace=None, primary_name=None):
+    """Artifact CR names tied to one upload (for delete/repush)."""
     meta = uploads.read_meta(upload_id)
     namespace = namespace or (meta or {}).get("namespace")
     primary_name = primary_name or upload_id
@@ -110,6 +108,14 @@ def cleanup_existing(upload_id, namespace=None, primary_name=None):
             primary_name + "-md5",
             primary_name + "-yang",
         ]))
+    return namespace, names
+
+
+def delete_artifacts_only(upload_id, namespace=None, primary_name=None):
+    """Delete managed Artifact CRs for an upload; keep PVC files and license."""
+    if not upload_id or any(c in upload_id for c in ("/", "\\", "..")):
+        return _err(400, "valid upload id required")
+    namespace, names = _artifact_names_for_upload(upload_id, namespace, primary_name)
     if namespace:
         for art_name in names:
             try:
@@ -117,6 +123,20 @@ def cleanup_existing(upload_id, namespace=None, primary_name=None):
             except urllib.error.HTTPError as e:
                 if e.code != 404:
                     return _err(502, f"Artifact delete failed (HTTP {e.code})")
+    logger.info("Deleted %d artifact(s) for %s/%s (PVC retained)", len(names), namespace, upload_id)
+    return None
+
+
+def cleanup_existing(upload_id, namespace=None, primary_name=None):
+    """Delete Artifact CRs, license ConfigMap, and PVC storage for an upload."""
+    if not upload_id or any(c in upload_id for c in ("/", "\\", "..")):
+        return _err(400, "valid upload id required")
+    meta = uploads.read_meta(upload_id)
+    namespace = namespace or (meta or {}).get("namespace")
+    primary_name = primary_name or upload_id
+    err = delete_artifacts_only(upload_id, namespace, primary_name)
+    if err:
+        return err
     lic = (meta or {}).get("license") or {}
     lic_cm = lic.get("configMap")
     if lic_cm:
@@ -133,14 +153,149 @@ def cleanup_existing(upload_id, namespace=None, primary_name=None):
         except Exception as e:  # noqa: BLE001
             logger.warning("license ConfigMap %s delete failed: %s", lic_cm, e)
     uploads.delete_upload(upload_id)
-    logger.info("Replaced/cleaned %s/%s (%d artifact(s))", namespace, upload_id, len(names))
+    logger.info("Removed upload %s/%s from PVC", namespace, upload_id)
     return None
 
 
+def _create_artifact_with_retry(namespace, name, repo, file_path, file_url, md5_url=None):
+    """Create an Artifact CR, retrying briefly if a prior delete is still Terminating."""
+    for attempt in range(4):
+        try:
+            artifact.create_artifact(namespace, name, repo, file_path, file_url, md5_url)
+            return None
+        except urllib.error.HTTPError as e:
+            if e.code == 409 and attempt < 3:
+                time.sleep(1.0)
+                continue
+            detail = ""
+            try:
+                detail = e.read().decode("utf-8", errors="replace")[:300]
+            except Exception:  # noqa: BLE001
+                pass
+            return _err(502, f"Artifact {name} create failed (HTTP {e.code}): {detail}")
+        except Exception as e:  # noqa: BLE001
+            return _err(502, f"Artifact {name} create failed: {e}")
+    return _err(502, f"Artifact {name} create failed after retries")
+
+
+def _repush_srl(meta, upload_id, namespace, base_url):
+    repo = meta.get("repo") or "images"
+    bin_filename = meta.get("filename") or ""
+    if not bin_filename:
+        return _err(400, "local image metadata is incomplete (missing filename)")
+    file_path = meta.get("filePath") or bin_filename
+    artifact_name = meta.get("artifactName") or upload_id
+    display_name = meta.get("displayName") or artifact_name
+    md5 = meta.get("md5") or ""
+    md5_artifact_name = meta.get("md5ArtifactName") or (artifact_name + "-md5" if md5 else "")
+    file_url, md5_url = artifact.file_urls(base_url, upload_id, bin_filename)
+    err = _create_artifact_with_retry(namespace, artifact_name, repo, file_path,
+                                    file_url, md5_url if md5 else None)
+    if err:
+        return err
+    if md5 and md5_artifact_name:
+        md5_file_path = file_path + ".md5"
+        err = _create_artifact_with_retry(namespace, md5_artifact_name, repo,
+                                          md5_file_path, md5_url, None)
+        if err:
+            return err
+    yang = meta.get("yang") or {}
+    if yang.get("artifactName") and yang.get("filename"):
+        yurl, _ = artifact.file_urls(base_url, upload_id, yang["filename"])
+        err = _create_artifact_with_retry(namespace, yang["artifactName"],
+                                          artifact.SCHEMAPROFILE_REPO,
+                                          yang.get("filePath") or yang["filename"],
+                                          yurl, None)
+        if err:
+            return err
+    return {"ok": True, "status": 200, "uploadId": upload_id, "artifactName": artifact_name,
+            "displayName": display_name, "namespace": namespace, "repo": repo,
+            "nos": "srl", "filePath": file_path, "md5": md5,
+            "sizeBytes": meta.get("sizeBytes"), "repushed": True}
+
+
+def _repush_sros(meta, upload_id, namespace, base_url):
+    repo = meta.get("repo") or artifact.SROS_REPO
+    display_name = meta.get("displayName") or upload_id
+    art_records = meta.get("artifacts") or []
+    if not art_records:
+        return _err(400, "local SR OS image metadata is incomplete")
+    for rec in art_records:
+        fn = rec.get("filename") or rec.get("filePath")
+        art_name = rec.get("artifactName")
+        if not fn or not art_name:
+            continue
+        file_url, md5_url = artifact.file_urls(base_url, upload_id, fn)
+        err = _create_artifact_with_retry(namespace, art_name, repo, fn, file_url,
+                                        md5_url if rec.get("md5ArtifactName") else None)
+        if err:
+            return err
+        md5_art = rec.get("md5ArtifactName")
+        if md5_art:
+            err = _create_artifact_with_retry(namespace, md5_art, repo, fn + ".md5",
+                                              md5_url, None)
+            if err:
+                return err
+    yang = meta.get("yang") or {}
+    if yang.get("artifactName") and yang.get("filename"):
+        yurl, _ = artifact.file_urls(base_url, upload_id, yang["filename"])
+        err = _create_artifact_with_retry(namespace, yang["artifactName"],
+                                          artifact.SCHEMAPROFILE_REPO,
+                                          yang.get("filePath") or yang["filename"],
+                                          yurl, None)
+        if err:
+            return err
+    return {"ok": True, "status": 200, "uploadId": upload_id, "artifactName": upload_id,
+            "displayName": display_name, "namespace": namespace,
+            "repo": repo, "nos": "sros", "version": meta.get("version", ""),
+            "fileCount": len(art_records), "sizeBytes": meta.get("sizeBytes"),
+            "repushed": True}
+
+
+def _repush_srsim(meta, upload_id, namespace, base_url):
+    display_name = meta.get("displayName") or upload_id
+    artifact_name = meta.get("artifactName") or upload_id
+    yang = meta.get("yang") or {}
+    if yang.get("artifactName") and yang.get("filename"):
+        yurl, _ = artifact.file_urls(base_url, upload_id, yang["filename"])
+        err = _create_artifact_with_retry(namespace, yang["artifactName"],
+                                          artifact.SCHEMAPROFILE_REPO,
+                                          yang.get("filePath") or yang["filename"],
+                                          yurl, None)
+        if err:
+            return err
+    return {"ok": True, "status": 200, "uploadId": upload_id, "artifactName": artifact_name,
+            "displayName": display_name, "namespace": namespace, "nos": "srsim",
+            "version": meta.get("version", ""), "imageTag": meta.get("imageTag"),
+            "sizeBytes": meta.get("sizeBytes"), "repushed": True}
+
+
+def repush_from_local(upload_id, config):
+    """Recreate Artifact CRs from PVC files without re-downloading or re-extracting."""
+    if not image_exists_locally(upload_id):
+        return _err(404, f"no local image named '{upload_id}'")
+    meta = uploads.read_meta(upload_id)
+    if not meta:
+        return _err(404, f"no metadata for '{upload_id}'")
+    namespace = meta.get("namespace")
+    if not namespace:
+        return _err(400, "missing namespace in local image metadata")
+    err = delete_artifacts_only(upload_id, namespace, meta.get("artifactName") or upload_id)
+    if err:
+        return err
+    base_url = config.get("filePullBaseUrl") or artifact.default_base_url(POD_NAMESPACE)
+    nos = meta.get("nos") or "srl"
+    if nos == "srsim":
+        return _repush_srsim(meta, upload_id, namespace, base_url)
+    if meta.get("artifacts"):
+        return _repush_sros(meta, upload_id, namespace, base_url)
+    return _repush_srl(meta, upload_id, namespace, base_url)
+
+
 def _ensure_replace(upload_id, display_name, artifact_name, namespace, replace):
-    """When replace is set, remove any existing upload; otherwise return 409."""
+    """When replace is set, drop Artifact CRs only (PVC kept for repush); else 409."""
     if replace:
-        return cleanup_existing(upload_id, namespace, artifact_name)
+        return delete_artifacts_only(upload_id, namespace, artifact_name)
     if image_exists_locally(upload_id):
         return _conflict_err(display_name, artifact_name, namespace, "image")
     if artifact_cr_exists(namespace, artifact_name):
@@ -201,7 +356,7 @@ def _process_srl(tmp_zip, filename, namespace, name_override, config, replace=Fa
                                   file_url, md5_url if md5 else None)
     except urllib.error.HTTPError as e:
         if e.code == 409 and replace:
-            cleanup_existing(artifact_name, namespace, artifact_name)
+            delete_artifacts_only(artifact_name, namespace, artifact_name)
             try:
                 artifact.create_artifact(namespace, artifact_name, repo, image_file_path,
                                           file_url, md5_url if md5 else None)
