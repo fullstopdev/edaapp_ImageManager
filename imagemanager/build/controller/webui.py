@@ -596,7 +596,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="helper" id="licHint">Paste the SR OS / SR Linux simulator license key if needed.</div>
       </div>
       <div class="form-actions">
-        <button class="btn contained ripple" id="uploadBtn">Upload &amp; create Artifact</button>
+        <button type="button" class="btn contained ripple" id="uploadBtn">Upload &amp; create Artifact</button>
       </div>
       </div>
     </div>
@@ -628,7 +628,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       </div>
       <label class="chk-row"><input type="checkbox" id="urlInsecure"> Skip TLS certificate verification on source URL (lab only)</label>
       <div class="form-actions">
-        <button class="btn contained ripple" id="urlImportBtn">Start URL import</button>
+        <button type="button" class="btn contained ripple" id="urlImportBtn">Start URL import</button>
       </div>
       </div>
     </div>
@@ -658,8 +658,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div class="helper">Leave empty to auto-derive from the in-cluster Service.</div>
       </div>
       <div class="form-actions">
-        <button class="btn text subtle ripple" id="settingsReload">Reload</button>
-        <button class="btn contained ripple" id="settingsSave">Save settings</button>
+        <button type="button" class="btn text subtle ripple" id="settingsReload">Reload</button>
+        <button type="button" class="btn contained ripple" id="settingsSave">Save settings</button>
       </div>
       <div class="ha-panel" id="haPanel">
         <h3>High availability &amp; storage <span class="ha-badge">Lab-friendly</span></h3>
@@ -872,14 +872,29 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var sessionCheckTimer = null;
   var revalidateTimer = null;
   var signOutPending = false;
+  var deferredSessionLoss = null;
+  var pendingUploads = {}, uploadSeq = 0;
   var SSO_TIMEOUT_MS = 15000;
   var SESSION_CHECK_MS = 30000;
   var REVALIDATE_DEBOUNCE_MS = 400;
 
+  function uploadInFlight(){
+    return Object.keys(pendingUploads).length > 0;
+  }
+  function flushDeferredSessionLoss(){
+    if(!deferredSessionLoss || uploadInFlight()) return;
+    var msg = deferredSessionLoss;
+    deferredSessionLoss = null;
+    handleSessionLoss(msg);
+  }
   function logoutRedirectUri(){
     return location.origin + apiBase + "/";
   }
   function handleSessionLoss(msg){
+    if(uploadInFlight()){
+      deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
+      return;
+    }
     var text = msg || "Your EDA session has ended. Sign in again.";
     if(embedded){
       showFatal(text + " Reload this page or sign in again from the EDA dashboard.");
@@ -911,6 +926,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       .catch(function(){ return null; });
   }
   function probeSession(){
+    if(uploadInFlight()) return Promise.resolve(true);
     // Embedded iframe: Keycloak login-status iframe and check-sso often false-negative
     // inside EDA; rely on server session + silent SSO when the cookie is rejected.
     if(embedded){
@@ -928,7 +944,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(revalidateTimer) clearTimeout(revalidateTimer);
     revalidateTimer = setTimeout(function(){
       revalidateTimer = null;
-      if(!authReady || document.hidden) return;
+      if(!authReady || document.hidden || uploadInFlight()) return;
       probeSession().then(function(ok){
         if(ok) return;
         handleSessionLoss("Your EDA session has ended.");
@@ -938,7 +954,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function scheduleSessionCheck(){
     if(sessionCheckTimer) clearInterval(sessionCheckTimer);
     sessionCheckTimer = setInterval(function(){
-      if(!authReady || document.hidden) return;
+      if(!authReady || document.hidden || uploadInFlight()) return;
       probeSession().then(function(ok){
         if(ok) return;
         handleSessionLoss("Your EDA session has ended.");
@@ -1040,6 +1056,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function verifyKeycloakSession(refreshBanner){
     if(typeof refreshBanner === "undefined") refreshBanner = true;
+    if(uploadInFlight()) return Promise.resolve(true);
     return loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
       return initKeycloakCheck();
     }).then(function(ok){
@@ -1133,6 +1150,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
           throw err;   // role denied — redirecting would just loop
         }
         if(!embedded){
+          if(uploadInFlight()){
+            deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+            throw new Error("deferred");
+          }
           window.location = apiBase + "/oauth/login";
           throw new Error("redirect");
         }
@@ -1141,6 +1162,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
         throw err2;
       }, function(e){
         if(!embedded){
+          if(uploadInFlight()){
+            deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+            throw new Error("deferred");
+          }
           window.location = apiBase + "/oauth/login";
           throw new Error("redirect");
         }
@@ -1436,6 +1461,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       onDone:function(status, r){
         if(isConflictResponse(status, r)){
           delete pendingUploads[key]; render();
+          flushDeferredSessionLoss();
           var info=conflictInfo(r, name, namespace);
           askReplace(info.artifactName, info.namespace, function(){
             doUpload(f, namespace, lic, true);
@@ -1451,15 +1477,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
           else msg="Uploaded "+what+"."+(r.md5?(" md5 "+r.md5+"."):"")+(r.yangCreated?" YANG profile attached.":"");
           if(lic){ attachLicense(r.artifactName||r.uploadId||name, what, lic, msg); }
           else { snack("ok", msg); refresh(); }
+          flushDeferredSessionLoss();
         } else { delete pendingUploads[key]; render();
-          snack("err",(r.error||("HTTP "+status)), true); if(r.uploadId) refresh(); }
+          snack("err",(r.error||("HTTP "+status)), true); if(r.uploadId) refresh();
+          flushDeferredSessionLoss(); }
       },
       onError:function(){ delete pendingUploads[key]; render();
-        snack("err","Network error during upload.", true); }
+        snack("err","Network error during upload.", true);
+        flushDeferredSessionLoss(); }
     });
   }
 
-  btn.addEventListener("click", function(){
+  btn.addEventListener("click", function(e){
+    if(e && e.preventDefault) e.preventDefault();
     var f=binFile.files[0];
     // Validate first; on failure keep the dialog open so the user can fix it.
     if(!f){ snack("err","Select a vendor .zip file first."); return; }
@@ -1474,7 +1504,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   });
 
   // ---------- artifacts table ----------
-  var pendingUploads={}, uploadSeq=0, lastImports=[];   // in-flight browser->controller uploads
+  var lastImports=[];   // in-flight browser->controller uploads tracked in pendingUploads
   function chip(s){
     var c=s||"NoArtifact";
     if(c==="NoArtifact") return '<span class="chip c-NoArtifact" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">Needs republish</span>';
@@ -1789,6 +1819,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   function handleAuthLoss(){
+    if(uploadInFlight()){
+      deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
+      return Promise.resolve();
+    }
     authReady = false;
     kcInitPromise = null;
     syncLiveIndicator();

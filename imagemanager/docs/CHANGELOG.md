@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.36
+
+**Fix upload interrupted by page refresh:** v0.0.34/v0.0.35 session revalidation
+(30s polling, tab-focus checks, Keycloak `verifyKeycloakSession`) could clear the
+server session or redirect to `/oauth/login` while a file upload was still in
+flight, aborting the transfer. Uploads now set an in-flight guard that defers
+auth loss handling and skips SSO probes until the XHR completes; action buttons
+use `type="button"` explicitly.
+
 ## v0.0.35
 
 **Fix embedded EDA sign-in:** v0.0.33/v0.0.34 re-validated Keycloak SSO on every
