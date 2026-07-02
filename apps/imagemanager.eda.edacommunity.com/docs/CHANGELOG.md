@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.21
+
+Move EDA nav launcher from **Topology** to **Node Onboarding** (`ui.category: Node
+Onboarding` on the dashboard view). Image uploads feed node bootstrap and image
+upgrades, so the launcher belongs alongside onboarding resources.
+
 ## v0.0.20
 
 Startup self-healing + pro ops UI + HA/storage guidance:
