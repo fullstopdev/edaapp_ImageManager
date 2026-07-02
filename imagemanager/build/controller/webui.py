@@ -1,7 +1,12 @@
 """Self-contained Image Manager web UI (no external assets), served at GET /.
 
-Unified single-page app with tabs: Upload | URL Import | Settings | Status.
-Cable-map / Nokia EDA dark theme; responsive card layout; embedded in EDA via iframe."""
+Unified single-page app, dashboard-first: Dashboard (KPIs + live artifact
+status) | Upload | URL Import | Settings. Cable-map / Nokia EDA design
+language: dark/light theme, branded logo + favicon, KPI overview cards,
+adaptive live polling (4s while work is in flight, 12s at rest, paused when
+the tab is hidden). Sign-in is silent SSO against the EDA Keycloak session
+(new tab from the dashboard or embedded iframe), falling back to the OIDC
+redirect flow; role gating via ALLOWED_ROLES (EDA ClusterRole)."""
 
 SILENT_SSO_HTML = r"""<!doctype html><html><body><script>
 parent.postMessage(location.href, location.origin);
@@ -14,6 +19,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="imagemanager-api-base" content="/core/httpproxy/v1/imagemanager">
 <title>EDA Image Manager</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Cdefs%3E%3ClinearGradient id='g' x1='0' y1='0' x2='1' y2='1'%3E%3Cstop offset='0' stop-color='%234092ff'/%3E%3Cstop offset='1' stop-color='%23005adf'/%3E%3C/linearGradient%3E%3C/defs%3E%3Crect width='32' height='32' rx='7' fill='url(%23g)'/%3E%3Cpath d='M16 5.5l9 5-9 5-9-5 9-5z' fill='%23fff'/%3E%3Cpath d='M7 16.5l9 5 9-5' stroke='%23fff' stroke-width='2' fill='none' opacity='.72' stroke-linecap='round' stroke-linejoin='round'/%3E%3Cpath d='M7 21.5l9 5 9-5' stroke='%23fff' stroke-width='2' fill='none' opacity='.42' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E">
 <style>
   :root {
     --eda-blue-100:#e4f0ff; --eda-blue-400:#4092ff; --eda-blue-500:#005aff; --eda-blue-600:#005adf;
@@ -423,6 +429,32 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .status-meta .mono { color:var(--fg); }
   .status-grid { display:grid; gap:16px; }
   @media (min-width:900px){ .status-grid { grid-template-columns:1fr; } }
+
+  /* KPI overview cards (dashboard-first, cable-map style) */
+  .kpi-grid {
+    display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; margin-bottom:16px;
+  }
+  @media (max-width:760px){ .kpi-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  .kpi-card {
+    display:flex; align-items:center; gap:12px; padding:14px 16px;
+    background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg);
+    box-shadow:var(--shadow-sm); transition:border-color var(--transition), transform var(--transition);
+  }
+  .kpi-card:hover { border-color:color-mix(in srgb,var(--line) 60%, var(--accent)); transform:translateY(-1px); }
+  .kpi-icon {
+    width:38px; height:38px; flex:none; border-radius:10px;
+    display:flex; align-items:center; justify-content:center;
+  }
+  .kpi-icon svg { width:19px; height:19px; display:block; }
+  .kpi-icon.total { background:var(--accent-soft); color:var(--accent2); }
+  .kpi-icon.ok { background:var(--ok-bg); color:var(--ok-fg); }
+  .kpi-icon.info { background:var(--info-bg); color:var(--info-fg); }
+  .kpi-icon.err { background:var(--err-bg); color:var(--err-fg); }
+  .kpi-val { font-size:21px; font-weight:700; line-height:1.15; letter-spacing:-.01em;
+    font-variant-numeric:tabular-nums; transition:color var(--transition); }
+  .kpi-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+  .kpi-val.bump { animation:badgePop .35s ease; }
+  .empty .btn { margin-top:10px; }
   .imports-table { padding:0; }
   .imports-table .card-body { padding:14px 18px 18px; }
   .imports-table h3 { margin:0 0 10px; font-size:13px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.06em; }
@@ -447,8 +479,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <div class="brand">
     <span class="brand-logo" aria-hidden="true">
       <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M6.5 5h11v2.25h-11V5zm0 5.5h11V12.75h-11V10.5zm0 5.5h8.25V18.5H6.5V16z" fill="#fff" opacity=".95"/>
-        <circle cx="17.25" cy="16.75" r="2.1" fill="#fff"/>
+        <path d="M12 3l8 4.4-8 4.4-8-4.4L12 3z" fill="#fff" opacity=".95"/>
+        <path d="M4.4 12.6L12 16.8l7.6-4.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
+        <path d="M4.4 16.6L12 20.8l7.6-4.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".42"/>
       </svg>
     </span>
     <div class="brand-text">
@@ -475,19 +508,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
   <header class="page-head">
     <div>
       <h1 class="page-title">Image Manager</h1>
-      <p class="page-sub">Upload vendor NOS images, import by URL, tune settings, and track Artifact status — all in one place.</p>
+      <p class="page-sub">Upload vendor NOS images, import by URL, and track Artifact download status — served to EDA for ZTP, upgrades and Digital Twin.</p>
     </div>
   </header>
 
   <nav class="tabs" role="tablist" aria-label="Image Manager sections">
-    <button type="button" class="tab active ripple" id="tab-upload" data-tab="upload" role="tab" aria-selected="true" aria-controls="panel-upload">Upload</button>
+    <button type="button" class="tab active ripple" id="tab-status" data-tab="status" role="tab" aria-selected="true" aria-controls="panel-status">Dashboard <span class="count" id="statusCount" style="display:none"></span></button>
+    <button type="button" class="tab ripple" id="tab-upload" data-tab="upload" role="tab" aria-controls="panel-upload">Upload</button>
     <button type="button" class="tab ripple" id="tab-url-import" data-tab="url-import" role="tab" aria-controls="panel-url-import">URL Import</button>
     <button type="button" class="tab ripple" id="tab-settings" data-tab="settings" role="tab" aria-controls="panel-settings">Settings</button>
-    <button type="button" class="tab ripple" id="tab-status" data-tab="status" role="tab" aria-controls="panel-status">Status <span class="count" id="statusCount" style="display:none"></span></button>
   </nav>
 
   <!-- Upload tab -->
-  <section id="panel-upload" class="tab-panel active" role="tabpanel" aria-labelledby="tab-upload">
+  <section id="panel-upload" class="tab-panel" role="tabpanel" aria-labelledby="tab-upload">
     <div class="card form-card">
       <div class="card-header"><h2 class="section-title">Upload image from file</h2><span class="card-hint">Vendor .zip</span></div>
       <div class="card-body">
@@ -585,8 +618,34 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
   </section>
 
-  <!-- Status tab -->
-  <section id="panel-status" class="tab-panel" role="tabpanel" aria-labelledby="tab-status">
+  <!-- Status tab (Dashboard — start screen) -->
+  <section id="panel-status" class="tab-panel active" role="tabpanel" aria-labelledby="tab-status">
+    <div class="kpi-grid" aria-label="Overview">
+      <div class="kpi-card">
+        <span class="kpi-icon total" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.4-8 4.4-8-4.4L12 3z" fill="currentColor"/><path d="M4.4 12.6L12 16.8l7.6-4.2M4.4 16.6L12 20.8l7.6-4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/></svg>
+        </span>
+        <div><div class="kpi-val" id="kpiTotal">&mdash;</div><div class="kpi-label">Images</div></div>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-icon ok" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M20 6.5L9.5 17 4 11.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <div><div class="kpi-val" id="kpiReady">&mdash;</div><div class="kpi-label">Available</div></div>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-icon info" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v4m0 8v4M4 12h4m8 0h4M6.3 6.3l2.85 2.85m5.7 5.7l2.85 2.85M6.3 17.7l2.85-2.85m5.7-5.7l2.85-2.85" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
+        </span>
+        <div><div class="kpi-val" id="kpiActive">&mdash;</div><div class="kpi-label">In progress</div></div>
+      </div>
+      <div class="kpi-card">
+        <span class="kpi-icon err" aria-hidden="true">
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5m0 3.4v.1M10.3 4l-8 14a2 2 0 001.7 3h16a2 2 0 001.7-3l-8-14a2 2 0 00-3.4 0z" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </span>
+        <div><div class="kpi-val" id="kpiFailed">&mdash;</div><div class="kpi-label">Failed</div></div>
+      </div>
+    </div>
     <div class="status-grid">
     <div class="card storage-card">
       <div class="storage-row">
@@ -596,7 +655,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="storage-track"><div class="storage-fill" id="storageFill"></div></div>
     </div>
     <div class="card">
-      <div class="card-header"><h2 class="section-title">Artifacts</h2><span class="card-hint">Live status</span></div>
+      <div class="card-header"><h2 class="section-title">Artifacts</h2>
+        <span style="display:inline-flex;align-items:center;gap:10px">
+          <span class="card-hint">Live status</span>
+          <button class="iconbtn ripple" id="refreshBtn" title="Refresh now">Refresh</button>
+        </span>
+      </div>
       <div class="table-wrap">
         <table class="mtable">
           <thead><tr>
@@ -791,26 +855,38 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(authReady) return Promise.resolve();
     return fetch(api("/api/config")).then(function(r){
       if(r.status === 200){ authReady = true; return r.json(); }
-      if(r.status === 401 && !embedded){
-        window.location = apiBase + "/oauth/login";
-        throw new Error("redirect");
-      }
       if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
-      if(embedded){
-        return silentSso().then(function(ex){
-          if(!ex || ex.status < 200 || ex.status >= 300 || !ex.body.ok){
-            var err = new Error("sso failed");
-            err.exchange = ex;
-            throw err;
-          }
+      // Silent SSO first (works in the EDA iframe AND a new tab opened from the
+      // dashboard): reuse the browser's existing EDA Keycloak session, no
+      // redirect, no re-login. Falls back to the OIDC redirect flow only when
+      // silent SSO cannot complete (e.g. keycloak-js unavailable).
+      return silentSso().then(function(ex){
+        if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
           return fetch(api("/api/config")).then(function(r2){
             if(r2.status !== 200) throw new Error("config after sso");
             return r2.json();
           });
-        });
-      }
-      throw new Error("sso failed");
+        }
+        if(ex && ex.status === 403){
+          var err = new Error("forbidden");
+          err.exchange = ex;
+          throw err;   // role denied — redirecting would just loop
+        }
+        if(!embedded){
+          window.location = apiBase + "/oauth/login";
+          throw new Error("redirect");
+        }
+        var err2 = new Error("sso failed");
+        err2.exchange = ex;
+        throw err2;
+      }, function(e){
+        if(!embedded){
+          window.location = apiBase + "/oauth/login";
+          throw new Error("redirect");
+        }
+        throw e;
+      });
     });
   }
 
@@ -830,7 +906,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
 
   // ---------- tabs ----------
-  var activeTab = "upload";
+  var activeTab = "status";
   function showTab(name){
     if(name === activeTab) return;
     activeTab = name;
@@ -999,7 +1075,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     refresh();
     refreshImports();
+    syncLiveIndicator();
   }).catch(function(err){
+    if(err && err.message === "redirect") return;   // navigating to /oauth/login
     var msg = (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
             : (err && err.exchange) ? authErrorMessage(err.exchange)
             : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
@@ -1177,6 +1255,31 @@ INDEX_HTML = r"""<!DOCTYPE html>
         badge.classList.add("pop");
       }
     } else { badge.style.display="none"; badge.classList.remove("pop"); }
+  }
+
+  // ---------- KPI overview (dashboard cards) ----------
+  function setKpi(id, val){
+    var n = el(id);
+    if(!n) return;
+    var s = String(val);
+    if(n.textContent !== s){
+      n.textContent = s;
+      n.classList.remove("bump"); void n.offsetWidth; n.classList.add("bump");
+    }
+  }
+  function updateKpis(){
+    var total=currentData.length, ready=0, act=Object.keys(pendingUploads).length, failed=0;
+    currentData.forEach(function(t){
+      var s=t.downloadStatus;
+      if(s==="Available"||s==="Ready") ready++;
+      else if(isActiveStatus(s)) act++;
+      else if(s==="Error"||s==="Failed") failed++;
+    });
+    lastImports.forEach(function(i){ if(isActiveStatus(i.phase)) act++; });
+    setKpi("kpiTotal", total);
+    setKpi("kpiReady", ready);
+    setKpi("kpiActive", act);
+    setKpi("kpiFailed", failed);
   }
 
   function pendStatusHtml(p){
@@ -1359,13 +1462,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var p=pendingUploads[k];
       if(!seen[p.displayName+"|"+p.namespace]) pend.push(p);  // hide once the real artifact appears
     });
+    updateKpis();
     if(!(pend.length+serverRows.length)){
-      rows.innerHTML='<tr><td colspan="5" class="empty">No images yet. Use the <b>Upload</b> or <b>URL Import</b> tab to add one.</td></tr>';
+      rows.innerHTML='<tr><td colspan="5" class="empty">No images yet.<br>'+
+        '<button class="btn contained ripple" data-goto="upload">Upload an image</button> '+
+        '<button class="btn text ripple" data-goto="url-import">Import from URL</button></td></tr>';
       el("statusCount").style.display="none"; return;
     }
     rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
     updateStatusBadge();
   }
+  rows.addEventListener("click", function(e){
+    var g = e.target.closest("button[data-goto]");
+    if(g) showTab(g.getAttribute("data-goto"));
+  });
 
   function isImportConflict(i){
     return i.phase==="Failed" && /already exists/i.test(i.message||"");
@@ -1521,7 +1631,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   // ---------- theme toggle ----------
   function syncLiveIndicator(){
     var pill=el("liveIndicator");
-    if(pill) pill.classList.toggle("active", activeTab==="status");
+    if(pill) pill.classList.toggle("active", authReady && !document.hidden);
   }
   (function(){
     var btn=el("themeBtn");
@@ -1540,11 +1650,28 @@ INDEX_HTML = r"""<!DOCTYPE html>
     bootDone();
   });
 
-  setInterval(function(){
-    if(activeTab==="status"){ refresh(); refreshImports(); }
-    else { updateStatusBadge(); }
+  // Adaptive reactive polling: 4s while anything is uploading/downloading,
+  // 12s at rest; paused entirely while the tab is hidden.
+  var pollTimer=null;
+  function pollInterval(){ return activeStatusCount() > 0 ? 4000 : 12000; }
+  function schedulePoll(){
+    if(pollTimer) clearTimeout(pollTimer);
+    pollTimer=setTimeout(function(){
+      if(!document.hidden && authReady){
+        if(activeTab==="status"){ refresh(); refreshImports(); }
+        else { refresh(); }
+      }
+      syncLiveIndicator();
+      schedulePoll();
+    }, pollInterval());
+  }
+  document.addEventListener("visibilitychange", function(){
+    if(!document.hidden && authReady){ refresh(); refreshImports(); }
     syncLiveIndicator();
-  }, 10000);
+  });
+  var refreshBtn=el("refreshBtn");
+  if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });
+  schedulePoll();
   syncLiveIndicator();
 })();
 </script>
