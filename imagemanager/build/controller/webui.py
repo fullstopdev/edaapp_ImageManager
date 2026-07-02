@@ -870,6 +870,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var maxBytes = 4096*1024*1024;
   var embedded = window.self !== window.top;
   var authReady = false;
+  var authBootstrapping = false;
   var kcInstance = null;
   var kcInitPromise = null;
   var sessionCheckTimer = null;
@@ -896,7 +897,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return location.origin + apiBase + "/";
   }
   function handleSessionLoss(msg){
-    if(uploadInFlight()){
+    if(authBootstrapping || uploadInFlight()){
       deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
       return;
     }
@@ -982,7 +983,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     silentSso().then(function(ex){
       if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
         authReady = true;
-        ensureKeycloakWatchers();
+        if(!embedded) ensureKeycloakWatchers();
         scheduleSessionCheck();
         return fetch(api("/api/config")).then(function(r){
           if(r.status !== 200) throw new Error("config after sso");
@@ -1014,7 +1015,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       .catch(function(){ return null; });
   }
   function probeSession(){
-    if(uploadInFlight()) return Promise.resolve(true);
+    // Periodic checks only — bootstrap trusts a valid im_session without Keycloak.
+    if(authBootstrapping || uploadInFlight()) return Promise.resolve(true);
     // Server session probe + silent SSO re-exchange — no page navigation. Standalone
     // EDA logout is detected via Keycloak onAuthLogout / checkLoginIframe watchers.
     return fetch(api("/api/config")).then(function(r){
@@ -1023,9 +1025,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return silentSso().then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
-          ensureKeycloakWatchers();
+          if(!embedded) ensureKeycloakWatchers();
           return true;
         }
+        kcInitPromise = null;
         return false;
       });
     });
@@ -1156,6 +1159,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
       silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
       checkLoginIframe: !embedded,
       messageReceiveTimeout: 10000
+    }).then(function(ok){
+      if(!ok) kcInitPromise = null;   // allow silentSso retry after iframe false-negative
+      return ok;
     }).catch(function(e){
       kcInitPromise = null;
       throw e;
@@ -1191,15 +1197,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(rows) rows.innerHTML = '<tr><td colspan="5" class="empty">'+esc(msg)+'</td></tr>';
     snack("err", msg, true);
   }
+  function embeddedSignInBanner(){
+    showSignInBanner("Sign-in required. Reload this page or open Image Manager from the EDA dashboard.");
+    throw new Error("sign-in required");
+  }
   function ensureAuth(){
     if(authReady) return Promise.resolve();
+    authBootstrapping = true;
     return fetch(api("/api/config")).then(function(r){
       if(r.status === 200){
         return r.json().then(function(c){
           // Trust a valid im_session on first load; periodic probeSession() detects
           // EDA logout without clearing the cookie on Keycloak iframe false-negatives.
           authReady = true;
-          ensureKeycloakWatchers();
+          if(!embedded) ensureKeycloakWatchers();
           scheduleSessionCheck();
           return c;
         });
@@ -1211,7 +1222,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return silentSso().then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
-          ensureKeycloakWatchers();
+          if(!embedded) ensureKeycloakWatchers();
           scheduleSessionCheck();
           return fetch(api("/api/config")).then(function(r2){
             if(r2.status !== 200) throw new Error("config after sso");
@@ -1227,18 +1238,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
           deferredSessionLoss = "Your EDA session has ended. Sign in again.";
           throw new Error("deferred");
         }
-        showSignInBanner(embedded
-          ? "Sign-in required. Reload this page or open Image Manager from the EDA dashboard."
-          : "Sign-in required. Use Try again for silent SSO or Sign in to open the EDA login page.");
+        kcInitPromise = null;
+        if(embedded) return embeddedSignInBanner();
+        showSignInBanner("Sign-in required. Use Try again for silent SSO or Sign in to open the EDA login page.");
         throw new Error("sign-in required");
       }, function(e){
         if(uploadInFlight()){
           deferredSessionLoss = "Your EDA session has ended. Sign in again.";
           throw new Error("deferred");
         }
+        kcInitPromise = null;
+        if(embedded) return embeddedSignInBanner();
         throw e;
       });
-    });
+    }).finally(function(){ authBootstrapping = false; });
   }
 
   var el = function(id){ return document.getElementById(id); };
@@ -1421,6 +1434,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     syncLiveIndicator();
   }).catch(function(err){
     if(err && (err.message === "sign-in required" || err.message === "deferred")) return;
+    if(embedded){
+      kcInitPromise = null;
+      showSignInBanner("Sign-in required. Reload this page or open Image Manager from the EDA dashboard.");
+      return;
+    }
     var msg = (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
             : (err && err.exchange) ? authErrorMessage(err.exchange)
             : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
@@ -1875,7 +1893,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   function handleAuthLoss(){
-    if(uploadInFlight()){
+    if(authBootstrapping || uploadInFlight()){
       deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
       return Promise.resolve();
     }
@@ -1886,7 +1904,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return probeSession().then(function(ok){
       if(ok){
         authReady = true;
-        ensureKeycloakWatchers();
+        if(!embedded) ensureKeycloakWatchers();
         scheduleSessionCheck();
         return fetch(api("/api/config")).then(function(r){
           if(r.status !== 200) throw new Error("config after reauth");

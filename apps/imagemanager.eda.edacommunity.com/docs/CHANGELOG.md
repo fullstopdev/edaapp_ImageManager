@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.38
+
+**Fix embedded EDA sign-in regression (v0.0.37):** Restore the v0.0.35 cable-map
+bootstrap pattern after silent session-check changes reintroduced embedded SSO
+failures. A valid `im_session` is still trusted on first load without Keycloak;
+`probeSession()` and `handleAuthLoss()` are skipped until bootstrap completes;
+Keycloak `init()` clears its dedupe promise on iframe false-negatives so silent
+SSO can retry; embedded SSO errors show a recoverable banner instead of the fatal
+"Sign-in failed inside EDA" message. v0.0.37 no-refresh polling and upload
+in-flight deferral are unchanged.
+
 ## v0.0.37
 
 **Silent session checks (no page refresh):** Periodic session polling, tab-focus
