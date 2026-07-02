@@ -886,7 +886,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var pendingUploads = {}, uploadSeq = 0;
   var SSO_TIMEOUT_MS = 15000;
   var SESSION_CHECK_MS = 15000;
-  var REVALIDATE_DEBOUNCE_MS = 400;
+  var REVALIDATE_DEBOUNCE_MS = 2000;
   var sessionCheckTimer = null;
   var revalidateTimer = null;
   var kcInstance = null;
@@ -928,8 +928,31 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function uploadInFlight(){
     return Object.keys(pendingUploads).length > 0;
   }
+  // Block session loss / background refresh while the user is composing an upload.
+  function uploadFormActive(){
+    if(uploadInFlight()) return true;
+    var tab = typeof activeTab !== "undefined" ? activeTab : "";
+    if(tab === "upload"){
+      var bf = el("binFile");
+      if(bf && bf.files && bf.files.length) return true;
+      if((el("imageName") && (el("imageName").value || "").trim())) return true;
+      if((el("licText") && (el("licText").value || "").trim())) return true;
+      if(el("namespace") && el("namespace").value) return true;
+    }
+    if(tab === "url-import"){
+      if((el("urlSource") && (el("urlSource").value || "").trim())) return true;
+      if((el("urlName") && (el("urlName").value || "").trim())) return true;
+      if((el("urlLicText") && (el("urlLicText").value || "").trim())) return true;
+      if(el("urlNamespace") && el("urlNamespace").value) return true;
+      if(el("urlInsecure") && el("urlInsecure").checked) return true;
+    }
+    return false;
+  }
+  function sessionInterruptBlocked(){
+    return uploadInFlight() || uploadFormActive();
+  }
   function flushDeferredSessionLoss(){
-    if(!deferredSessionLoss || uploadInFlight()) return;
+    if(!deferredSessionLoss || sessionInterruptBlocked()) return;
     var msg = deferredSessionLoss;
     deferredSessionLoss = null;
     handleSessionLoss(msg);
@@ -964,7 +987,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function handleSessionLoss(msg){
     if(!authBootstrapComplete) return;
-    if(uploadInFlight()){
+    if(sessionInterruptBlocked()){
       deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
       return;
     }
@@ -984,7 +1007,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function handleAuthLoss(){
     if(!authBootstrapComplete) return Promise.resolve();
-    if(uploadInFlight()){
+    if(sessionInterruptBlocked()){
       deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
       return Promise.resolve();
     }
@@ -1037,7 +1060,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   }
   function verifyKeycloakSession(){
-    if(uploadInFlight()) return Promise.resolve(true);
+    if(sessionInterruptBlocked()) return Promise.resolve(true);
     if(!authBootstrapComplete || !authReady) return Promise.resolve(true);
     return loadKeycloakScript(false).then(function(){
       return initKeycloakWatch();
@@ -1056,7 +1079,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   }
   function probeSession(force){
-    if(uploadInFlight()) return Promise.resolve(true);
+    if(sessionInterruptBlocked()) return Promise.resolve(true);
     if(!authBootstrapComplete && !force) return Promise.resolve(true);
     if(!authReady && !force) return Promise.resolve(true);
     function afterConfigOk(){
@@ -1113,7 +1136,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(revalidateTimer) clearTimeout(revalidateTimer);
     revalidateTimer = setTimeout(function(){
       revalidateTimer = null;
-      if(!authBootstrapComplete || !authReady || document.hidden || uploadInFlight()) return;
+      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
       probeSession().then(function(ok){
         if(ok) return;
         handleSessionLoss("Your EDA session has ended.");
@@ -1123,7 +1146,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function scheduleSessionCheck(){
     if(sessionCheckTimer) clearInterval(sessionCheckTimer);
     sessionCheckTimer = setInterval(function(){
-      if(!authBootstrapComplete || !authReady || document.hidden || uploadInFlight()) return;
+      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
       probeSession().then(function(ok){
         if(ok) return;
         handleSessionLoss("Your EDA session has ended.");
@@ -1364,7 +1387,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       p.classList.toggle("active", on);
       if(on){ p.style.animation = "none"; void p.offsetWidth; p.style.animation = ""; }
     });
-    if(name === "status"){ refresh(); refreshImports(); }
+    if(name === "status"){ refreshArtifacts(); refreshImports(); }
     if(name === "settings"){ loadSettings(); }
     syncLiveIndicator();
   }
@@ -1550,18 +1573,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!f) return;
     imageName.value = deriveName(f.name);
     binHint.textContent=f.name+"  ·  "+fmtBytes(f.size);
+    syncLiveIndicator();
   });
   // Names are lowercased everywhere; keep the field lowercase as the user edits.
   imageName.addEventListener("input", function(ev){
     if(ev && ev.isComposing) return;   // don't disturb a mid-IME composition
     var s=imageName.selectionStart, e=imageName.selectionEnd, lo=imageName.value.toLowerCase();
     if(lo!==imageName.value){ imageName.value=lo; try{ imageName.setSelectionRange(s,e); }catch(_){} }
+    syncLiveIndicator();
   });
+  ns.addEventListener("change", syncLiveIndicator);
+  licText.addEventListener("input", syncLiveIndicator);
 
   // ---------- upload (closes dialog; progress shown as a live table row) ----------
   function resetUploadForm(){
     binFile.value=""; imageName.value=""; ns.selectedIndex=0; licText.value="";
     binHint.textContent="Maximum upload size: "+Math.round(maxBytes/1048576)+" MiB.";
+    syncLiveIndicator();
   }
 
   // Attach a license to a freshly-uploaded image: POST the raw key file to
@@ -1999,7 +2027,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     lastImports = list || [];
     if(!list || !list.length){
       importRows.innerHTML='<tr><td colspan="5" class="empty">No URL imports yet.</td></tr>';
-      if(activeTab === "status" || Object.keys(pendingUploads).length) render();
+      if(activeTab === "status" && Object.keys(pendingUploads).length) render();
       return;
     }
     importRows.innerHTML = list.map(function(i){
@@ -2011,7 +2039,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         '<td class="mono">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase)+'</td>'+
         '<td>'+esc(i.message||"")+retry+'</td></tr>';
     }).join("");
-    if(activeTab !== "status") render();
+    if(activeTab === "status") render();
   }
 
   function refreshImports(){
@@ -2082,6 +2110,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(res.ok && res.body && res.body.ok){
         snack("ok","URL import started: "+res.body.namespace+"/"+res.body.name);
         el("urlSource").value=""; el("urlName").value=""; el("urlLicText").value="";
+        syncLiveIndicator();
         showTab("status");
         refreshImports();
       } else if(isConflictResponse(res.status, res.body) && !replace){
@@ -2092,6 +2121,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
     });
   }
+
+  el("urlSource").addEventListener("input", syncLiveIndicator);
+  el("urlName").addEventListener("input", syncLiveIndicator);
+  el("urlLicText").addEventListener("input", syncLiveIndicator);
+  if(urlNs) urlNs.addEventListener("change", syncLiveIndicator);
+  el("urlInsecure").addEventListener("change", syncLiveIndicator);
 
   el("urlImportBtn").addEventListener("click", function(){
     var url=(el("urlSource").value||"").trim();
@@ -2184,33 +2219,50 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(m) m.textContent=message||"Single-replica · Recreate strategy";
   }
 
-  function refresh(){
-    fetchJson(api("/api/artifacts")).then(function(res){
+  function refreshArtifacts(opts){
+    opts = opts || {};
+    return fetchJson(api("/api/artifacts")).then(function(res){
       if(res.status===401){
-        return handleAuthLoss().then(function(){ if(authReady) refresh(); });
+        return handleAuthLoss().then(function(){ if(authReady) return refreshArtifacts(opts); });
       }
       if(!res.ok){
-        rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
-          "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>';
-        snack("err","Could not load artifacts (HTTP "+res.status+").", true);
+        if(!opts.silent){
+          rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
+            "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>';
+          snack("err","Could not load artifacts (HTTP "+res.status+").", true);
+        }
         return;
       }
       var d=res.body||{};
       currentData=d.artifacts||[];
-      updateStorage(d.storage);
-      updateSystem(d.system);
-      render();
+      if(activeTab === "status"){
+        updateStorage(d.storage);
+        updateSystem(d.system);
+        render();
+      }
       tryPendingDetails();
     }).catch(function(e){
-      rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
-        "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
+      if(!opts.silent){
+        rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
+          "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
+      }
     });
+  }
+  function refresh(){
+    return refreshArtifacts();
   }
 
   // ---------- theme toggle ----------
   function syncLiveIndicator(){
     var pill=el("liveIndicator");
-    if(pill) pill.classList.toggle("active", authReady && !document.hidden);
+    if(!pill) return;
+    var live = authReady && !document.hidden && activeTab === "status" && !uploadFormActive();
+    pill.classList.toggle("active", live);
+    pill.title = live
+      ? "Status polling active on the Dashboard tab"
+      : (uploadFormActive()
+        ? "Live polling paused while you compose an upload"
+        : "Live polling runs on the Dashboard tab");
   }
   (function(){
     var btn=el("themeBtn");
@@ -2237,8 +2289,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(pollTimer) clearTimeout(pollTimer);
     pollTimer=setTimeout(function(){
       if(!document.hidden && authReady){
-        if(activeTab==="status"){ refresh(); refreshImports(); }
-        else { refresh(); }
+        if(activeTab === "status"){
+          refreshArtifacts();
+          refreshImports();
+        } else if(!uploadFormActive()){
+          refreshArtifacts({ silent: true });
+        }
       }
       syncLiveIndicator();
       schedulePoll();
@@ -2247,7 +2303,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   document.addEventListener("visibilitychange", function(){
     if(!document.hidden && authReady && authBootstrapComplete){
       scheduleRevalidate();
-      refresh(); refreshImports();
+      if(activeTab === "status" && !uploadFormActive()){
+        refreshArtifacts();
+        refreshImports();
+      }
     }
     syncLiveIndicator();
   });

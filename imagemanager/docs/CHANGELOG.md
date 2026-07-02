@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.49
+
+**Background refresh no longer disrupts upload forms:**
+Periodic polling and session checks could reload or re-render the UI while
+the user was selecting a file or namespace on the Upload / URL Import tabs,
+clearing the file input and form fields.
+
+- **`refreshArtifacts()`:** Dashboard tab updates KPIs, storage ops cards, and
+  the artifacts table; other tabs fetch data silently without touching form DOM.
+- **`uploadFormActive()`:** Detects in-progress upload form state (file selected,
+  namespace, name, license, URL import fields). Poll pauses entirely while set;
+  session loss is deferred (same pattern as `uploadInFlight`).
+- **Session probes:** `probeSession()` / `verifyKeycloakSession()` skip while
+  the upload form is active; tab-focus revalidation debounce increased to 2s.
+- **Live indicator:** Shows paused state while composing an upload.
+- **`renderImports()`:** No longer triggers artifact table re-render off the
+  Dashboard tab.
+
 ## v0.0.48
 
 **Pre-upload duplicate check (replace dialog before transfer):**
