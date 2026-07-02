@@ -51,6 +51,12 @@ spec:
             type: string
           metadata:
             type: object
+          spec:
+            description: |-
+              ImageManagerArtifactSpec is intentionally empty. The controller is the sole
+              writer and only updates status; spec exists so EDA CE backward-compatibility
+              checks do not nil-deref on a missing spec schema during manifest upgrades.
+            type: object
           status:
             description: |-
               ImageManagerArtifactStatus is a launcher-dashlet row for one tracked image.

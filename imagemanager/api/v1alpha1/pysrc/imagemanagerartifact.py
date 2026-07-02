@@ -19,6 +19,24 @@ Y_OPEN = 'open'
 IMAGEMANAGERARTIFACT_SCHEMA = eda.Schema(group='imagemanager.eda.edacommunity.com', version='v1alpha1', kind='ImageManagerArtifact')
 
 
+class ImageManagerArtifactSpec:
+    def __init__(
+        self,
+    ):
+        pass
+
+    def to_input(self):  # pragma: no cover
+        _rval = {}
+        return _rval
+
+    @staticmethod
+    def from_input(obj) -> 'ImageManagerArtifactSpec | None':
+        if obj:
+            return ImageManagerArtifactSpec(
+            )
+        return None  # pragma: no cover
+
+
 class ImageManagerArtifactStatus:
     def __init__(
         self,

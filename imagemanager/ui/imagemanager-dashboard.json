@@ -1,29 +1,29 @@
 {
-  "uuid": "87cb914c-be8a-4307-96c7-f13f1c0f96c1",
+  "uuid": "1fc6d9e9-d2ab-425a-9c9e-f8dbbacdf793",
   "name": "Image Manager",
-  "version": "0.0.8",
+  "version": "0.0.9",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-01T23:00:00Z",
+  "lastChanged": "2026-07-02T09:00:00Z",
   "screens": [
     {
       "name": "Image Manager",
-      "uuid": "74ab93e9-e40e-4531-a123-fe95bca00cd3",
+      "uuid": "184b4d5e-134d-4736-aeb6-290fe2ccd7f7",
       "screenType": "dashboard",
       "partOfNav": true,
       "startScreen": true,
       "type": "screen",
       "components": [
         {
-          "uuid": "80cd13be-63b6-4712-ae3c-8b1e98884271",
+          "uuid": "658f6e57-9d70-4e50-85b6-4543160ecc3a",
           "type": "flexRow",
           "flexDirection": "row",
           "horizontalAlignment": "start",
           "verticalAlignment": "start",
           "components": [
             {
-              "uuid": "49f01a81-82e1-471b-b972-e43d6971e3c4",
+              "uuid": "5fafee68-f3e0-4c59-8778-f74ffbf2992f",
               "type": "dashletDataView",
               "title": "Image Manager",
               "subtitle": "Tracked images and Artifact download status — click View to open the full UI",

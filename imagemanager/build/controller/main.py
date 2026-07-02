@@ -33,11 +33,14 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.8"
+VERSION = "v0.0.9"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
 RECONCILE_INTERVAL = int(os.environ.get("RECONCILE_INTERVAL", "60"))
+STARTUP_DELAY_SECONDS = int(os.environ.get("STARTUP_DELAY_SECONDS", "45"))
+LAUNCHER_SYNC_GRACE_SECONDS = int(os.environ.get("LAUNCHER_SYNC_GRACE_SECONDS", "300"))
+_MAX_RECONCILE_BACKOFF = int(os.environ.get("MAX_RECONCILE_BACKOFF", "300"))
 
 CRD_GROUP = "imagemanager.eda.edacommunity.com"
 CRD_VERSION = "v1alpha1"
@@ -57,6 +60,8 @@ shutdown_event = threading.Event()
 _last_status_hash = None
 _import_lock = threading.Lock()
 _import_running = False
+_startup_monotonic = time.monotonic()
+_consecutive_reconcile_errors = 0
 
 
 def _setup_logging():
@@ -207,6 +212,14 @@ def main():
 
     _ensure_default_cr()
 
+    if STARTUP_DELAY_SECONDS > 0:
+        logger.info("Deferring first reconcile for %ds so EDA install can settle",
+                    STARTUP_DELAY_SECONDS)
+        if shutdown_event.wait(timeout=STARTUP_DELAY_SECONDS):
+            logger.info("Controller shutting down during startup delay")
+            fileserver.stop_file_server()
+            return
+
     while not shutdown_event.is_set():
         cycle_start = time.time()
         cfg = _read_config()
@@ -214,13 +227,18 @@ def main():
 
         health, message = "ok", "All systems operational"
         tracked = []
+        reconcile_failed = False
+        global _consecutive_reconcile_errors
         try:
             tracked = fileserver.build_tracked_list()
             bad = [t for t in tracked if t.get("downloadStatus") in ("Error", "Failed")]
             if bad:
                 health = "degraded"
                 message = f"{len(bad)} artifact(s) reported Error/Failed by eda-asvr"
+            _consecutive_reconcile_errors = 0
         except Exception as e:
+            reconcile_failed = True
+            _consecutive_reconcile_errors += 1
             health, message = "degraded", f"reconcile error: {e}"
             logger.warning("Reconcile listing failed: %s", e)
 
@@ -228,7 +246,11 @@ def main():
         fileserver.write_healthz(health, now_str)
         _update_status(health, message, tracked)
         try:
-            artifact_launcher.sync_launcher_rows(tracked)
+            artifact_launcher.sync_launcher_rows(
+                tracked,
+                startup_monotonic=_startup_monotonic,
+                grace_seconds=LAUNCHER_SYNC_GRACE_SECONDS,
+            )
         except Exception as e:
             logger.warning("Launcher artifact sync failed: %s", e)
 
@@ -236,7 +258,14 @@ def main():
 
         logger.info("Reconcile done: %d tracked upload(s), health=%s (%dms)",
                     len(tracked), health, int((time.time() - cycle_start) * 1000))
-        shutdown_event.wait(timeout=RECONCILE_INTERVAL)
+        wait = RECONCILE_INTERVAL
+        if reconcile_failed:
+            wait = min(
+                RECONCILE_INTERVAL * (2 ** min(_consecutive_reconcile_errors - 1, 4)),
+                _MAX_RECONCILE_BACKOFF,
+            )
+            logger.info("Backing off reconcile for %ds after error", wait)
+        shutdown_event.wait(timeout=wait)
 
     logger.info("Controller shutting down")
     fileserver.stop_file_server()

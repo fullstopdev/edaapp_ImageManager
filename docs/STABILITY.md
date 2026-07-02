@@ -13,6 +13,7 @@ Research and fixes: 2026-07-01. Reference app: **cable-map** (`ghcr.io/eda-labs/
 | Stuck terminating pod / probe failures on upgrade | No graceful HTTPS shutdown on SIGTERM | v0.0.3 |
 | SR-SIM pulls fail after reinstall | DaemonSet `hosts.toml` redirect left on nodes | v0.0.3 (`preStop` cleanup) |
 | Node-agent pod survives app uninstall | DaemonSet pod template lacked `eda.nokia.com/app: eda-imagemanager`; blocking `preStop` delayed teardown | **v0.0.7** |
+| CE pod crash on v0.0.8 install; no dashboard | `ImageManagerArtifact` CRD had no `spec` schema; CE `propertiesBackwardCompatible` nil-deref | **v0.0.9** |
 | Invalid ClusterRole admission noise | `namespace` on cluster-scoped `imagemanager-viewer` | v0.0.3 |
 
 ### Runtime / cluster load (v0.0.6 and earlier)
@@ -33,11 +34,23 @@ Observed on the lab cluster (2026-07-01): no OOM kills; controller reconcile ~12
 2. **Slower, smarter reconcile** — default interval **60s** (`RECONCILE_INTERVAL` env); skip ImageManagerConfig status PUT when payload unchanged (SHA-256).
 3. **Non-blocking imports** — `ImageImport` URL downloads run in a background thread.
 4. **UI/API cache** — `build_tracked_list()` cached 8s; Status tab polls every **10s** (was 5s).
-5. **Safer node-agent** — `NODE_AGENT_ENABLED=false` skips all `hosts.toml` writes (heartbeat only); default resync **120s**; scale DaemonSet to 0 when SR-SIM is unused:
+5. **Safer node-agent** — `NODE_AGENT_ENABLED=false` skips all `hosts.toml` writes (heartbeat only); default resync **120s**; App Store setting **Enable SR-SIM node agent** (`nodeAgentEnabled`); scale DaemonSet to 0 when SR-SIM is unused:
    ```bash
    kubectl scale daemonset eda-imagemanager-node-agent -n eda-system --replicas=0
    ```
-6. **Resource limits** — unchanged from v0.0.3+ (controller 256Mi/512Mi; node-agent 32Mi/128Mi), aligned with cable-map discipline.
+6. **Clean uninstall** — DaemonSet pod template labels match Deployment (`eda.nokia.com/app: eda-imagemanager` + `eda.nokia.com/component: node-agent`); removed blocking `preStop`; `terminationGracePeriodSeconds: 10`. Manual cleanup if upgrading from v0.0.6:
+   ```bash
+   kubectl delete daemonset eda-imagemanager-node-agent -n eda-system --ignore-not-found
+   ```
+7. **Resource limits** — unchanged from v0.0.3+ (controller 256Mi/512Mi; node-agent 32Mi/128Mi), aligned with cable-map discipline.
+
+## v0.0.9 mitigations
+
+1. **CE install crash fix** — empty `ImageManagerArtifactSpec` in CRD/OpenAPI so manifest backward-compat checks succeed.
+2. **Startup grace** — controller waits **45s** before first reconcile (`STARTUP_DELAY_SECONDS`).
+3. **Error backoff** — reconcile interval doubles on consecutive failures (cap `MAX_RECONCILE_BACKOFF`, default 300s).
+4. **Deferred launcher sync** — skip `ImageManagerArtifact` CR sync for **5m** when there are no uploads (`LAUNCHER_SYNC_GRACE_SECONDS`).
+5. **Node-agent init** — DaemonSet init container waits for controller `/healthz` before writing containerd redirects.
 
 ## Cable-map vs Image Manager (complexity)
 

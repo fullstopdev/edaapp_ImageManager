@@ -33,6 +33,7 @@ type ImageManagerArtifact struct {
 	metav1.TypeMeta   `json:",inline"`
 	metav1.ObjectMeta `json:"metadata,omitempty"`
 
+	Spec   ImageManagerArtifactSpec   `json:"spec,omitempty"`
 	Status ImageManagerArtifactStatus `json:"status,omitempty"`
 }
 

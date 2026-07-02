@@ -16,6 +16,12 @@ limitations under the License.
 
 package v1alpha1
 
+// ImageManagerArtifactSpec is intentionally empty. The controller is the sole
+// writer and only updates status; spec exists so EDA CE backward-compatibility
+// checks do not nil-deref on a missing spec schema during manifest upgrades.
+type ImageManagerArtifactSpec struct {
+}
+
 // ImageManagerArtifactStatus is a launcher-dashlet row for one tracked image.
 // The controller is the sole writer; rows mirror PVC uploads and managed
 // Artifact CRs so the EDA nav table can query a flat CR list (EQL cannot

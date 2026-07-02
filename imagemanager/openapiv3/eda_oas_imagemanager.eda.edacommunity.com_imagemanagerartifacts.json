@@ -13,6 +13,14 @@
     "metadata": {
       "type": "object"
     },
+    "spec": {
+      "description": "ImageManagerArtifactSpec is intentionally empty. The controller is the sole\nwriter and only updates status; spec exists so EDA CE backward-compatibility\nchecks do not nil-deref on a missing spec schema during manifest upgrades.",
+      "type": "object",
+      "title": "Specification",
+      "x-eda-nokia-com": {
+        "ui-order-priority": 30
+      }
+    },
     "status": {
       "description": "ImageManagerArtifactStatus is a launcher-dashlet row for one tracked image.\nThe controller is the sole writer; rows mirror PVC uploads and managed\nArtifact CRs so the EDA nav table can query a flat CR list (EQL cannot\nnavigate into ImageManagerConfig.status.artifacts arrays).",
       "type": "object",
