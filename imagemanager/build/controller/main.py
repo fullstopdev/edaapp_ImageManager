@@ -36,7 +36,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.18"
+VERSION = "v0.0.19"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -98,6 +98,9 @@ def _start_status_publisher_daemon():
                            _status_daemon_proc.returncode)
             _status_daemon_proc = None
             return
+        # A fresh daemon has an empty desired-set cache (and the aggregator
+        # purged the old stream's rows) — force the next sync to resend all.
+        app_status.reset_publisher_state()
         logger.info("status-publisher daemon started (pid %d)", _status_daemon_proc.pid)
     except OSError as e:
         logger.warning("failed to start status-publisher daemon: %s", e)

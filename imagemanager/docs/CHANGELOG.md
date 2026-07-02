@@ -1,5 +1,36 @@
 # Changelog
 
+## v0.0.19
+
+Publisher redesign after live debugging against eda-sa — fixes stale rows for
+good and makes every dashboard update land in under a second:
+
+- **Root cause found (live-verified):** state DB launcher rows are EPHEMERAL —
+  the aggregator purges all rows a publisher wrote the moment its gRPC stream
+  ends. Whole-table deletes are rejected (`unknown oneof data_type` in eda-sa
+  logs) but per-row predicate deletes work. And the daemon could wedge forever
+  on a dead stream (no deadlines anywhere): a wedged daemon kept the deleted
+  image's row frozen on the dashboard for hours — the "still shows Available"
+  bug.
+- **Daemon now owns the desired row set:** every payload is the full state;
+  the daemon diffs against what it published on the current stream (per-row
+  predicate deletes for removed images, adds for changes) and automatically
+  REPLAYS everything whenever the stream is rebuilt (eda-sa restart, wedge
+  recovery), because the server dropped it all.
+- **No more wedges:** all sends run under a 10s watchdog that cancels the
+  stream context, marks it broken and rebuilds on the next tick. Aggregator
+  per-row errors are now logged instead of silently discarded.
+- **Faster + simpler transport:** the controller writes payloads straight to
+  the daemon's unix socket (no subprocess per publish); the client half-closes
+  the socket so the daemon sees EOF immediately (a missing half-close was
+  costing a silent multi-second stall per publish).
+- **Dropped schema-registration RPCs:** tables auto-create on first add; the
+  old create-style calls used a message shape the server can't parse and just
+  spammed eda-sa error logs.
+- Daemon restarts reset the sync snapshot so the full state is re-pushed
+  (previously the change-detector could keep the dashboard empty forever
+  after a daemon restart).
+
 ## v0.0.18
 
 Event-driven dashboard sync (EDK/cable-map parity) — no more polling lag:

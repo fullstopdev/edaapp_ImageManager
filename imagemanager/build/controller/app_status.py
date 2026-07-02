@@ -1,34 +1,63 @@
 """
-Publish Image Manager launcher rows to EDA app status (.cluster.apps.imagemanager.status).
+Publish Image Manager launcher rows to the EDA state DB
+(.cluster.apps.imagemanager.{app,status}) via the status-publisher daemon.
 
 Cable-map writes dashboard rows via EDK gRPC to the state aggregator; CR-based EQL
 does not work here because CE ignores our cluster-scoped CRDs (InvalidNamespaceOrGvk)
 and nested ImageManagerConfig.status.artifacts arrays are not flat-table queryable.
 
-This module shells out to the bundled Go status-publisher binary (mTLS to eda-aggsvr).
+The Go daemon owns the aggregator stream AND the desired row set: state DB rows
+are ephemeral (the aggregator purges them whenever the publishing stream ends),
+so the daemon replays everything on each reconnect. This module just hands the
+daemon the full desired row set over its unix socket whenever anything changed.
 """
 
 import json
 import logging
 import os
-import subprocess
+import socket
 import threading
 from urllib.parse import quote
 
 logger = logging.getLogger("app_status")
 
-_PUBLISHER = os.environ.get(
-    "STATUS_PUBLISHER_BIN",
-    os.path.join(os.path.dirname(__file__), "status-publisher"),
-)
+_SOCKET = os.environ.get("STATUS_PUBLISHER_SOCKET", "/tmp/imagemanager-status.sock")
 _STATUS_BASE = ".cluster.apps.imagemanager.status"   # per-image rows
 _APP_BASE = ".cluster.apps.imagemanager.app"          # single service/server row
 _HTTPPROXY_PATH = "/core/httpproxy/v1/imagemanager/"
 _SERVICE_LABEL = "Image Manager"
 APP_VERSION = [""]   # set by main at startup; shown in the dashboard app table
 _last_synced = [None]   # last successfully-synced desired dict (skip no-op sends)
-_purged_stale = [False]  # first sync of this process wipes rows from prior installs
 _sync_lock = threading.Lock()
+
+
+def reset_publisher_state():
+    """Forget the last-synced snapshot. Called when the daemon is (re)started:
+    a new daemon process has an empty desired-set cache, so the next sync must
+    push the full state even if our rows did not change."""
+    with _sync_lock:
+        _last_synced[0] = None
+
+
+def _send_to_daemon(data):
+    """Write one payload to the daemon socket, wait for OK/ERR. Raises on error."""
+    conn = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+    conn.settimeout(12)
+    try:
+        conn.connect(_SOCKET)
+        conn.sendall(data)
+        conn.shutdown(socket.SHUT_WR)
+        chunks = []
+        while True:
+            b = conn.recv(4096)
+            if not b:
+                break
+            chunks.append(b)
+        resp = b"".join(chunks).decode("utf-8", errors="replace").strip()
+        if resp and not resp.startswith("OK"):
+            raise RuntimeError(resp[:500])
+    finally:
+        conn.close()
 
 
 def _row_id(row):
@@ -89,13 +118,9 @@ def sync_app_status_rows(tracked_rows, health=None):
       .cluster.apps.imagemanager.app     -> one service/server row
       .cluster.apps.imagemanager.status  -> one row per tracked image
 
-    No-op (no publisher spawn, no gRPC traffic) when nothing changed since the
-    last successful sync, so callers can invoke this at a high frequency.
+    No-op (no socket traffic) when nothing changed since the last successful
+    sync, so callers can invoke this at a high frequency.
     """
-    if not os.path.isfile(_PUBLISHER):
-        logger.debug("status-publisher binary missing at %s; skipping app status sync", _PUBLISHER)
-        return
-
     if health is None:
         bad = [r for r in tracked_rows
                if r.get("downloadStatus") in ("Error", "Failed")]
@@ -125,41 +150,19 @@ def sync_app_status_rows(tracked_rows, health=None):
         }
 
     with _sync_lock:
-        if desired == _last_synced[0] and _purged_stale[0]:
+        if desired == _last_synced[0]:
             return
-        # Targeted per-row deletes ({.id=="..."} predicates) are silently
-        # ignored by the aggregator (Send errors only surface on the recv
-        # side), which left deleted images on the dashboard forever. Subtree
-        # deletes ARE reliable (proven by the reinstall purge), so rebuild the
-        # whole image table on every publish: wipe .status, then re-add the
-        # current rows — the daemon sends deletes before adds on one ordered
-        # stream. The .app row needs no delete: its add overwrites in place.
-        deletes = [_STATUS_BASE]
-        if not _purged_stale[0]:
-            # Once per process, also wipe .app so orphans from a previous
-            # install (possibly with a deleted PVC) never linger.
-            deletes.append(_APP_BASE)
-        payload = {
-            "adds": list(desired.values()),
-            "deletes": deletes,
-        }
-
+        # The payload is always the FULL desired row set; the daemon diffs it
+        # against what it already published on the current stream (issuing
+        # per-row predicate deletes for removed ids) and replays everything
+        # after a stream/daemon restart, because the aggregator purges all
+        # rows when the publishing stream ends.
+        payload = {"adds": list(desired.values())}
         data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
         try:
-            proc = subprocess.run(
-                [_PUBLISHER],
-                input=data,
-                capture_output=True,
-                timeout=25,
-                check=False,
-            )
-        except (OSError, subprocess.TimeoutExpired) as e:
+            _send_to_daemon(data)
+        except (OSError, RuntimeError) as e:
             logger.warning("app status sync failed: %s", e)
             return
-        if proc.returncode != 0:
-            err = (proc.stderr or proc.stdout or b"").decode("utf-8", errors="replace").strip()
-            logger.warning("app status sync failed (exit %d): %s", proc.returncode, err[:500])
-            return
         _last_synced[0] = desired
-        _purged_stale[0] = True
         logger.info("app status sync: %d row(s)", len(desired))
