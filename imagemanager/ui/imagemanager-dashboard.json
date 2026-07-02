@@ -1,7 +1,7 @@
 {
   "uuid": "1fc6d9e9-d2ab-425a-9c9e-f8dbbacdf793",
   "name": "Image Manager",
-  "version": "0.0.10",
+  "version": "0.0.11",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
