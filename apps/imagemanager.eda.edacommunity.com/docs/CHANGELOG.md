@@ -2,6 +2,21 @@
 
 ## v0.0.10
 
+UI redesign (cable-map pro look, dashboard-first):
+
+- New layered-image brand logo (appbar + favicon).
+- **Dashboard** is now the start tab: KPI overview cards (Images / Available /
+  In progress / Failed), storage gauge, live artifact + URL-import tables,
+  manual Refresh button.
+- Adaptive reactive polling: 4s while uploads/downloads are in flight, 12s at
+  rest, fully paused while the browser tab is hidden; Live pill reflects it.
+- Seamless SSO from the dashboard View link: silent Keycloak `check-sso` runs
+  first in **both** the EDA iframe and a new tab, reusing the existing EDA
+  session with no redirect and no re-login; the OIDC redirect flow is only a
+  fallback. Expired sessions self-heal on the next API call the same way.
+- Authorization unchanged and enforced server-side: EDA OIDC + `ALLOWED_ROLES`
+  (`imagemanager-viewer` EDA ClusterRole or `system-administrator`).
+
 Fix empty Image Manager launcher table (cable-map app-status parity):
 
 - **Root cause:** EQL on `imagemanagerconfigs` / `imagemanagerartifacts` returns no rows — CE logs
