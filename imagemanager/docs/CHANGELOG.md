@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.0.42
+
+**Fix EDA logout not signing out the app (v0.0.41 regression):** v0.0.41 probes
+only checked `GET /api/config`, which returns 200 while the `im_session` cookie
+is still valid (up to 8h) even after EDA GUI logout. The separate post-auth
+`logoutKc` watcher could also fail silently without clearing the UI.
+
+- **Keycloak revalidation (cable-map pattern):** After bootstrap (`authReady`),
+  a singleton Keycloak client runs with `checkLoginIframe: true` and
+  `onAuthLogout` in the embedded iframe (not skipped). Periodic probes and
+  tab-focus revalidation call `verifyKeycloakSession()` (`updateToken` +
+  token re-exchange) instead of trusting the local cookie alone.
+- **Cross-tab logout:** `storage` events on `kc-*` keys and `pageshow` after
+  bfcache restore trigger immediate revalidation.
+- **Sign out button restored:** Confirm dialog → `POST /oauth/session/logout`
+  → `kc.logout({ redirectUri })` (fallback `/oauth/logout` server redirect).
+- **v0.0.40 bootstrap preserved:** Silent SSO still uses `checkLoginIframe:
+  false`; valid `im_session` on first load is trusted without pre-bootstrap
+  Keycloak polling. v0.0.36 upload-in-flight guard unchanged.
+
 ## v0.0.41
 
 **EDA logout sync (cable-map pattern, v0.0.40-safe):** After bootstrap completes
