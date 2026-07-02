@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.25
+
+Replace the approximate Nokia wordmark with the same **`eda.svg`** connect logo
+used by cable-map (served at `/assets/eda.svg`, displayed at 26px height).
+
 ## v0.0.24
 
 Single top app bar (cable-map / EDA style) — removed the stacked two-tier header
