@@ -2,7 +2,7 @@
 
 Unified single-page app, dashboard-first: Dashboard (KPIs + live artifact
 status) | Upload | URL Import | Settings. Cable-map / Nokia EDA design
-language: dark/light theme, branded logo + favicon, KPI overview cards,
+language: dark/light theme, Nokia logo + EDA two-tier header, KPI overview cards,
 adaptive live polling (4s while work is in flight, 12s at rest, paused when
 the tab is hidden). Sign-in is silent SSO against the EDA Keycloak session
 (new tab from the dashboard or embedded iframe), falling back to the OIDC
@@ -42,6 +42,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --radius-sm:6px; --radius-md:10px; --radius-lg:12px;
     --shadow-sm:0 1px 2px rgba(0,0,0,.35); --shadow-md:0 4px 16px rgba(0,0,0,.35);
     --shadow-lg:0 12px 32px rgba(0,0,0,.45);
+    --chrome-top-bg:#0a0a0a; --chrome-top-fg:#f3f5f8; --chrome-top-muted:#9aa3b2;
+    --chrome-sub-bg:#121212; --chrome-sub-fg:#f3f5f8; --chrome-sub-muted:#9aa3b2;
+    --chrome-line:#2a2a2a; --chrome-logo:#005aff;
     --transition:180ms cubic-bezier(.4,0,.2,1);
     color-scheme:dark;
   }
@@ -59,13 +62,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --neutral-fg:#687282; --neutral-bg:#eef0f3; --neutral-bd:#cfcfcf;
     --snack-bg:#2b303a; --snack-fg:#f3f5f8; --snack-action:#9cc0ff;
     --scrim:rgba(16,24,36,.46);
+    --chrome-top-bg:#eceef2; --chrome-top-fg:#0b1119; --chrome-top-muted:#4a5563;
+    --chrome-sub-bg:#fff; --chrome-sub-fg:#0b1119; --chrome-sub-muted:#4a5563;
+    --chrome-line:#d5dbe3; --chrome-logo:#005aff;
+    --transition:180ms cubic-bezier(.4,0,.2,1);
     color-scheme:light;
   }
   * { box-sizing:border-box; }
   html, body { min-height:100%; }
   body {
     margin:0; background:var(--bg); color:var(--fg);
-    font:14px/1.55 system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font:14px/1.55 "Nokia Pure Text",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
   }
   html.eda-embedded { --bg:#121c2a; --surface:#121c2a; }
@@ -80,39 +87,78 @@ INDEX_HTML = r"""<!DOCTYPE html>
   @keyframes badgePop { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
   @keyframes indet { 0%{margin-left:-42%} 100%{margin-left:102%} }
 
-  /* AppBar — cable-map MUI AppBar parity (dense, flat, border-only) */
-  .appbar {
-    position:sticky; top:0; z-index:30; height:52px; padding:0 16px 0 18px;
-    background:var(--surface); border-bottom:1px solid var(--line);
-    display:flex; align-items:center; gap:16px; flex-shrink:0;
+  /* EDA chrome — two-tier header (Nokia logo + platform title, then app sub-bar) */
+  .eda-chrome {
+    position:sticky; top:0; z-index:30; flex-shrink:0;
+    border-bottom:1px solid var(--chrome-line);
   }
-  .brand { display:flex; align-items:center; gap:10px; min-width:0; flex:1 1 auto; }
-  .brand-logo {
-    width:28px; height:28px; flex:none; display:flex; align-items:center; justify-content:center;
-    border-radius:6px; background:linear-gradient(145deg, var(--eda-blue-400), var(--eda-blue-600));
-    box-shadow:0 0 0 1px rgba(0,90,255,.22);
+  .eda-topbar {
+    height:48px; padding:0 20px;
+    background:var(--chrome-top-bg); color:var(--chrome-top-fg);
+    border-bottom:1px solid var(--chrome-line);
+    display:flex; align-items:center; gap:16px;
   }
-  .brand-logo svg { width:17px; height:17px; display:block; }
-  .brand-text { display:flex; flex-direction:column; gap:1px; min-width:0; }
-  .brand-row { display:flex; align-items:center; gap:8px; min-width:0; }
-  .brand-name {
-    font-size:15px; font-weight:500; letter-spacing:.015em; line-height:1.2; color:var(--fg);
+  .eda-topbar-brand {
+    display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 auto;
   }
+  .nokia-logo { height:13px; width:auto; display:block; flex:none; }
+  .eda-platform-title {
+    font-size:15px; font-weight:400; letter-spacing:.01em; line-height:1.2;
+    color:var(--chrome-top-fg); white-space:nowrap;
+  }
+  @media (max-width:640px){
+    .eda-platform-title { font-size:13px; }
+    .eda-topbar { padding:0 14px; }
+  }
+  .eda-topbar-actions {
+    margin-left:auto; display:flex; align-items:center; gap:2px; flex:none;
+  }
+  .eda-subbar {
+    height:44px; padding:0 20px;
+    background:var(--chrome-sub-bg); color:var(--chrome-sub-fg);
+    display:flex; align-items:center; gap:12px;
+  }
+  .eda-subbar-left { display:flex; align-items:center; gap:12px; min-width:0; flex:1 1 auto; }
+  .eda-crumb {
+    font-size:13px; font-weight:500; color:var(--chrome-sub-muted);
+    white-space:nowrap;
+  }
+  .eda-crumb-sep {
+    width:1px; height:18px; background:var(--chrome-line); flex:none;
+  }
+  .eda-app-title {
+    font-size:15px; font-weight:500; letter-spacing:.01em; color:var(--chrome-sub-fg);
+    white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .eda-topbar .user-chip {
+    border-color:color-mix(in srgb, var(--chrome-line) 85%, transparent);
+    background:color-mix(in srgb, var(--chrome-top-fg) 6%, transparent);
+    color:var(--chrome-top-fg);
+  }
+  .eda-topbar .btn.text.subtle { color:var(--chrome-top-muted); }
+  .eda-topbar .btn.text.subtle:hover { color:var(--chrome-top-fg); background:color-mix(in srgb, var(--chrome-top-fg) 8%, transparent); }
+  .eda-subbar-actions { margin-left:auto; display:flex; align-items:center; gap:8px; flex:none; }
   .ver-badge {
     display:inline-flex; align-items:center; flex:none;
     padding:1px 7px; border-radius:999px;
     font-size:10px; font-weight:600; letter-spacing:.05em;
-    font-family:var(--mono, ui-monospace, monospace);
+    font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
     color:var(--accent); background:var(--accent-soft);
     border:1px solid color-mix(in srgb, var(--accent) 30%, transparent);
     line-height:1.5;
   }
-  .brand-sub {
-    font-size:11px; font-weight:400; color:var(--muted); line-height:1.25;
-    white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:min(440px, 42vw);
+  .icon-btn {
+    width:36px; height:36px; padding:0; border:0; border-radius:50%;
+    background:transparent; color:var(--chrome-top-muted); cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center;
+    transition:background var(--transition), color var(--transition);
   }
-  @media (max-width:720px){ .brand-sub { display:none; } }
-  .appbar-actions { margin-left:auto; display:flex; align-items:center; gap:4px; flex:none; }
+  .icon-btn:hover { background:color-mix(in srgb, var(--chrome-top-fg) 8%, transparent); color:var(--chrome-top-fg); }
+  .icon-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .icon-btn svg { width:20px; height:20px; display:block; }
+  .icon-btn .icon-sun { display:none; }
+  html[data-theme="dark"] .icon-btn .icon-moon { display:none; }
+  html[data-theme="dark"] .icon-btn .icon-sun { display:block; }
   .live-pill {
     display:inline-flex; align-items:center; gap:6px;
     padding:4px 10px 4px 8px; border-radius:999px;
@@ -144,20 +190,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     box-shadow:0 0 0 2px var(--accent-soft);
   }
   @media (max-width:560px){ .user-chip .uname { display:none; } }
-
-  /* Theme toggle — EDA icon button (cable-map parity) */
-  .theme-btn {
-    width:32px; height:32px; padding:0; border:0; border-radius:var(--radius-sm);
-    background:transparent; color:var(--muted); cursor:pointer;
-    display:inline-flex; align-items:center; justify-content:center;
-    transition:background var(--transition), color var(--transition);
-  }
-  .theme-btn:hover { background:var(--state); color:var(--fg); }
-  .theme-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  .theme-btn svg { width:18px; height:18px; display:block; }
-  .theme-btn .icon-sun { display:none; }
-  html[data-theme="dark"] .theme-btn .icon-moon { display:none; }
-  html[data-theme="dark"] .theme-btn .icon-sun { display:block; }
 
   /* Buttons */
   .btn {
@@ -399,12 +431,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   .snackbar .saction:hover { background:var(--state); }
 
-  /* Embedded mode */
-  html.eda-embedded .appbar { display:none; }
+  /* Embedded mode — EDA shell already provides platform chrome */
+  html.eda-embedded .eda-chrome { display:none; }
   html.eda-embedded .app-shell { max-width:none; padding:16px 18px 40px; min-height:60vh; }
   html.eda-embedded .page-head { margin-top:0; }
-  html.eda-embedded .theme-btn { display:none; }
-  html.eda-embedded .live-pill { display:none; }
   #boot-shell { padding:12px 4px 8px; color:var(--muted); font-size:13px; }
   #boot-shell.hide { display:none; }
   .auth-banner {
@@ -520,40 +550,42 @@ INDEX_HTML = r"""<!DOCTYPE html>
     .form-actions .btn { width:100%; justify-content:center; }
   }
 </style>
-<script>try{var _e=window.self!==window.top;if(_e)document.documentElement.classList.add("eda-embedded");var _t=localStorage.getItem("imagemanager-theme")||"dark";document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
+<script>try{var _e=window.self!==window.top;if(_e)document.documentElement.classList.add("eda-embedded");var _s=localStorage.getItem("imagemanager-theme");var _t=_s||((window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark");document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
 </head>
 <body>
 <noscript><div style="padding:24px 20px;background:#121c2a;color:#e6edf3;font:14px sans-serif">
   Image Manager requires JavaScript. Enable it, or open
   <a href="/core/httpproxy/v1/imagemanager/" style="color:#4d8dff">/core/httpproxy/v1/imagemanager/</a>
   in a new tab.</div></noscript>
-<header class="appbar">
-  <div class="brand">
-    <span class="brand-logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <path d="M12 3l8 4.4-8 4.4-8-4.4L12 3z" fill="#fff" opacity=".95"/>
-        <path d="M4.4 12.6L12 16.8l7.6-4.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".72"/>
-        <path d="M4.4 16.6L12 20.8l7.6-4.2" stroke="#fff" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".42"/>
+<header class="eda-chrome">
+  <div class="eda-topbar">
+    <div class="eda-topbar-brand">
+      <svg class="nokia-logo" viewBox="0 0 63 12" xmlns="http://www.w3.org/2000/svg" aria-label="Nokia">
+        <path fill="#005AFF" fill-rule="evenodd" clip-rule="evenodd" d="M8.076 11.82H3.004L0 0.18h3.676l1.858 8.882L7.392 0.18h3.676L8.076 11.82zM13.308 11.82V0.18h3.676v11.64h-3.676zM22.044 11.82l5.772-11.64h4.356l-5.772 11.64h-4.356zm11.352 0V0.18h3.676v11.64H33.4zm9.588 0V0.18h3.676v11.64h-3.676zm12.384 0c3.852 0 6.132-2.232 6.132-5.784 0-3.552-2.28-5.784-6.132-5.784h-6.624v11.568h6.624zm-.396-9.072c2.376 0 3.708 1.296 3.708 3.348 0 2.052-1.332 3.348-3.708 3.348h-2.52V2.748h2.52zM62.244 11.82l-4.356-11.64H53.28L49.14 11.82h3.312l.792-2.232h5.148l.792 2.232h3.06zM54.396 7.572l1.548-4.356 1.548 4.356h-3.096z"/>
       </svg>
-    </span>
-    <div class="brand-text">
-      <span class="brand-row">
-        <span class="brand-name">Image Manager</span>
-        <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
-      </span>
-      <span class="brand-sub">Vendor NOS images for EDA bootstrap &amp; Digital Twin</span>
+      <span class="eda-platform-title">Event Driven Automation</span>
+    </div>
+    <div class="eda-topbar-actions">
+      <button type="button" id="themeBtn" class="icon-btn" title="Toggle light / dark appearance" aria-label="Toggle theme">
+        <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.5 5.5 0 0 1-4.4 2.26 5.5 5.5 0 0 1-5.45-6.19A9 9 0 0 0 12 3z"/></svg>
+        <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></svg>
+      </button>
+      <span id="userInfo" class="user-chip" style="display:none"><span class="avatar" id="avatar"></span><span class="uname" id="uname"></span></span>
+      <a id="signoutLink" class="btn text subtle ripple" title="Sign out of Image Manager">Sign out</a>
     </div>
   </div>
-  <div class="appbar-actions">
-    <span id="liveIndicator" class="live-pill" title="Status polling active on the Status tab">
-      <span class="live-dot" aria-hidden="true"></span><span class="live-label">Live</span>
-    </span>
-    <span id="userInfo" class="user-chip" style="display:none"><span class="avatar" id="avatar"></span><span class="uname" id="uname"></span></span>
-    <button type="button" id="themeBtn" class="theme-btn" title="Toggle light / dark appearance" aria-label="Toggle theme">
-      <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.5 5.5 0 0 1-4.4 2.26 5.5 5.5 0 0 1-5.45-6.19A9 9 0 0 0 12 3z"/></svg>
-      <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></svg>
-    </button>
-    <a id="signoutLink" class="btn text subtle ripple" title="Sign out of Image Manager">Sign out</a>
+  <div class="eda-subbar">
+    <div class="eda-subbar-left">
+      <span class="eda-crumb">Node Onboarding</span>
+      <span class="eda-crumb-sep" aria-hidden="true"></span>
+      <span class="eda-app-title">Image Manager</span>
+      <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
+    </div>
+    <div class="eda-subbar-actions">
+      <span id="liveIndicator" class="live-pill" title="Status polling active on the Dashboard tab">
+        <span class="live-dot" aria-hidden="true"></span><span class="live-label">Live</span>
+      </span>
+    </div>
   </div>
 </header>
 

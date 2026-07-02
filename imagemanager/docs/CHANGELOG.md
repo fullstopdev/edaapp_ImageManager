@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.22
+
+EDA platform header parity for the standalone web UI (opened via **View** in a new tab):
+
+- Two-tier chrome: **Nokia** wordmark + **Event Driven Automation** top bar, then
+  **Node Onboarding → Image Manager** sub-bar with Live indicator.
+- Theme toggle (moon/sun icon) switches light/dark; preference is persisted and
+  defaults to the OS `prefers-color-scheme` on first visit.
+- Embedded iframe view unchanged — EDA shell provides its own chrome.
+
 ## v0.0.21
 
 Move EDA nav launcher from **Topology** to **Node Onboarding** (`ui.category: Node
