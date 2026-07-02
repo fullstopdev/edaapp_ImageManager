@@ -37,6 +37,8 @@ import time
 import zipfile
 from datetime import datetime, timezone
 
+import artifact
+
 logger = logging.getLogger("uploads")
 
 DATA_DIR = "/data/uploads"
@@ -762,6 +764,10 @@ def reconcile_install_identity(config_uid):
             stored[:8], uid[:8],
         )
         wipe_all_uploads()
+        try:
+            artifact.delete_all_managed_artifacts()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to delete managed Artifacts on reinstall: %s", e)
     if uid:
         os.makedirs(marker_dir, exist_ok=True)
         with open(INSTALL_MARKER, "w") as f:
@@ -785,6 +791,37 @@ def read_meta(upload_id):
             return json.load(f)
     except (FileNotFoundError, ValueError):
         return None
+
+
+def upload_has_local_bytes(meta, upload_id=None):
+    """True when meta.json and the backing image file(s) still exist on PVC."""
+    if not meta:
+        return False
+    upload_id = upload_id or meta.get("uploadId") or meta.get("artifactName")
+    if not upload_id or "/" in upload_id or "\\" in upload_id or ".." in upload_id:
+        return False
+    base = os.path.join(DATA_DIR, upload_id)
+    if not os.path.isfile(os.path.join(base, "meta.json")):
+        return False
+    nos = meta.get("nos") or "srl"
+    if nos == "srsim":
+        _, blobs_dir = srsim_meta(upload_id)
+        if not blobs_dir or not os.path.isdir(blobs_dir):
+            return False
+        digest = meta.get("manifestDigest") or ""
+        h = digest.split(":", 1)[1] if ":" in digest else ""
+        return bool(h and os.path.isfile(os.path.join(blobs_dir, h)))
+    arts = meta.get("artifacts")
+    if arts:
+        for a in arts:
+            fn = a.get("filename")
+            if not fn or not os.path.isfile(os.path.join(base, fn)):
+                return False
+        return True
+    filename = meta.get("filename")
+    if not filename:
+        return False
+    return os.path.isfile(os.path.join(base, filename))
 
 
 def list_meta():

@@ -129,6 +129,74 @@ def list_managed_artifacts():
     )
 
 
+def upload_id_from_cr(art):
+    """Best-effort upload id from spec.remoteFileUrl (/files/<uploadId>/...)."""
+    spec = art.get("spec", {}) or {}
+    remote = spec.get("remoteFileUrl") or {}
+    url = remote.get("fileUrl") or remote.get("md5Url") or ""
+    if "/files/" not in url:
+        return ""
+    try:
+        after = url.split("/files/", 1)[1]
+        return after.split("/", 1)[0]
+    except (IndexError, ValueError):
+        return ""
+
+
+def delete_all_managed_artifacts():
+    """Remove every Artifact CR labelled managed by Image Manager."""
+    deleted = 0
+    for art in list_managed_artifacts():
+        md = art.get("metadata", {}) or {}
+        ns = md.get("namespace", "")
+        name = md.get("name", "")
+        if not ns or not name:
+            continue
+        try:
+            delete_artifact(ns, name)
+            deleted += 1
+        except Exception as e:  # noqa: BLE001 — best-effort bulk cleanup
+            logger.warning("Failed to delete managed Artifact %s/%s: %s", ns, name, e)
+    if deleted:
+        logger.info("Deleted %d managed Artifact CR(s)", deleted)
+    return deleted
+
+
+def purge_orphan_managed_artifacts(list_meta_fn):
+    """Drop managed Artifact CRs with no PVC meta (post-uninstall / reinstall ghosts).
+
+    Keeps CRs that are still downloading; eda-asvr-only copies (Available/Ready)
+    without local bytes are removed so the dashboard matches PVC state.
+    """
+    covered = set()
+    for m in list_meta_fn():
+        covered.add((m.get("namespace"), m.get("uploadId") or m.get("artifactName")))
+
+    removed = 0
+    for art in list_managed_artifacts():
+        md = art.get("metadata", {}) or {}
+        if md.get("deletionTimestamp"):
+            continue
+        ns = md.get("namespace", "")
+        name = md.get("name", "")
+        if not ns or not name or name.endswith("-md5"):
+            continue
+        upload_id = upload_id_from_cr(art) or name
+        if (ns, upload_id) in covered:
+            continue
+        ds = ((art.get("status") or {}).get("downloadStatus") or "").lower()
+        if ds in ("downloading", "pending", "inprogress", "in progress"):
+            continue
+        try:
+            delete_artifact(ns, name)
+            removed += 1
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Failed to purge orphan Artifact %s/%s: %s", ns, name, e)
+    if removed:
+        logger.info("Purged %d orphan managed Artifact CR(s) (no PVC meta)", removed)
+    return removed
+
+
 def artifact_status(namespace, name):
     """Live status dict for one Artifact, or {} if missing."""
     cr = k8s.read_namespaced_cr(

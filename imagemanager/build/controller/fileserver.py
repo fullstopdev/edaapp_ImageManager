@@ -1066,24 +1066,82 @@ def _nodeprofile_yaml(nos, version, namespace, prof_name, image_entries, yang_ur
 
 _VER_RE = import_common._VER_RE  # noqa: SLF001 - shared regex, single source of truth
 
+_ASVR_ONLY_REASON = (
+    "No local copy on Image Manager PVC — only cached on eda-asvr; "
+    "re-upload the vendor .zip to restore a durable copy."
+)
+_NO_LOCAL_REASON = "Local PVC files missing — re-upload to restore."
+
+
+def _resolve_download_status(local_ok, cr_st):
+    """Combine PVC bytes with Artifact CR status (PVC is the durable origin)."""
+    cr_st = cr_st or {}
+    ds = (cr_st.get("downloadStatus") or "").strip()
+    reason = cr_st.get("statusReason") or ""
+    if local_ok:
+        if ds == "Available":
+            return "Available", reason
+        if ds in ("Error", "Failed"):
+            return ds, reason
+        if ds in ("InProgress", "Downloading", "Pending") or ds:
+            return "InProgress", reason
+        return "NoArtifact", reason
+    if ds == "Available":
+        return "AsvrOnly", _ASVR_ONLY_REASON
+    if ds in ("Error", "Failed"):
+        return ds, reason or _NO_LOCAL_REASON
+    if ds in ("InProgress", "Downloading", "Pending"):
+        return "InProgress", reason
+    if ds:
+        return "NoLocalCopy", reason or _NO_LOCAL_REASON
+    return "NoLocalCopy", _NO_LOCAL_REASON
+
+
+def _aggregate_download_status(statuses, reasons):
+    """Worst-case aggregation for multi-artifact uploads."""
+    if not statuses:
+        return "NoArtifact", ""
+    if any(s in ("Error", "Failed") for s in statuses):
+        err_reasons = [r for s, r in zip(statuses, reasons) if s in ("Error", "Failed") and r]
+        return "Error", "; ".join(err_reasons[:4])
+    if any(s == "AsvrOnly" for s in statuses):
+        return "AsvrOnly", _ASVR_ONLY_REASON
+    if any(s == "NoLocalCopy" for s in statuses):
+        return "NoLocalCopy", _NO_LOCAL_REASON
+    if any(s == "NoArtifact" for s in statuses):
+        return "NoArtifact", ""
+    if statuses and all(s == "Available" for s in statuses):
+        return "Available", ""
+    if any(s == "InProgress" for s in statuses):
+        prog = [r for s, r in zip(statuses, reasons) if s == "InProgress" and r]
+        return "InProgress", "; ".join(prog[:4])
+    return statuses[0], (reasons[0] if reasons else "")
+
 
 def _single_row(m, status_by_key):
     """Tracked-list row for a one-file image (SR Linux .bin / raw upload)."""
     ns = m.get("namespace")
+    upload_id = m.get("uploadId") or m.get("artifactName")
+    local_ok = uploads.upload_has_local_bytes(m, upload_id)
     st = status_by_key.get((ns, m.get("artifactName")), {})
     md5_name = m.get("md5ArtifactName")
     md5_st = status_by_key.get((ns, md5_name), {}) if md5_name else {}
-    # NodeProfile paths are only valid once eda-asvr reports the file Available.
-    image_path = (artifact.asvr_path(st.get("internalUrl", ""))
-                  if st.get("downloadStatus") == "Available" else "")
-    md5_path = (artifact.asvr_path(md5_st.get("internalUrl", ""))
-                if md5_st.get("downloadStatus") == "Available" else "")
-    display = m.get("displayName") or m.get("artifactName") or ""
-    nos = m.get("nos") or "srl"
-    # optional YANG schema-profile artifact (auto-fetched or uploaded)
+    img_ds, img_reason = _resolve_download_status(local_ok, st)
+    md5_ds, md5_reason = _resolve_download_status(local_ok, md5_st) if md5_name else ("", "")
     yang = m.get("yang") or {}
     yst = status_by_key.get((ns, yang.get("artifactName")), {}) if yang.get("artifactName") else {}
-    yang_url = yst.get("internalUrl", "") if yst.get("downloadStatus") == "Available" else ""
+    yang_ds, yang_reason = _resolve_download_status(local_ok, yst) if yang.get("artifactName") else (None, "")
+    agg_statuses = [s for s in (img_ds, md5_ds, yang_ds) if s]
+    agg_reasons = [r for r in (img_reason, md5_reason, yang_reason) if r]
+    download_status, status_reason = _aggregate_download_status(agg_statuses, agg_reasons)
+    # NodeProfile paths only when PVC + eda-asvr both report Available.
+    image_path = (artifact.asvr_path(st.get("internalUrl", ""))
+                  if img_ds == "Available" else "")
+    md5_path = (artifact.asvr_path(md5_st.get("internalUrl", ""))
+                if md5_ds == "Available" else "")
+    display = m.get("displayName") or m.get("artifactName") or ""
+    nos = m.get("nos") or "srl"
+    yang_url = yst.get("internalUrl", "") if yang_ds == "Available" else ""
     lic = m.get("license") or {}
     license_cm = lic.get("configMap") or ""
     snippet = ""
@@ -1111,14 +1169,15 @@ def _single_row(m, status_by_key):
         "sizeBytes": m.get("sizeBytes"),
         "md5": m.get("md5"),
         "storedAt": m.get("storedAt"),
-        "downloadStatus": st.get("downloadStatus", "NoArtifact" if not st else ""),
-        "statusReason": st.get("statusReason", ""),
+        "downloadStatus": download_status,
+        "statusReason": status_reason,
+        "localCopy": local_ok,
         "imagePath": image_path,
         "md5Path": md5_path,
         "snippet": snippet,
         "nodeProfileExample": example,
         "nos": nos,
-        "yangStatus": (yst.get("downloadStatus") if yang.get("artifactName") else None),
+        "yangStatus": yang_ds,
         "license": license_cm or None,
         "licenseNos": lic.get("nos"),
     }
@@ -1129,13 +1188,15 @@ def _group_row(m, status_by_key):
     Artifacts. Status is aggregated; the NodeProfile snippet lists every image
     path (plus the yang: URL) once all parts report Available."""
     ns = m.get("namespace")
+    upload_id = m.get("uploadId")
+    local_ok = uploads.upload_has_local_bytes(m, upload_id)
     arts = m.get("artifacts") or []
     yang = m.get("yang") or None
-    statuses, image_lines, image_entries, reasons = [], [], [], []
+    statuses, agg_reasons, image_lines, image_entries = [], [], [], []
     all_images_available = bool(arts)
     for a in arts:
         st = status_by_key.get((ns, a.get("artifactName")), {})
-        ds = st.get("downloadStatus", "NoArtifact" if not st else "")
+        ds, part_reason = _resolve_download_status(local_ok, st)
         statuses.append(ds)
         ipath = ""
         if ds == "Available":
@@ -1144,18 +1205,19 @@ def _group_row(m, status_by_key):
                 all_images_available = False
         else:
             all_images_available = False
-        if st.get("statusReason"):
-            reasons.append((a.get("filename") or "") + ": " + st["statusReason"])
+        if part_reason:
+            agg_reasons.append((a.get("filename") or "") + ": " + part_reason)
         # per-file md5 artifact (SR OS imageMd5, from the zip's md5sums.txt)
         mpath = ""
         md5_name = a.get("md5ArtifactName")
         if md5_name:
             mst = status_by_key.get((ns, md5_name), {})
-            statuses.append(mst.get("downloadStatus", "NoArtifact" if not mst else ""))
-            if mst.get("downloadStatus") == "Available":
+            mds, md5_reason = _resolve_download_status(local_ok, mst)
+            statuses.append(mds)
+            if mds == "Available":
                 mpath = artifact.asvr_path(mst.get("internalUrl", ""))
-            if mst.get("statusReason"):
-                reasons.append((a.get("filename") or "") + ".md5: " + mst["statusReason"])
+            if md5_reason:
+                agg_reasons.append((a.get("filename") or "") + ".md5: " + md5_reason)
         if ipath:
             image_lines.append("  - image: " + ipath
                                + ("\n    imageMd5: " + mpath if mpath else ""))
@@ -1164,21 +1226,14 @@ def _group_row(m, status_by_key):
     yang_status, yang_url = None, ""
     if yang:
         yst = status_by_key.get((ns, yang.get("artifactName")), {})
-        yang_status = yst.get("downloadStatus", "NoArtifact" if not yst else "")
+        yang_status, yang_reason = _resolve_download_status(local_ok, yst)
         statuses.append(yang_status)
         if yang_status == "Available":
             yang_url = yst.get("internalUrl", "")    # yang: takes a full asvr URL
-        if yst.get("statusReason"):
-            reasons.append("yang: " + yst["statusReason"])
+        if yang_reason:
+            agg_reasons.append("yang: " + yang_reason)
 
-    if statuses and all(s == "Available" for s in statuses):
-        agg = "Available"
-    elif any(s in ("Error", "Failed") for s in statuses):
-        agg = "Error"
-    elif statuses:
-        agg = "InProgress"
-    else:
-        agg = "NoArtifact"
+    agg, agg_reason = _aggregate_download_status(statuses, agg_reasons)
 
     lic = m.get("license") or {}
     license_cm = lic.get("configMap") or ""
@@ -1203,7 +1258,8 @@ def _group_row(m, status_by_key):
         "sizeBytes": m.get("sizeBytes"),
         "storedAt": m.get("storedAt"),
         "downloadStatus": agg,
-        "statusReason": "; ".join(reasons[:4]),
+        "statusReason": agg_reason,
+        "localCopy": local_ok,
         "snippet": snippet,
         "nodeProfileExample": example,
         "nos": "sros",
@@ -1264,12 +1320,15 @@ def _srsim_row(m, status_by_key):
     Details popup yields a copy-ready sim NodeProfile (containerImage)."""
     ns = m.get("namespace")
     artifact_name = m.get("artifactName")
+    upload_id = m.get("uploadId") or artifact_name
+    local_ok = uploads.upload_has_local_bytes(m, upload_id)
     tag = m.get("imageTag") or m.get("version") or "latest"
     version = m.get("version") or "<version>"
     container_image = f"{sim_registry_host()}/{artifact_name}:{tag}"
     yang = m.get("yang") or {}
     yst = status_by_key.get((ns, yang.get("artifactName")), {}) if yang.get("artifactName") else {}
-    yang_url = yst.get("internalUrl", "") if yst.get("downloadStatus") == "Available" else ""
+    yang_ds, _ = _resolve_download_status(local_ok, yst) if yang.get("artifactName") else (None, "")
+    yang_url = yst.get("internalUrl", "") if yang_ds == "Available" else ""
     lic = m.get("license") or {}
     license_cm = lic.get("configMap") or ""
     snippet = ("operatingSystem: sros\nversion: " + version
@@ -1278,6 +1337,8 @@ def _srsim_row(m, status_by_key):
                + ("\nlicense: " + license_cm if license_cm else ""))
     example = _sim_nodeprofile_yaml(version, ns, artifact_name or "my-sim-nodeprofile",
                                     container_image, yang_url, license_cm or None)
+    download_status = "Ready" if local_ok else "NoLocalCopy"
+    status_reason = "" if local_ok else _NO_LOCAL_REASON
     return {
         "uploadId": m.get("uploadId"),
         "name": artifact_name,
@@ -1287,35 +1348,22 @@ def _srsim_row(m, status_by_key):
         "filePath": "",
         "sizeBytes": m.get("sizeBytes"),
         "storedAt": m.get("storedAt"),
-        "downloadStatus": "Ready",
-        "statusReason": "",
-        "snippet": snippet,
-        "nodeProfileExample": example,
+        "downloadStatus": download_status,
+        "statusReason": status_reason,
+        "localCopy": local_ok,
+        "snippet": snippet if local_ok else "",
+        "nodeProfileExample": example if local_ok else "",
         "nos": "srsim",
         "containerImage": container_image,
         "imageTag": tag,
-        "yangStatus": (yst.get("downloadStatus") if yang.get("artifactName") else None),
+        "yangStatus": yang_ds,
         "license": license_cm or None,
         "licenseNos": lic.get("nos"),
     }
 
 
-def _upload_id_from_artifact(art):
-    """Best-effort upload id from spec.remoteFileUrl (/files/<uploadId>/...)."""
-    spec = art.get("spec", {}) or {}
-    remote = spec.get("remoteFileUrl") or {}
-    url = remote.get("fileUrl") or remote.get("md5Url") or ""
-    if "/files/" not in url:
-        return ""
-    try:
-        after = url.split("/files/", 1)[1]
-        return after.split("/", 1)[0]
-    except (IndexError, ValueError):
-        return ""
-
-
 def _artifact_fallback_rows(status_by_key, covered_keys):
-    """Rows for managed Artifacts with no PVC meta (e.g. after pod/PVC recycle)."""
+    """Rows for managed Artifacts with no PVC meta (in-flight or asvr-only ghosts)."""
     groups = {}
     for art in artifact.list_managed_artifacts():
         md = art.get("metadata", {}) or {}
@@ -1327,12 +1375,13 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
         # without this check it would resurrect as a ghost "Available" row.
         if md.get("deletionTimestamp"):
             continue
-        upload_id = _upload_id_from_artifact(art) or name
+        upload_id = artifact.upload_id_from_cr(art) or name
         key = (ns, upload_id)
         if key in covered_keys:
             continue
         spec = art.get("spec", {}) or {}
         st = status_by_key.get((ns, name), {})
+        download_status, status_reason = _resolve_download_status(False, st)
         groups.setdefault(key, {
             "uploadId": upload_id,
             "name": name,
@@ -1342,8 +1391,9 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
             "filePath": spec.get("filePath", ""),
             "sizeBytes": None,
             "storedAt": md.get("creationTimestamp", ""),
-            "downloadStatus": st.get("downloadStatus", ""),
-            "statusReason": st.get("statusReason", ""),
+            "downloadStatus": download_status,
+            "statusReason": status_reason,
+            "localCopy": False,
             "externalUrl": st.get("externalUrl", ""),
         })
     return list(groups.values())

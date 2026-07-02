@@ -275,6 +275,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .c-InProgress { background:var(--info-bg); color:var(--info-fg); border-color:var(--info-bd); }
   .c-Error, .c-Failed { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
   .c-NoArtifact, .c-empty { background:var(--neutral-bg); color:var(--neutral-fg); border-color:var(--neutral-bd); }
+  .c-AsvrOnly, .c-NoLocalCopy { background:var(--warn-bg); color:var(--warn-fg); border-color:var(--warn-bd); }
   .c-Uploading, .c-Unzipping, .c-Processing, .c-Pending {
     background:var(--info-bg); color:var(--info-fg); border-color:var(--info-bd);
   }
@@ -1005,7 +1006,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function initKeycloakWatch(){
     if(sessionWatchReady){
       var kc = getKeycloak();
-      return Promise.resolve(!!(kc && kc.authenticated));
+      if(!kc) return Promise.resolve(false);
+      if(typeof kc.updateToken === "function"){
+        return kc.updateToken(-1).then(function(){
+          return !!kc.authenticated;
+        }).catch(function(){
+          return false;
+        });
+      }
+      return Promise.resolve(!!kc.authenticated);
     }
     return loadKeycloakScript(false).then(function(){
       var kc = getKeycloak();
@@ -1021,17 +1030,40 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return ok;
     });
   }
+  function verifyKeycloakSession(){
+    if(uploadInFlight()) return Promise.resolve(true);
+    if(!authBootstrapComplete || !authReady) return Promise.resolve(true);
+    return loadKeycloakScript(false).then(function(){
+      return initKeycloakWatch();
+    }).then(function(ok){
+      if(!ok) return false;
+      var kc = getKeycloak();
+      if(!kc || !kc.authenticated) return false;
+      if(typeof kc.updateToken !== "function") return true;
+      return kc.updateToken(-1).then(function(){
+        return !!kc.authenticated;
+      }).catch(function(){
+        return false;
+      });
+    }).catch(function(){
+      return false;
+    });
+  }
   function probeSession(force){
     if(uploadInFlight()) return Promise.resolve(true);
     if(!authBootstrapComplete && !force) return Promise.resolve(true);
     if(!authReady && !force) return Promise.resolve(true);
+    function afterConfigOk(){
+      if(authReady && authBootstrapComplete) return verifyKeycloakSession();
+      return true;
+    }
     return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status === 200) return true;
+      if(r.status === 200) return afterConfigOk();
       if(r.status !== 401) return true;
       return silentSso({ quiet: true }).then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
-          return true;
+          return verifyKeycloakSession();
         }
         return false;
       }).catch(function(){ return false; });
@@ -1039,7 +1071,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function startSessionWatchers(){
     if(!authReady) return;
-    initKeycloakWatch().catch(function(){
+    initKeycloakWatch().then(function(ok){
+      if(!ok && authBootstrapComplete){
+        handleSessionLoss("Your EDA session has ended.");
+      }
+    }).catch(function(){
       sessionWatchReady = false;
     });
   }
@@ -1426,8 +1462,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var fn=pendingReplace; pendingReplace=null; closeModal(); if(fn) fn();
   });
   function askReplace(artifactName, namespace, onReplace){
-    replaceLead.innerHTML='Artifact <b class="mono">'+esc(artifactName)+'</b> already exists in '+
-      '<span class="mono">'+esc(namespace)+'</span>. Replace it?';
+    replaceLead.innerHTML='Image <b class="mono">'+esc(artifactName)+'</b> already exists'
+      +(namespace?' in <span class="mono">'+esc(namespace)+'</span>':'')+'. Replace it?';
     pendingReplace=onReplace;
     openModal(el("replaceDialog"));
   }
@@ -1621,6 +1657,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function chip(s){
     var c=s||"NoArtifact";
     if(c==="NoArtifact") return '<span class="chip c-NoArtifact" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">Needs republish</span>';
+    if(c==="AsvrOnly") return '<span class="chip c-AsvrOnly" title="eda-asvr still hosts this image but Image Manager PVC has no durable copy — re-upload to restore">Asvr only</span>';
+    if(c==="NoLocalCopy") return '<span class="chip c-NoLocalCopy" title="meta.json or image files missing from Image Manager PVC — re-upload to restore">No local copy</span>';
     return '<span class="chip c-'+c+'">'+esc(c)+'</span>';
   }
   function fmtElapsed(sec){ sec=Math.max(0,Math.floor(sec)); var m=Math.floor(sec/60), s=sec%60;
@@ -1847,7 +1885,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   });
 
   // sorting
-  var STATUS_RANK={Available:0,Ready:0,InProgress:1,Error:2,Failed:3,NoArtifact:4};
+  var STATUS_RANK={Available:0,Ready:0,InProgress:1,AsvrOnly:2,NoLocalCopy:2,Error:3,Failed:4,NoArtifact:5};
   var currentData=[], sortState=null;  // null = server order (newest first)
   function sortData(arr){
     if(!sortState) return arr;
@@ -2163,7 +2201,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   });
   window.addEventListener("storage", function(ev){
     if(!authBootstrapComplete || !authReady) return;
-    if(ev.key === null || ev.key.indexOf("kc-") === 0) scheduleRevalidate();
+    if(ev.key === null || ev.key.indexOf("kc-") === 0){
+      verifyKeycloakSession().then(function(ok){
+        if(!ok) handleSessionLoss("Your EDA session has ended.");
+      }).catch(function(){});
+    }
   });
   window.addEventListener("pageshow", function(ev){
     if(ev.persisted && authBootstrapComplete && authReady) scheduleRevalidate();

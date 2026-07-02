@@ -1,5 +1,43 @@
 # Changelog
 
+## v0.0.45
+
+**Fix EDA logout not signing out Image Manager (v0.0.43–v0.0.44 regression):**
+Periodic session probes trusted `GET /api/config` alone, which stays 200 while
+the `im_session` cookie is valid (up to 8h) even after EDA GUI logout.
+`checkLoginIframe` / `onAuthLogout` could fire, but storage/tab revalidation
+also called the same cookie-only probe.
+
+- **`verifyKeycloakSession()` restored:** After bootstrap, probes and
+  cross-tab `kc-*` storage events revalidate the singleton Keycloak client
+  (`check-sso` + `updateToken`) instead of trusting the local cookie alone.
+- **Immediate SSO loss on watch init:** If post-auth `initKeycloakWatch()` finds
+  no Keycloak session, the UI runs the same path as **Sign out**
+  (`POST /oauth/session/logout` + embedded top reload).
+- **v0.0.44 bootstrap preserved:** Silent SSO still uses `checkLoginIframe:
+  false`; upload-in-flight guard and deduped script load unchanged.
+
+**Fix ghost artifacts after uninstall/reinstall:**
+Managed Artifact CRs could survive app uninstall while the PVC was wiped (or
+reinstall identity reset storage), and `_artifact_fallback_rows` listed them as
+**Available** with empty size (eda-asvr still had the old copy).
+
+- **Reinstall:** `reconcile_install_identity` now deletes all managed Artifact
+  CRs when `ImageManagerConfig` UID changes (alongside PVC wipe).
+- **Uninstall:** SIGTERM handler deletes managed Artifact CRs before removing
+  the PVC when the Deployment has a `deletionTimestamp`.
+- **Startup purge:** `reconcile_local_uploads` removes orphan managed CRs with
+  no matching PVC `meta.json` (except in-flight downloads).
+- **PVC-truthful status:** Dashboard rows use Image Manager PVC as the durable
+  origin. **Available** / **Ready** only when local bytes exist *and* the
+  Artifact CR reports Available. Missing PVC with an asvr-only copy shows
+  **Asvr only**; missing files with meta present show **No local copy**; PVC
+  present without CR shows **Needs republish** (existing repush_from_local).
+
+**Replace on duplicate upload:**
+HTTP 409 conflicts from upload and URL import open a confirm dialog; confirming
+retries with `replace=true` (drops Artifact CRs only via `_ensure_replace`).
+
 ## v0.0.44
 
 **Fix embedded bootstrap + EDA logout UX (v0.0.43 regression):**

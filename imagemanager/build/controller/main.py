@@ -37,7 +37,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.44"
+VERSION = "v0.0.45"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -136,7 +136,7 @@ def _setup_logging():
 
 
 def _maybe_delete_pvc_on_uninstall():
-    """When the Deployment is being removed (app uninstall), delete our PVC.
+    """When the Deployment is being removed (app uninstall), drop PVC + managed CRs.
 
     Recreate upgrades only terminate the pod — the Deployment itself stays, so
     its deletionTimestamp is absent and the claim is kept.
@@ -148,7 +148,12 @@ def _maybe_delete_pvc_on_uninstall():
         obj = k8s.read_namespaced_workload("apps/v1", "deployments", dep, ns)
         if not obj or not (obj.get("metadata") or {}).get("deletionTimestamp"):
             return
-        logger.info("Deployment %s is deleting — removing PVC %s", dep, pvc)
+        logger.info("Deployment %s is deleting — removing managed Artifacts and PVC %s",
+                    dep, pvc)
+        try:
+            artifact.delete_all_managed_artifacts()
+        except Exception as e:  # noqa: BLE001
+            logger.warning("Managed Artifact delete on uninstall failed: %s", e)
         k8s.delete_pvc(pvc, ns)
     except Exception as e:  # noqa: BLE001 — best-effort uninstall cleanup
         logger.warning("PVC delete on uninstall failed: %s", e)

@@ -321,6 +321,10 @@ def reconcile_local_uploads(config):
         "repushFailed": [],
         "incompleteBytes": 0,
     }
+    try:
+        artifact.purge_orphan_managed_artifacts(uploads.list_meta)
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Orphan Artifact purge failed: %s", e)
     report["staleWorkDirsRemoved"] = uploads.cleanup_stale_work_dirs()
     report["workDirsActive"] = uploads.count_work_dirs()
     incomplete = uploads.scan_incomplete_dirs()
