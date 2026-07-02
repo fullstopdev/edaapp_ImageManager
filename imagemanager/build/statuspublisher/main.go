@@ -41,6 +41,7 @@ type inputRow struct {
 	Status    string `json:"status"`
 	Open      string `json:"open"`
 	URL       string `json:"url"`
+	Details   string `json:"details"`
 }
 
 type inputPayload struct {
@@ -56,6 +57,7 @@ type statusRow struct {
 	Status    string `json:"status"`
 	Open      string `json:"open"`
 	URL       string `json:"url"`
+	Details   string `json:"details"`
 }
 
 type publisher struct {
@@ -63,6 +65,8 @@ type publisher struct {
 	client pb.StateAggregatorIfClient
 	conn   *grpc.ClientConn
 	db     grpc.BidiStreamingClient[pb.StateDbRequest, pb.StateDbResponse]
+	gen    int  // stream generation; bumped on reconnect
+	broken bool // set by recvLoop when the current stream dies
 }
 
 func main() {
@@ -185,7 +189,7 @@ func newPublisher() (*publisher, error) {
 		return nil, fmt.Errorf("StateDbUpdate stream: %w", err)
 	}
 	p := &publisher{client: client, conn: conn, db: dbStream}
-	go p.recvLoop()
+	go p.recvLoop(p.db, p.gen)
 	return p, nil
 }
 
@@ -198,12 +202,17 @@ func (p *publisher) close() {
 	}
 }
 
-func (p *publisher) recvLoop() {
+func (p *publisher) recvLoop(stream grpc.BidiStreamingClient[pb.StateDbRequest, pb.StateDbResponse], gen int) {
 	for {
-		resp, err := p.db.Recv()
+		resp, err := stream.Recv()
 		if err != nil {
+			p.mu.Lock()
+			if p.gen == gen {
+				p.broken = true // next sync() reconnects before sending
+			}
+			p.mu.Unlock()
 			if debugEnabled() {
-				fmt.Fprintf(os.Stderr, "status-publisher: recv loop: %v\n", err)
+				fmt.Fprintf(os.Stderr, "status-publisher: recv loop (gen %d): %v\n", gen, err)
 			}
 			return
 		}
@@ -214,10 +223,56 @@ func (p *publisher) recvLoop() {
 	}
 }
 
+// reconnect re-dials the aggregator and reopens the StateDbUpdate stream.
+// Called (with p.mu held) after a Send fails, e.g. when eda-sa restarted.
+func (p *publisher) reconnect() error {
+	if p.db != nil {
+		_ = p.db.CloseSend()
+	}
+	if p.conn != nil {
+		_ = p.conn.Close()
+	}
+	conn, err := dialAggregator()
+	if err != nil {
+		return fmt.Errorf("reconnect dial: %w", err)
+	}
+	client := pb.NewStateAggregatorIfClient(conn)
+	ctx := context.Background()
+	if err := registerSchema(ctx, client); err != nil {
+		fmt.Fprintf(os.Stderr, "status-publisher: schema re-registration warning: %v\n", err)
+	}
+	dbStream, err := client.StateDbUpdate(ctx)
+	if err != nil {
+		conn.Close()
+		return fmt.Errorf("reconnect StateDbUpdate stream: %w", err)
+	}
+	p.client, p.conn, p.db = client, conn, dbStream
+	p.gen++
+	p.broken = false
+	go p.recvLoop(dbStream, p.gen)
+	fmt.Fprintf(os.Stderr, "status-publisher: reconnected to aggregator\n")
+	return nil
+}
+
 func (p *publisher) sync(payload inputPayload) error {
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.broken {
+		if rerr := p.reconnect(); rerr != nil {
+			return rerr
+		}
+	}
+	if err := p.sendAll(payload); err != nil {
+		// Stream likely broke (aggregator restart); reconnect and replay once.
+		if rerr := p.reconnect(); rerr != nil {
+			return fmt.Errorf("%v (reconnect failed: %v)", err, rerr)
+		}
+		return p.sendAll(payload)
+	}
+	return nil
+}
 
+func (p *publisher) sendAll(payload inputPayload) error {
 	for _, del := range payload.Deletes {
 		if strings.TrimSpace(del) == "" {
 			continue
@@ -244,6 +299,7 @@ func (p *publisher) sync(payload inputPayload) error {
 			Status:    row.Status,
 			Open:      row.Open,
 			URL:       row.URL,
+			Details:   row.Details,
 		})
 		if err != nil {
 			return err

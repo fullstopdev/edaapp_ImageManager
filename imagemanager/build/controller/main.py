@@ -35,14 +35,14 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.12"
+VERSION = "v0.0.13"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
 RECONCILE_INTERVAL = int(os.environ.get("RECONCILE_INTERVAL", "60"))
-# Fast loop: rebuild artifact status + push dashboard rows every few seconds
+# Fast loop: rebuild artifact status + push dashboard rows every couple seconds
 # (sync_app_status_rows is a no-op when nothing changed, so this is cheap).
-STATUS_SYNC_INTERVAL = int(os.environ.get("STATUS_SYNC_INTERVAL", "5"))
+STATUS_SYNC_INTERVAL = int(os.environ.get("STATUS_SYNC_INTERVAL", "2"))
 STARTUP_DELAY_SECONDS = int(os.environ.get("STARTUP_DELAY_SECONDS", "45"))
 LAUNCHER_SYNC_GRACE_SECONDS = int(os.environ.get("LAUNCHER_SYNC_GRACE_SECONDS", "0"))
 _MAX_RECONCILE_BACKOFF = int(os.environ.get("MAX_RECONCILE_BACKOFF", "300"))
@@ -226,15 +226,21 @@ def _status_sync_loop():
     Runs every STATUS_SYNC_INTERVAL seconds: rebuilds the tracked list (short
     shared cache in fileserver) and syncs `.cluster.apps.imagemanager.status`.
     The sync itself skips the gRPC round-trip when rows are unchanged, so the
-    steady-state cost is one K8s list call per tick.
+    steady-state cost is one K8s list call per tick. Also restarts the
+    status-publisher daemon if it died (it would otherwise stay down until the
+    pod restarts, freezing the dashboard).
     """
     while not shutdown_event.is_set():
         try:
+            if _status_daemon_proc is not None and _status_daemon_proc.poll() is not None:
+                logger.warning("status-publisher daemon died (code %s); restarting",
+                               _status_daemon_proc.returncode)
+                _start_status_publisher_daemon()
             tracked = fileserver.build_tracked_list()
             app_status.sync_app_status_rows(tracked)
         except Exception as e:  # noqa: BLE001 - never kill the loop
             logger.debug("fast status sync failed: %s", e)
-        shutdown_event.wait(timeout=max(2, STATUS_SYNC_INTERVAL))
+        shutdown_event.wait(timeout=max(1, STATUS_SYNC_INTERVAL))
 
 
 def _run_imports_async(cfg):
@@ -270,6 +276,7 @@ def main():
         logger.error("Serving cert %s not present after 30s; server will fall back "
                      "to HTTP (probes/pulls will fail until cert mounts)", TLS_CRT)
     fileserver.set_config(_read_config())
+    fileserver.IMPORT_KICK[0] = lambda: _run_imports_async(_read_config())
     fileserver.start_file_server(PORT)
     fileserver.write_healthz("starting", None)
     _start_status_publisher_daemon()

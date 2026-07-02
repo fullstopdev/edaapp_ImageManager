@@ -66,6 +66,10 @@ IM_CONFIG_PLURAL = "imagemanagerconfigs"
 IM_IMPORT_PLURAL = "imageimports"
 IM_CONFIG_NAME = "default"
 
+# Set by main: zero-arg callable that kicks the ImageImport reconcile
+# immediately (so a URL import starts within seconds, not at the next tick).
+IMPORT_KICK = [None]
+
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
     "defaultArtifactNamespace": "eda",
@@ -818,6 +822,12 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": str(e)}, 502)
             return
         logger.info("URL import requested: %s/%s -> %s", namespace, cr_name, url)
+        kick = IMPORT_KICK[0]
+        if kick:
+            try:
+                kick()
+            except Exception as e:  # noqa: BLE001 - reconcile tick still picks it up
+                logger.debug("import kick failed: %s", e)
         self._send_json({"ok": True, "name": cr_name, "namespace": namespace})
 
     def _handle_license(self, q):
@@ -1254,6 +1264,10 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
         ns = md.get("namespace", "")
         name = md.get("name", "")
         if name.endswith("-md5"):
+            continue
+        # A deleted upload's Artifact CR lingers in Terminating for a while;
+        # without this check it would resurrect as a ghost "Available" row.
+        if md.get("deletionTimestamp"):
             continue
         upload_id = _upload_id_from_artifact(art) or name
         key = (ns, upload_id)

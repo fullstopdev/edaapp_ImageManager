@@ -1,11 +1,11 @@
 {
   "uuid": "1fc6d9e9-d2ab-425a-9c9e-f8dbbacdf793",
   "name": "Image Manager",
-  "version": "0.0.12",
+  "version": "0.0.13",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-02T11:00:00Z",
+  "lastChanged": "2026-07-02T11:20:00Z",
   "screens": [
     {
       "name": "Image Manager",
@@ -32,7 +32,7 @@
               "fillWidth": true,
               "showStatusBar": false,
               "showFilters": false,
-              "showInfoPanel": false,
+              "showInfoPanel": true,
               "navigationTarget": {
                 "edaRoute": "external",
                 "targetReference": "/core/httpproxy/v1/imagemanager/",
@@ -102,6 +102,14 @@
                         {
                           "fieldName": "id",
                           "label": "Id",
+                          "type": "string",
+                          "visible": false,
+                          "sortable": false,
+                          "width": "260px"
+                        },
+                        {
+                          "fieldName": "details",
+                          "label": "Details",
                           "type": "string",
                           "visible": false,
                           "sortable": false,

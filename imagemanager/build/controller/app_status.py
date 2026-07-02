@@ -26,6 +26,7 @@ _HTTPPROXY_PATH = "/core/httpproxy/v1/imagemanager/"
 _SERVICE_LABEL = "Image Manager"
 _last_known_ids = set()
 _last_synced = [None]   # last successfully-synced desired dict (skip no-op sends)
+_purged_stale = [False]  # first sync of this process wipes rows from prior installs
 _sync_lock = threading.Lock()
 
 
@@ -64,18 +65,28 @@ def sync_app_status_rows(tracked_rows):
             "status": row.get("downloadStatus") or row.get("health") or "",
             "open": "View",
             "url": deep_link,
+            # Shown in the dashlet info panel when a row is clicked (cable-map
+            # hidden-details pattern): the ready-to-paste NodeProfile YAML.
+            "details": row.get("nodeProfileExample") or row.get("snippet") or "",
         }
 
     with _sync_lock:
         global _last_known_ids
-        if desired == _last_synced[0]:
+        if desired == _last_synced[0] and _purged_stale[0]:
             return
+        deletes = []
+        if not _purged_stale[0]:
+            # Rows survive in the EDA state DB across app restarts/reinstalls;
+            # wipe the whole table once per process so orphans from a previous
+            # install (possibly with a deleted PVC) never linger.
+            deletes.append(_STATUS_BASE)
+        deletes.extend(
+            f'{_STATUS_BASE}{{.id=="{rid}"}}'
+            for rid in sorted(_last_known_ids - set(desired))
+        )
         payload = {
             "adds": list(desired.values()),
-            "deletes": [
-                f'{_STATUS_BASE}{{.id=="{rid}"}}'
-                for rid in sorted(_last_known_ids - set(desired))
-            ],
+            "deletes": deletes,
         }
 
         data = json.dumps(payload, separators=(",", ":")).encode("utf-8")
@@ -96,4 +107,5 @@ def sync_app_status_rows(tracked_rows):
             return
         _last_known_ids = set(desired)
         _last_synced[0] = desired
+        _purged_stale[0] = True
         logger.info("app status sync: %d row(s)", len(desired))
