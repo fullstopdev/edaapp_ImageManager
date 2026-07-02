@@ -84,9 +84,9 @@ Within a few minutes the Catalog shows **Operational = true** and **EDA Image Ma
 
 ### EDA navigation panel (launcher dashboard)
 
-From **v0.0.8** onward, the launcher appears under **Topology → Image Manager** (CloudUpgrade icon). The status card shows controller health (**Name, Status**) with a **View** link that opens the full upload UI in a new tab.
+From **v0.0.21** onward, the launcher appears under **Node Onboarding → Image Manager** (CloudUpgrade icon). The status card shows controller health (**Name, Status**) with a **View** link that opens the full upload UI in a new tab.
 
-**Upgrade to v0.0.8** from the App Store (or reinstall), then hard-refresh your browser (Ctrl+Shift+R / Cmd+Shift+R). Confirm **Topology → Image Manager** shows the launcher card. Non-admin users need the `imagemanager-viewer` EDA role (assigned automatically with default install settings) or `system-administrator`.
+**Upgrade to v0.0.21** from the App Store (or reinstall), then hard-refresh your browser (Ctrl+Shift+R / Cmd+Shift+R). Confirm **Node Onboarding → Image Manager** shows the launcher card. Non-admin users need the `imagemanager-viewer` EDA role (assigned automatically with default install settings) or `system-administrator`.
 
 If you installed **v0.0.6** or **v0.0.7**, the nav entry used `ui.category: System`, which EDA does not register for custom app views — upgrade to **v0.0.8**. If you installed **v0.0.3** or earlier, the nav entry used a custom `Image Manager` category that EDA does not render — upgrade to **v0.0.4+** to see the panel at all.
 
