@@ -19,7 +19,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="imagemanager-api-base" content="/core/httpproxy/v1/imagemanager">
 <title>EDA Image Manager</title>
-<link rel="icon" type="image/png" href="/core/httpproxy/v1/imagemanager/assets/nokia-logo.png">
+<link rel="icon" type="image/png" href="/core/httpproxy/v1/imagemanager/assets/nokia-n.png">
 <style>
   :root {
     --eda-blue-100:#e4f0ff; --eda-blue-400:#4092ff; --eda-blue-500:#005aff; --eda-blue-600:#005adf;
@@ -93,7 +93,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     display:flex; align-items:center; gap:16px; flex-shrink:0;
   }
   .appbar-brand { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 auto; }
-  .nokia-logo { height:14px; width:auto; display:block; flex:none; object-fit:contain; }
+  .nokia-logo { height:20px; width:auto; display:block; flex:none; object-fit:contain; }
   .appbar-title {
     font-size:15px; font-weight:400; letter-spacing:.01em; line-height:1.2;
     color:var(--chrome-top-fg); white-space:nowrap;
@@ -534,7 +534,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   in a new tab.</div></noscript>
 <header class="appbar">
   <div class="appbar-brand">
-    <img class="nokia-logo" src="/core/httpproxy/v1/imagemanager/assets/nokia-logo.png" alt="Nokia">
+    <img class="nokia-logo" src="/core/httpproxy/v1/imagemanager/assets/nokia-n.png" alt="Nokia">
     <span class="appbar-title">Image Manager</span>
     <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
   </div>
@@ -850,7 +850,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var maxBytes = 4096*1024*1024;
   var embedded = window.self !== window.top;
   var authReady = false;
+  var kcInstance = null;
+  var sessionCheckTimer = null;
   var SSO_TIMEOUT_MS = 15000;
+  var SESSION_CHECK_MS = 120000;
 
   function bootDone(){
     var b = document.getElementById("boot-shell");
@@ -862,6 +865,31 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!text){ b.className = "auth-banner"; b.textContent = ""; return; }
     b.className = "auth-banner show" + (kind === "err" ? " err" : "");
     b.textContent = text;
+  }
+  function resetAuthState(msg){
+    authReady = false;
+    var ui = document.getElementById("userInfo");
+    if(ui) ui.style.display = "none";
+    syncLiveIndicator();
+    if(msg) setAuthBanner("err", msg);
+  }
+  function clearServerSession(){
+    return fetch(api("/oauth/session/logout"), { method: "POST", credentials: "same-origin" })
+      .catch(function(){ return null; });
+  }
+  function scheduleSessionCheck(){
+    if(sessionCheckTimer) clearInterval(sessionCheckTimer);
+    sessionCheckTimer = setInterval(function(){
+      if(!authReady || document.hidden) return;
+      verifyKeycloakSession(false).then(function(ok){
+        if(ok) return;
+        if(embedded){
+          showFatal("Your EDA session has ended. Reload this page or sign in again from the EDA dashboard.");
+        } else {
+          window.location = apiBase + "/oauth/login";
+        }
+      }).catch(function(){});
+    }, SESSION_CHECK_MS);
   }
   function withTimeout(promise, ms, label){
     return new Promise(function(resolve, reject){
@@ -896,18 +924,69 @@ INDEX_HTML = r"""<!DOCTYPE html>
       headers: { "Authorization": "Bearer "+token, "Content-Type": "application/json" }
     }).then(function(r){ return r.json().then(function(j){ return {status:r.status, body:j}; }); });
   }
+  function getKeycloak(){
+    if(typeof Keycloak === "undefined") return null;
+    if(!kcInstance){
+      kcInstance = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
+      kcInstance.onTokenExpired = function(){
+        if(!authReady || !kcInstance) return;
+        kcInstance.updateToken(30).then(function(refreshed){
+          if(refreshed && kcInstance.token) return exchangeToken(kcInstance.token);
+          throw new Error("token refresh failed");
+        }).catch(function(){
+          clearServerSession().then(function(){
+            resetAuthState("Your EDA session has ended. Sign in again.");
+          });
+        });
+      };
+    }
+    return kcInstance;
+  }
+  function initKeycloakCheck(){
+    var kc = getKeycloak();
+    if(!kc) return Promise.reject(new Error("keycloak-js unavailable"));
+    return kc.init({
+      onLoad: "check-sso",
+      silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
+      checkLoginIframe: false
+    });
+  }
+  function verifyKeycloakSession(refreshBanner){
+    if(typeof refreshBanner === "undefined") refreshBanner = true;
+    return loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
+      return initKeycloakCheck();
+    }).then(function(ok){
+      var kc = getKeycloak();
+      if(!ok || !kc || !kc.authenticated || !kc.token){
+        return clearServerSession().then(function(){
+          resetAuthState(refreshBanner
+            ? "Your EDA session has ended. Sign in again."
+            : "");
+          return false;
+        });
+      }
+      return exchangeToken(kc.token).then(function(ex){
+        if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok) return true;
+        if(ex && ex.status === 403){
+          var err = new Error("forbidden");
+          err.exchange = ex;
+          throw err;
+        }
+        return clearServerSession().then(function(){
+          resetAuthState(refreshBanner
+            ? "Your EDA session has ended. Sign in again."
+            : "");
+          return false;
+        });
+      });
+    });
+  }
   function silentSso(){
     setAuthBanner("info", "Signing in\u2026");
     return withTimeout(
       loadScript("/core/proxy/v1/identity/js/keycloak.min.js").then(function(){
-        if(typeof Keycloak === "undefined") throw new Error("keycloak-js unavailable");
-        var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
-        return kc.init({
-          onLoad: "check-sso",
-          silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-          checkLoginIframe: false
-        }).then(function(ok){
-          if(ok && kc.token) return exchangeToken(kc.token);
+        return initKeycloakCheck().then(function(ok){
+          if(ok && kcInstance && kcInstance.token) return exchangeToken(kcInstance.token);
           return null;
         });
       }),
@@ -934,7 +1013,40 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function ensureAuth(){
     if(authReady) return Promise.resolve();
     return fetch(api("/api/config")).then(function(r){
-      if(r.status === 200){ authReady = true; return r.json(); }
+      if(r.status === 200){
+        return r.json().then(function(c){
+          // Local cookie may outlive the EDA Keycloak session — verify SSO still active.
+          return verifyKeycloakSession(false).then(function(ok){
+            if(ok){
+              authReady = true;
+              scheduleSessionCheck();
+              return c;
+            }
+            return silentSso().then(function(ex){
+              if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
+                authReady = true;
+                scheduleSessionCheck();
+                return fetch(api("/api/config")).then(function(r2){
+                  if(r2.status !== 200) throw new Error("config after sso");
+                  return r2.json();
+                });
+              }
+              if(ex && ex.status === 403){
+                var err = new Error("forbidden");
+                err.exchange = ex;
+                throw err;
+              }
+              if(!embedded){
+                window.location = apiBase + "/oauth/login";
+                throw new Error("redirect");
+              }
+              var err2 = new Error("sso failed");
+              err2.exchange = ex;
+              throw err2;
+            });
+          });
+        });
+      }
       if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
       // Silent SSO first (works in the EDA iframe AND a new tab opened from the
       // dashboard): reuse the browser's existing EDA Keycloak session, no
@@ -943,6 +1055,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return silentSso().then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
+          scheduleSessionCheck();
           return fetch(api("/api/config")).then(function(r2){
             if(r2.status !== 200) throw new Error("config after sso");
             return r2.json();
@@ -1607,9 +1720,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(activeTab !== "status") render();
   }
 
+  function handleAuthLoss(){
+    authReady = false;
+    syncLiveIndicator();
+    return clearServerSession().then(function(){ return ensureAuth(); });
+  }
+
   function refreshImports(){
     fetchJson(api("/api/imports")).then(function(res){
-      if(res.status===401){ authReady=false; return ensureAuth().then(function(){ refreshImports(); }); }
+      if(res.status===401){ return handleAuthLoss().then(function(){ refreshImports(); }); }
       if(!res.ok){
         importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
           "Could not load URL imports (HTTP "+res.status+").")+'</td></tr>';
@@ -1768,8 +1887,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function refresh(){
     fetchJson(api("/api/artifacts")).then(function(res){
       if(res.status===401){
-        authReady=false;
-        return ensureAuth().then(function(){ refresh(); });
+        return handleAuthLoss().then(function(){ refresh(); });
       }
       if(!res.ok){
         rows.innerHTML='<tr><td colspan="5" class="empty">'+esc(

@@ -275,8 +275,17 @@ def _sign(body_bytes):
     return _b64u(hmac.new(_SIGNING_KEY, body_bytes, hashlib.sha256).digest())
 
 
-def make_session(username):
+def jwt_exp(access_token):
+    """Access-token expiry (unix seconds) from a bearer token, or None."""
+    p = _decode_jwt(access_token or "")
+    exp = int(p.get("exp", 0) or 0)
+    return exp if exp else None
+
+
+def make_session(username, token_exp=None):
     payload = {"u": username, "exp": int(time.time()) + SESSION_TTL}
+    if token_exp:
+        payload["te"] = int(token_exp)
     body = _b64u(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     return f"{body}.{_sign(body.encode('ascii'))}"
 
@@ -292,7 +301,11 @@ def verify_session(cookie):
         payload = json.loads(_b64u_dec(body).decode("utf-8"))
     except Exception:
         return None
-    if int(payload.get("exp", 0)) < time.time():
+    now = time.time()
+    if int(payload.get("exp", 0)) < now:
+        return None
+    # Bound session lifetime to the Keycloak access token that minted it.
+    if int(payload.get("te", 0)) and int(payload["te"]) < now:
         return None
     return payload.get("u")
 

@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.0.33
+
+App bar and favicon use the **Nokia “N” mark** only (`nokia-n.png`, cropped from
+the wordmark). **Logout sync:** when the EDA Keycloak session ends, the UI
+re-validates SSO on load and every two minutes, clears the local `im_session`
+cookie via `POST /oauth/session/logout`, and shows the sign-in banner instead of
+stale authenticated state. Server sessions now track access-token expiry.
+
 ## v0.0.32
 
 Update app bar and favicon **Nokia wordmark** (`nokia-logo.png`) to the new

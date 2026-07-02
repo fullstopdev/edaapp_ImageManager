@@ -96,6 +96,7 @@ APP_VERSION = [""]
 
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 APP_LOGO_PNG = (_ASSETS_DIR / "nokia-logo.png").read_bytes()
+APP_N_LOGO_PNG = (_ASSETS_DIR / "nokia-n.png").read_bytes()
 
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
@@ -260,10 +261,20 @@ class Handler(BaseHTTPRequestHandler):
             }, 403)
             return
         self.send_response(200)
-        self._set_cookie(auth.SESSION_COOKIE, auth.make_session(user), auth.SESSION_TTL)
+        self._set_cookie(auth.SESSION_COOKIE,
+                         auth.make_session(user, token_exp=auth.jwt_exp(token)),
+                         auth.SESSION_TTL)
         self.send_header("Content-Type", "application/json")
         self.end_headers()
         self.wfile.write(json.dumps({"ok": True, "user": user}).encode("utf-8"))
+
+    def _handle_oauth_session_logout(self):
+        """Clear the local session cookie (browser-initiated SSO loss)."""
+        self.send_response(200)
+        self._set_cookie(auth.SESSION_COOKIE, "", 0)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
 
     def _handle_oauth_callback(self, q):
         code = (q.get("code") or [None])[0]
@@ -288,8 +299,11 @@ class Handler(BaseHTTPRequestHandler):
             self._deny_page(user)
             return
         logger.info("Sign-in OK: %s", user)
+        access = tok.get("access_token", "")
         self._redirect(auth.APP_PROXY_PREFIX + "/", cookies=[
-            (auth.SESSION_COOKIE, auth.make_session(user), auth.SESSION_TTL),
+            (auth.SESSION_COOKIE,
+             auth.make_session(user, token_exp=auth.jwt_exp(access)),
+             auth.SESSION_TTL),
             (auth.STATE_COOKIE, "", 0),
         ])
 
@@ -357,6 +371,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/assets/nokia-logo.png":
                 self._send_text(APP_LOGO_PNG, ctype="image/png")
+                return
+            if path == "/assets/nokia-n.png":
+                self._send_text(APP_N_LOGO_PNG, ctype="image/png")
                 return
             # UI shell loads without a session so keycloak-js can perform silent SSO
             # inside the EDA iframe (cable-map.eda.labs pattern). Data APIs stay gated.
@@ -755,6 +772,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/oauth/session":
                 self._handle_oauth_session()
+                return
+            if path == "/oauth/session/logout":
+                self._handle_oauth_session_logout()
                 return
             # All other POSTs are user actions — require a valid EDA session.
             if auth.enabled() and not self._authed_user():
