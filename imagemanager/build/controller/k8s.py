@@ -288,3 +288,28 @@ def read_secret(name, namespace):
         if e.code == 404:
             return None
         raise
+
+
+def read_namespaced_workload(api_version, kind, name, namespace):
+    """Read a namespaced workload (Deployment, etc.). Returns dict or None (404)."""
+    path = (
+        f"/apis/{api_version}/namespaces/{quote(namespace, safe='')}"
+        f"/{kind}/{quote(name, safe='')}"
+    )
+    try:
+        return _request("GET", path)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise
+
+
+def delete_pvc(name, namespace):
+    """Delete a PersistentVolumeClaim. Returns None on 404."""
+    path = f"/api/v1/namespaces/{quote(namespace, safe='')}/persistentvolumeclaims/{quote(name, safe='')}"
+    try:
+        return _request("DELETE", path)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        raise

@@ -6,6 +6,7 @@ metadata:
   labels:
     eda.nokia.com/app: eda-imagemanager
     eda.nokia.com/app-group: control-plane
+    eda.nokia.com/component: imagemanager-data
 spec:
   accessModes:
     - ReadWriteOnce

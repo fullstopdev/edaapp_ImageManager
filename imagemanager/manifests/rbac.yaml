@@ -94,6 +94,15 @@ rules:
     resources: ["secrets"]
     resourceNames: ["keycloak-admin-secret", "eda-api-ca"]
     verbs: ["get"]
+  # Uninstall cleanup: delete imagemanager-data when the Deployment is removed.
+  - apiGroups: [""]
+    resources: ["persistentvolumeclaims"]
+    resourceNames: ["imagemanager-data"]
+    verbs: ["delete", "get"]
+  - apiGroups: ["apps"]
+    resources: ["deployments"]
+    resourceNames: ["eda-imagemanager"]
+    verbs: ["get"]
 ---
 apiVersion: rbac.authorization.k8s.io/v1
 kind: RoleBinding

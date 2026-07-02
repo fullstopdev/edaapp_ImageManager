@@ -33,7 +33,7 @@ spec:
       terminationGracePeriodSeconds: 10
       initContainers:
         - name: wait-controller
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.40
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.41
           imagePullPolicy: IfNotPresent
           command:
             - python3
@@ -58,7 +58,7 @@ spec:
               raise SystemExit("eda-imagemanager controller not ready after 5m")
       containers:
         - name: node-agent
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.40
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.41
           imagePullPolicy: IfNotPresent
           command: ["python3", "nodeagent.py"]
           env:

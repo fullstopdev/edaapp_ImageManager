@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.41
+
+**EDA logout sync (cable-map pattern, v0.0.40-safe):** After bootstrap completes
+(`authReady`), detect EDA session loss without reintroducing v0.0.34–v0.0.39
+bootstrap polling or shared Keycloak init. A lightweight `GET /api/config` probe
+runs every 30s (plus tab-focus revalidation); when it returns 401, silent SSO
+re-exchange is attempted once. A separate post-auth Keycloak watcher with
+`checkLoginIframe: true` and `onAuthLogout` catches GUI logout while
+`im_session` is still valid. On real session loss the UI calls
+`POST /oauth/session/logout`, clears auth state, and shows a recoverable
+sign-in banner (**Try again** / **Sign in** on standalone) — no full-page
+redirect unless the user clicks **Sign in**. v0.0.40 bootstrap unchanged
+(`checkLoginIframe: false` during silent SSO); v0.0.36 upload-in-flight guard
+retained.
+
+**PVC removed on uninstall:** Controller deletes `imagemanager-data` on SIGTERM
+when the Deployment has a `deletionTimestamp` (app uninstall, not Recreate
+upgrades). RBAC grants scoped delete/get on the claim plus get on the
+Deployment. PVC label `eda.nokia.com/component: imagemanager-data` added. If
+the claim still survives reinstall, startup compares ImageManagerConfig UID to a
+PVC install marker and wipes stale upload bytes before reconcile/repush.
+
 ## v0.0.40
 
 **Revert client auth to v0.0.30 silent SSO:** Restore the simpler pre-v0.0.33

@@ -30,7 +30,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: imagemanager-controller
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.40
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.41
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAMESPACE
@@ -48,6 +48,10 @@ spec:
               value: "3600"
             - name: ALLOWED_ROLES
               value: "imagemanager-viewer,system-administrator" # app-set: ${allowedRoles}
+            - name: DEPLOYMENT_NAME
+              value: eda-imagemanager
+            - name: PVC_NAME
+              value: imagemanager-data
           ports:
             - name: serving
               containerPort: 8443

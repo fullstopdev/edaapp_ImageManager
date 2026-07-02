@@ -37,7 +37,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.40"
+VERSION = "v0.0.41"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -133,6 +133,25 @@ def _setup_logging():
     root.setLevel(logging.INFO)
     root.handlers.clear()
     root.addHandler(handler)
+
+
+def _maybe_delete_pvc_on_uninstall():
+    """When the Deployment is being removed (app uninstall), delete our PVC.
+
+    Recreate upgrades only terminate the pod — the Deployment itself stays, so
+    its deletionTimestamp is absent and the claim is kept.
+    """
+    ns = os.environ.get("POD_NAMESPACE", "eda-system")
+    dep = os.environ.get("DEPLOYMENT_NAME", "eda-imagemanager")
+    pvc = os.environ.get("PVC_NAME", "imagemanager-data")
+    try:
+        obj = k8s.read_namespaced_workload("apps/v1", "deployments", dep, ns)
+        if not obj or not (obj.get("metadata") or {}).get("deletionTimestamp"):
+            return
+        logger.info("Deployment %s is deleting — removing PVC %s", dep, pvc)
+        k8s.delete_pvc(pvc, ns)
+    except Exception as e:  # noqa: BLE001 — best-effort uninstall cleanup
+        logger.warning("PVC delete on uninstall failed: %s", e)
 
 
 def _signal_handler(signum, frame):
@@ -318,6 +337,9 @@ def _run_imports_async(cfg):
 def _reconcile_storage(cfg):
     """Re-derive upload state from PVC + Artifact CRs; self-heal after restarts."""
     try:
+        cr = k8s.read_cr(CRD_GROUP, CRD_VERSION, CRD_PLURAL, CRD_NAME)
+        if cr:
+            uploads.reconcile_install_identity((cr.get("metadata") or {}).get("uid"))
         report = import_common.reconcile_local_uploads(cfg)
         snapshot = {
             **report,
@@ -451,6 +473,7 @@ def main():
 
     logger.info("Controller shutting down")
     fileserver.stop_file_server()
+    _maybe_delete_pvc_on_uninstall()
     _stop_status_publisher_daemon()
 
 

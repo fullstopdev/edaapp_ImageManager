@@ -730,6 +730,44 @@ def finalize_group(group_id, display_name, nos, namespace, repo,
     return rewrite_meta(group_id, meta)
 
 
+INSTALL_MARKER = "/data/.imagemanager/install-id"
+
+
+def wipe_all_uploads():
+    """Remove every stored upload — used when a PVC survived an app reinstall."""
+    try:
+        for uid in os.listdir(DATA_DIR):
+            if uid.startswith("."):
+                continue
+            d = os.path.join(DATA_DIR, uid)
+            if os.path.isdir(d):
+                shutil.rmtree(d, ignore_errors=True)
+        cleanup_stale_work_dirs()
+    except FileNotFoundError:
+        pass
+
+
+def reconcile_install_identity(config_uid):
+    """Wipe stale PVC bytes when ImageManagerConfig was recreated after reinstall."""
+    uid = (config_uid or "").strip()
+    marker_dir = os.path.dirname(INSTALL_MARKER)
+    try:
+        with open(INSTALL_MARKER) as f:
+            stored = f.read().strip()
+    except FileNotFoundError:
+        stored = ""
+    if stored and uid and stored != uid:
+        logger.warning(
+            "Install identity changed (%s -> %s); wiping stale PVC uploads",
+            stored[:8], uid[:8],
+        )
+        wipe_all_uploads()
+    if uid:
+        os.makedirs(marker_dir, exist_ok=True)
+        with open(INSTALL_MARKER, "w") as f:
+            f.write(uid)
+
+
 def delete_upload(upload_id):
     """Remove an upload's directory from the PVC. Returns True if it existed."""
     if not upload_id or "/" in upload_id or "\\" in upload_id or ".." in upload_id:
