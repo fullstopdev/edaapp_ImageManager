@@ -36,6 +36,8 @@ const (
 type inputRow struct {
 	ID        string `json:"id"`
 	Service   string `json:"service"`
+	Health    string `json:"health"`
+	HTTP      string `json:"http"`
 	Image     string `json:"image"`
 	Namespace string `json:"namespace"`
 	Status    string `json:"status"`
@@ -52,6 +54,8 @@ type inputPayload struct {
 type statusRow struct {
 	ID        string `json:"id"`
 	Service   string `json:"service"`
+	Health    string `json:"health"`
+	HTTP      string `json:"http"`
 	Image     string `json:"image"`
 	Namespace string `json:"namespace"`
 	Status    string `json:"status"`
@@ -294,6 +298,8 @@ func (p *publisher) sendAll(payload inputPayload) error {
 		body, err := json.Marshal(statusRow{
 			ID:        row.ID,
 			Service:   row.Service,
+			Health:    row.Health,
+			HTTP:      row.HTTP,
 			Image:     row.Image,
 			Namespace: row.Namespace,
 			Status:    row.Status,

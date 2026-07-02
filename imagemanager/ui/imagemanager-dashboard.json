@@ -1,11 +1,11 @@
 {
   "uuid": "1fc6d9e9-d2ab-425a-9c9e-f8dbbacdf793",
   "name": "Image Manager",
-  "version": "0.0.13",
+  "version": "0.0.14",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-02T11:20:00Z",
+  "lastChanged": "2026-07-02T11:35:00Z",
   "screens": [
     {
       "name": "Image Manager",
@@ -56,16 +56,32 @@
                           "label": "Service",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 130,
-                          "flex": 1
+                          "minWidth": 120,
+                          "flex": 0.9
+                        },
+                        {
+                          "fieldName": "health",
+                          "label": "Health",
+                          "type": "string",
+                          "sortable": true,
+                          "minWidth": 90,
+                          "flex": 0.6
+                        },
+                        {
+                          "fieldName": "http",
+                          "label": "HTTP",
+                          "type": "string",
+                          "sortable": true,
+                          "minWidth": 90,
+                          "flex": 0.6
                         },
                         {
                           "fieldName": "image",
                           "label": "Image",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 180,
-                          "flex": 1.5
+                          "minWidth": 170,
+                          "flex": 1.4
                         },
                         {
                           "fieldName": "namespace",

@@ -1291,6 +1291,20 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
     return list(groups.values())
 
 
+_server_scheme = [None]  # "https" | "http" | None; set by start_file_server
+
+
+def server_state():
+    """Self-reported UI reachability for the launcher dashboard (cable-map
+    'http: Reachable' parity): Reachable when serving HTTPS, NoTLS when the
+    cert never mounted, Down before the server thread starts."""
+    if _server_scheme[0] == "https":
+        return "Reachable"
+    if _server_scheme[0] == "http":
+        return "NoTLS"
+    return "Down"
+
+
 def invalidate_tracked_cache():
     """Drop cached artifact rows (call after upload/delete)."""
     with _tracked_lock:
@@ -1380,6 +1394,7 @@ def start_file_server(port=8443):
         scheme = "http"
     with _server_lock:
         _server = server
+    _server_scheme[0] = scheme
     t = threading.Thread(target=server.serve_forever, daemon=True, name="fileserver")
     t.start()
     logger.info("File server started on %s://0.0.0.0:%d", scheme, port)

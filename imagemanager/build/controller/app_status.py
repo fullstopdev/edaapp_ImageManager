@@ -38,17 +38,67 @@ def _row_id(row):
     return f"{safe_ns}--{safe_name}"[:253]
 
 
-def sync_app_status_rows(tracked_rows):
+def _http_state():
+    try:
+        import fileserver
+        return fileserver.server_state()
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _summary_row(tracked_rows, health, http_state):
+    """Always-present service row (cable-map parity: data=Ready, http=Reachable).
+    Guarantees the dashboard shows the app is installed + live even with zero
+    images, and aggregates per-status counts."""
+    counts = {}
+    for row in tracked_rows:
+        s = row.get("downloadStatus") or "Unknown"
+        counts[s] = counts.get(s, 0) + 1
+    agg = ", ".join(f"{n} {s}" for s, n in sorted(counts.items())) if counts else "no images"
+    n = len(tracked_rows)
+    details = "\n".join([
+        "app: Image Manager",
+        f"health: {health}",
+        f"ui: {http_state}",
+        f"images: {n}" + (f" ({agg})" if counts else ""),
+        f"namespace: {os.environ.get('POD_NAMESPACE', 'eda-system')}",
+        f"url: {_HTTPPROXY_PATH}",
+    ])
+    return {
+        "id": "imagemanager--app",
+        "service": _SERVICE_LABEL,
+        "health": health,
+        "http": http_state,
+        "image": f"{n} image(s)",
+        "namespace": os.environ.get("POD_NAMESPACE", "eda-system"),
+        "status": agg,
+        "open": "View",
+        "url": _HTTPPROXY_PATH,
+        "details": details,
+    }
+
+
+def sync_app_status_rows(tracked_rows, health=None):
     """Upsert/delete .cluster.apps.imagemanager.status rows for launcher EQL.
 
-    No-op (no publisher spawn, no gRPC traffic) when nothing changed since the
-    last successful sync, so callers can invoke this at a high frequency.
+    Publishes one service summary row (health/reachability, always present)
+    plus one row per tracked image. No-op (no publisher spawn, no gRPC
+    traffic) when nothing changed since the last successful sync, so callers
+    can invoke this at a high frequency.
     """
     if not os.path.isfile(_PUBLISHER):
         logger.debug("status-publisher binary missing at %s; skipping app status sync", _PUBLISHER)
         return
 
+    if health is None:
+        bad = [r for r in tracked_rows
+               if r.get("downloadStatus") in ("Error", "Failed")]
+        health = "Degraded" if bad else "Ready"
+    http_state = _http_state()
+
     desired = {}
+    summary = _summary_row(tracked_rows, health, http_state)
+    desired[summary["id"]] = summary
     for row in tracked_rows:
         rid = _row_id(row)
         display = row.get("displayName") or row.get("name") or rid
@@ -60,6 +110,8 @@ def sync_app_status_rows(tracked_rows):
         desired[rid] = {
             "id": rid,
             "service": _SERVICE_LABEL,
+            "health": "",   # app-level columns live on the summary row
+            "http": "",
             "image": display,
             "namespace": row.get("namespace") or "",
             "status": row.get("downloadStatus") or row.get("health") or "",

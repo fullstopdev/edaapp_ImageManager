@@ -179,6 +179,15 @@ def redirect_uri(headers):
 
 
 def authorize_url(headers, state):
+    """Browser-facing authorize URL.
+
+    Uses the EDA identity proxy path — the SAME Keycloak base the EDA GUI logs
+    in through. Keycloak session cookies are scoped to the KC base path, so
+    only this base sees the user's existing GUI session and can 302 straight
+    back with a code (true SSO, no login form). The httpproxy Keycloak path
+    (KC_PROXY_PATH) serves the same realm but its cookie path never matches
+    the GUI session, which forced a fresh login page.
+    """
     base = external_base(headers)
     q = urllib.parse.urlencode({
         "client_id": CLIENT_ID,
@@ -187,7 +196,7 @@ def authorize_url(headers, state):
         "redirect_uri": redirect_uri(headers),
         "state": state,
     })
-    return f"{base}{KC_PROXY_PATH}/realms/{REALM}/protocol/openid-connect/auth?{q}"
+    return f"{base}{IDENTITY_PROXY_PATH}/realms/{REALM}/protocol/openid-connect/auth?{q}"
 
 
 def exchange_code(code, headers):
