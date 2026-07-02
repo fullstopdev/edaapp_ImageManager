@@ -35,7 +35,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.16"
+VERSION = "v0.0.17"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -81,22 +81,23 @@ def _start_status_publisher_daemon():
         logger.debug("status-publisher binary missing at %s", publisher)
         return
     try:
+        # stderr inherited so daemon logs land in the pod log (a PIPE nobody
+        # drains would eventually block the daemon on write).
         _status_daemon_proc = subprocess.Popen(
             [publisher, "daemon"],
             stdout=subprocess.DEVNULL,
-            stderr=subprocess.PIPE,
         )
         time.sleep(0.5)
         if _status_daemon_proc.poll() is not None:
-            err = (_status_daemon_proc.stderr.read() or b"").decode("utf-8", errors="replace")
-            if err.strip():
-                logger.warning("status-publisher daemon stderr: %s", err[:500])
-            logger.warning("status-publisher daemon exited early (code %s)", _status_daemon_proc.returncode)
+            logger.warning("status-publisher daemon exited early (code %s); "
+                           "will retry from the status sync loop",
+                           _status_daemon_proc.returncode)
             _status_daemon_proc = None
             return
         logger.info("status-publisher daemon started (pid %d)", _status_daemon_proc.pid)
     except OSError as e:
         logger.warning("failed to start status-publisher daemon: %s", e)
+        _status_daemon_proc = None
 
 
 def _stop_status_publisher_daemon():
@@ -232,7 +233,11 @@ def _status_sync_loop():
     """
     while not shutdown_event.is_set():
         try:
-            if _status_daemon_proc is not None and _status_daemon_proc.poll() is not None:
+            if _status_daemon_proc is None:
+                # First start failed (eda-sa / TLS mounts not ready at pod
+                # start); keep retrying so the dashboard doesn't stay frozen.
+                _start_status_publisher_daemon()
+            elif _status_daemon_proc.poll() is not None:
                 logger.warning("status-publisher daemon died (code %s); restarting",
                                _status_daemon_proc.returncode)
                 _start_status_publisher_daemon()
@@ -285,6 +290,12 @@ def main():
 
     _ensure_default_cr()
 
+    # Dashboard sync starts immediately — it is cheap, self-healing (retries
+    # the publisher daemon until eda-sa is reachable) and no-ops when rows are
+    # unchanged, so the app appears on the dashboard within seconds of pod
+    # start instead of after the reconcile settle delay.
+    threading.Thread(target=_status_sync_loop, daemon=True, name="status-sync").start()
+
     if STARTUP_DELAY_SECONDS > 0:
         logger.info("Deferring first reconcile for %ds so EDA install can settle",
                     STARTUP_DELAY_SECONDS)
@@ -293,8 +304,6 @@ def main():
             fileserver.stop_file_server()
             _stop_status_publisher_daemon()
             return
-
-    threading.Thread(target=_status_sync_loop, daemon=True, name="status-sync").start()
 
     while not shutdown_event.is_set():
         cycle_start = time.time()

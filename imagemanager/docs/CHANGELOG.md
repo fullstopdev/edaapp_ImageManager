@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.17
+
+Dashboard shows the app within seconds of pod start (was minutes):
+
+- **Status sync no longer waits for the reconcile settle delay:** the fast
+  dashboard sync thread previously started only after `STARTUP_DELAY_SECONDS`
+  (45s by default), so the first rows appeared a minute or more after pod
+  start. It now starts immediately — it is cheap, no-ops when unchanged, and
+  self-heals, so there is no reason to defer it.
+- **Publisher daemon first-start failure now retried:** if eda-sa or the TLS
+  mounts weren't ready at the moment the pod launched, the status-publisher
+  daemon exited immediately and was never restarted (the watchdog only
+  handled a daemon that had started and later died) — the dashboard stayed
+  empty until the next pod restart. The sync loop now (re)starts the daemon
+  whenever it isn't running.
+- **Daemon stderr no longer piped into an undrained buffer** (could block the
+  daemon after enough reconnect logging); it now goes to the pod log.
+
 ## v0.0.16
 
 Deleted images now disappear from the dashboard immediately:
