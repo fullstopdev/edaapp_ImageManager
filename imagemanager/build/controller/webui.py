@@ -2,7 +2,7 @@
 
 Unified single-page app, dashboard-first: Dashboard (KPIs + live artifact
 status) | Upload | URL Import | Settings. Cable-map / Nokia EDA design
-language: dark/light theme, Nokia logo + single EDA-style app bar, KPI overview cards,
+language: dark/light theme, app logo + single EDA-style app bar, KPI overview cards,
 adaptive live polling (4s while work is in flight, 12s at rest, paused when
 the tab is hidden). Sign-in is silent SSO against the EDA Keycloak session
 (new tab from the dashboard or embedded iframe), falling back to the OIDC
@@ -19,7 +19,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="imagemanager-api-base" content="/core/httpproxy/v1/imagemanager">
 <title>EDA Image Manager</title>
-<link rel="icon" type="image/svg+xml" href="/core/httpproxy/v1/imagemanager/assets/eda.svg">
+<link rel="icon" type="image/png" href="/core/httpproxy/v1/imagemanager/assets/logo.png">
 <style>
   :root {
     --eda-blue-100:#e4f0ff; --eda-blue-400:#4092ff; --eda-blue-500:#005aff; --eda-blue-600:#005adf;
@@ -93,7 +93,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     display:flex; align-items:center; gap:16px; flex-shrink:0;
   }
   .appbar-brand { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 auto; }
-  .nokia-logo { height:26px; width:auto; display:block; flex:none; }
+  .app-logo { height:30px; width:30px; display:block; flex:none; object-fit:contain; border-radius:6px; }
   .appbar-title {
     font-size:15px; font-weight:400; letter-spacing:.01em; line-height:1.2;
     color:var(--chrome-top-fg); white-space:nowrap;
@@ -534,7 +534,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   in a new tab.</div></noscript>
 <header class="appbar">
   <div class="appbar-brand">
-    <img class="nokia-logo" src="/core/httpproxy/v1/imagemanager/assets/eda.svg" alt="Nokia">
+    <img class="app-logo" src="/core/httpproxy/v1/imagemanager/assets/logo.png" alt="Image Manager">
     <span class="appbar-title">Image Manager</span>
     <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
   </div>

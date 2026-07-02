@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.28
+
+App bar and browser tab use the new **logo.png** mark (30×30px in the header,
+rounded corners); replaces the cable-map `eda.svg`.
+
 ## v0.0.27
 
 Browser tab favicon uses the same **`eda.svg`** Nokia connect logo as the app bar
