@@ -1118,6 +1118,27 @@ def _aggregate_download_status(statuses, reasons):
     return statuses[0], (reasons[0] if reasons else "")
 
 
+_NOS_LABELS = {
+    "srl": "Nokia SR Linux",
+    "sros": "Nokia SR OS",
+    "srsim": "Nokia SR OS (SIM)",
+}
+
+
+def nos_label(nos):
+    """Human-readable OS label for dashboard/API (meta.json nos codes)."""
+    return _NOS_LABELS.get(nos or "", "")
+
+
+def _infer_nos_from_repo(repo):
+    """Best-effort nos for ghost rows with no PVC meta.json."""
+    if repo == artifact.SROS_REPO:
+        return "sros"
+    if repo in ("images", ""):
+        return "srl"
+    return ""
+
+
 def _single_row(m, status_by_key):
     """Tracked-list row for a one-file image (SR Linux .bin / raw upload)."""
     ns = m.get("namespace")
@@ -1177,6 +1198,7 @@ def _single_row(m, status_by_key):
         "snippet": snippet,
         "nodeProfileExample": example,
         "nos": nos,
+        "nosLabel": nos_label(nos),
         "yangStatus": yang_ds,
         "license": license_cm or None,
         "licenseNos": lic.get("nos"),
@@ -1263,6 +1285,7 @@ def _group_row(m, status_by_key):
         "snippet": snippet,
         "nodeProfileExample": example,
         "nos": "sros",
+        "nosLabel": nos_label("sros"),
         "fileCount": len(arts),
         "yangStatus": yang_status,
         "license": license_cm or None,
@@ -1354,6 +1377,7 @@ def _srsim_row(m, status_by_key):
         "snippet": snippet if local_ok else "",
         "nodeProfileExample": example if local_ok else "",
         "nos": "srsim",
+        "nosLabel": nos_label("srsim"),
         "containerImage": container_image,
         "imageTag": tag,
         "yangStatus": yang_ds,
@@ -1380,6 +1404,8 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
         if key in covered_keys:
             continue
         spec = art.get("spec", {}) or {}
+        repo = spec.get("repo", "")
+        nos = _infer_nos_from_repo(repo)
         st = status_by_key.get((ns, name), {})
         download_status, status_reason = _resolve_download_status(False, st)
         groups.setdefault(key, {
@@ -1387,7 +1413,7 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
             "name": name,
             "displayName": name,
             "namespace": ns,
-            "repo": spec.get("repo", ""),
+            "repo": repo,
             "filePath": spec.get("filePath", ""),
             "sizeBytes": None,
             "storedAt": md.get("creationTimestamp", ""),
@@ -1395,6 +1421,8 @@ def _artifact_fallback_rows(status_by_key, covered_keys):
             "statusReason": status_reason,
             "localCopy": False,
             "externalUrl": st.get("externalUrl", ""),
+            "nos": nos or None,
+            "nosLabel": nos_label(nos) if nos else "",
         })
     return list(groups.values())
 

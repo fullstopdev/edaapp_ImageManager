@@ -290,6 +290,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .uprog.indet > div { width:40%; animation:indet 1.15s ease-in-out infinite; }
   .reason { color:var(--err-fg); font-size:12px; margin-top:5px; }
   .empty { color:var(--muted); padding:32px 16px; text-align:center; font-size:13px; }
+  .os-tag {
+    display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;
+    color:var(--muted); background:var(--panel2); border:1px solid var(--line); white-space:nowrap;
+  }
+  .os-empty { color:var(--muted); font-size:12px; }
 
   pre.snippet {
     margin:0; padding:10px 12px; background:var(--panel2); border:1px solid var(--line);
@@ -753,12 +758,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <table class="mtable">
           <thead><tr>
             <th class="sortable" data-sort="displayName">Name <span class="arr"></span></th>
+            <th class="sortable" data-sort="nosLabel">OS <span class="arr"></span></th>
             <th class="sortable" data-sort="namespace">Namespace <span class="arr"></span></th>
             <th class="sortable num" data-sort="sizeBytes">Size <span class="arr"></span></th>
             <th class="sortable" data-sort="downloadStatus">Status <span class="arr"></span></th>
             <th></th>
           </tr></thead>
-          <tbody id="rows"><tr><td colspan="5" class="empty">Loading&hellip;</td></tr></tbody>
+          <tbody id="rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -1261,7 +1267,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function showFatal(msg){
     bootDone();
     setAuthBanner("err", msg);
-    if(rows) rows.innerHTML = '<tr><td colspan="5" class="empty">'+esc(msg)+'</td></tr>';
+    if(rows) rows.innerHTML = '<tr><td colspan="6" class="empty">'+esc(msg)+'</td></tr>';
     snack("err", msg, true);
   }
   function ensureAuth(){
@@ -1654,6 +1660,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // ---------- artifacts table ----------
   var lastImports=[];   // in-flight browser->controller uploads tracked in pendingUploads
+  var NOS_LABELS={srl:"Nokia SR Linux",sros:"Nokia SR OS",srsim:"Nokia SR OS (SIM)"};
+  function osLabel(t){
+    var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
+    return l?('<span class="os-tag">'+esc(l)+'</span>'):('<span class="os-empty">&mdash;</span>');
+  }
   function chip(s){
     var c=s||"NoArtifact";
     if(c==="NoArtifact") return '<span class="chip c-NoArtifact" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">Needs republish</span>';
@@ -1745,7 +1756,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
            '<div class="upinfo">'+esc(sub)+'</div>';
   }
   function pendingRowHtml(p){
-    return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td>'+esc(p.namespace)+
+    return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td><span class="os-empty">&mdash;</span></td><td>'+esc(p.namespace)+
       '</td><td class="num">'+fmtBytes(p.total)+'</td><td id="upstat-'+p.key+'">'+pendStatusHtml(p)+
       '</td><td></td></tr>';
   }
@@ -1757,7 +1768,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'">Details</button> ')
       :'';
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
-    return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+esc(t.namespace)+
+    return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
+      '</td><td>'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
       '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
   }
@@ -1779,7 +1791,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var hostBullet=isSrsim
       ? "EDA's Digital Twin (eda-cx) can no longer pull this image — creating or restarting a sim that uses it will fail."
       : '<span class="mono">eda-asvr</span> stops hosting it — the served image URLs will return 404.';
+    var osLbl=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
     var lead='Permanently delete <b class="mono">'+esc(label)+'</b>'
+             +(osLbl?(' '+osLabel(t)):'')
              +(nsv?(' in <span class="mono">'+esc(nsv)+'</span>'):'')+'?';
     var bullets=[
       removes,
@@ -1810,7 +1824,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     for(var i=0;i<currentData.length;i++){ if(currentData[i].uploadId===uid){ t=currentData[i]; break; } }
     if(!t) return false;
     npCurrentUid=uid;
-    el("npTitle").textContent = "NodeProfile — " + (t.displayName||t.name||"");
+    el("npTitle").textContent = "NodeProfile — " + (t.displayName||t.name||"")
+      + ((t.nosLabel||(t.nos&&NOS_LABELS[t.nos])) ? (" · " + (t.nosLabel||NOS_LABELS[t.nos])) : "");
     // SR-SIM emits a containerImage-based sim NodeProfile, not a spec.images
     // fragment; relabel the snippet section + intro accordingly.
     var isSim=(t.nos==="srsim");
@@ -1934,7 +1949,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     updateKpis();
     if(!(pend.length+serverRows.length)){
-      rows.innerHTML='<tr><td colspan="5" class="empty">No images yet.<br>'+
+      rows.innerHTML='<tr><td colspan="6" class="empty">No images yet.<br>'+
         '<button class="btn contained ripple" data-goto="upload">Upload an image</button> '+
         '<button class="btn text ripple" data-goto="url-import">Import from URL</button></td></tr>';
       el("statusCount").style.display="none"; return;
@@ -2133,7 +2148,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         return handleAuthLoss().then(function(){ if(authReady) refresh(); });
       }
       if(!res.ok){
-        rows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
+        rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
           "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>';
         snack("err","Could not load artifacts (HTTP "+res.status+").", true);
         return;
@@ -2150,7 +2165,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       render();
       tryPendingDetails();
     }).catch(function(e){
-      rows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
+      rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
         "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
     });
   }

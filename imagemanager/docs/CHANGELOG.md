@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.46
+
+**Dashboard: OS column on Artifacts table:**
+Each tracked upload now exposes `nosLabel` in `GET /api/artifacts` (mapped from
+meta.json `nos`: `srl` → Nokia SR Linux, `sros` → Nokia SR OS, `srsim` →
+Nokia SR OS (SIM)). The Status tab Artifacts table adds a sortable **OS**
+column; the NodeProfile details title and delete confirm dialog show the label
+when known.
+
 ## v0.0.45
 
 **Fix EDA logout not signing out Image Manager (v0.0.43–v0.0.44 regression):**
