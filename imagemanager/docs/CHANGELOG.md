@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.27
+
+Browser tab favicon uses the same **`eda.svg`** Nokia connect logo as the app bar
+(cable-map / EDA pattern).
+
 ## v0.0.26
 
 Remove **Sign out** from the app bar; EDA platform sign-out stays in the main GUI.
