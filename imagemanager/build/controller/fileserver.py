@@ -24,6 +24,7 @@ import json
 import logging
 import os
 import re
+from pathlib import Path
 import shutil
 import ssl
 import tempfile
@@ -92,6 +93,9 @@ SYNC_KICK = [None]
 _storage_reconcile = [{}]
 # Set by main at startup; surfaced in /api/config for the UI version chip.
 APP_VERSION = [""]
+
+_ASSETS_DIR = Path(__file__).resolve().parent / "assets"
+EDA_LOGO_SVG = (_ASSETS_DIR / "eda.svg").read_bytes()
 
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
@@ -350,6 +354,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/oauth/silent-sso.html":
                 self._send_text(webui.SILENT_SSO_HTML, ctype="text/html; charset=utf-8")
+                return
+            if path == "/assets/eda.svg":
+                self._send_text(EDA_LOGO_SVG, ctype="image/svg+xml")
                 return
             # UI shell loads without a session so keycloak-js can perform silent SSO
             # inside the EDA iframe (cable-map.eda.labs pattern). Data APIs stay gated.

@@ -93,7 +93,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     display:flex; align-items:center; gap:16px; flex-shrink:0;
   }
   .appbar-brand { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 auto; }
-  .nokia-logo { height:13px; width:auto; display:block; flex:none; }
+  .nokia-logo { height:26px; width:auto; display:block; flex:none; }
   .appbar-title {
     font-size:15px; font-weight:400; letter-spacing:.01em; line-height:1.2;
     color:var(--chrome-top-fg); white-space:nowrap;
@@ -534,9 +534,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   in a new tab.</div></noscript>
 <header class="appbar">
   <div class="appbar-brand">
-    <svg class="nokia-logo" viewBox="0 0 63 12" xmlns="http://www.w3.org/2000/svg" aria-label="Nokia">
-      <path fill="#005AFF" fill-rule="evenodd" clip-rule="evenodd" d="M8.076 11.82H3.004L0 0.18h3.676l1.858 8.882L7.392 0.18h3.676L8.076 11.82zM13.308 11.82V0.18h3.676v11.64h-3.676zM22.044 11.82l5.772-11.64h4.356l-5.772 11.64h-4.356zm11.352 0V0.18h3.676v11.64H33.4zm9.588 0V0.18h3.676v11.64h-3.676zm12.384 0c3.852 0 6.132-2.232 6.132-5.784 0-3.552-2.28-5.784-6.132-5.784h-6.624v11.568h6.624zm-.396-9.072c2.376 0 3.708 1.296 3.708 3.348 0 2.052-1.332 3.348-3.708 3.348h-2.52V2.748h2.52zM62.244 11.82l-4.356-11.64H53.28L49.14 11.82h3.312l.792-2.232h5.148l.792 2.232h3.06zM54.396 7.572l1.548-4.356 1.548 4.356h-3.096z"/>
-    </svg>
+    <img class="nokia-logo" src="/core/httpproxy/v1/imagemanager/assets/eda.svg" alt="Nokia">
     <span class="appbar-title">Image Manager</span>
     <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
   </div>
