@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.37
+
+**Silent session checks (no page refresh):** Periodic session polling, tab-focus
+revalidation, and API 401 recovery no longer redirect to `/oauth/login` while the
+user is still signed into EDA. Session probes use a lightweight `/api/config`
+check with silent SSO re-exchange; standalone tabs also register Keycloak
+`onAuthLogout` / `checkLoginIframe` watchers (cable-map pattern). On real session
+loss the UI clears `im_session` via `POST /oauth/session/logout` and shows an
+in-page sign-in banner with **Try again** (silent SSO) and **Sign in** (explicit
+OIDC redirect only on button click). Upload in-flight deferral from v0.0.36 is
+unchanged.
+
 ## v0.0.36
 
 **Fix upload interrupted by page refresh:** v0.0.34/v0.0.35 session revalidation
