@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.14
+
+Seamless SSO from the dashboard + cable-map-style liveness columns:
+
+- **No more Nokia EDA login page:** the fallback OIDC authorize URL now goes
+  through the EDA **identity proxy** (`/core/proxy/v1/identity`) — the same
+  Keycloak base the EDA GUI logs in through. Keycloak session cookies are
+  scoped to that base path, so a logged-in user is 302'd straight back with a
+  code (no login form). The previous URL used the Keycloak httpproxy path,
+  whose cookie path never matched the GUI session, forcing a fresh login.
+- **Dashboard shows app liveness (cable-map parity):** an always-present
+  service summary row publishes `health` (Ready/Degraded) and `http`
+  (Reachable/NoTLS/Down, self-reported by the serving thread) plus aggregate
+  image counts — visible even with zero images, like cable-map's
+  `data: Ready / http: Reachable` row. Columns are now
+  Service | Health | HTTP | Image | Namespace | Status | View; per-image rows
+  carry the image fields and leave the app-level cells blank.
+
 ## v0.0.13
 
 Real-time dashboard sync fixes + row info panel:
