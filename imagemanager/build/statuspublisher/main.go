@@ -31,37 +31,30 @@ const (
 	defaultTLSTrust  = "/var/run/eda/tls/internal/trust/trust-bundle.pem"
 	defaultSocket    = "/tmp/imagemanager-status.sock"
 	statusBasePath   = ".cluster.apps.imagemanager.status"
+	appBasePath      = ".cluster.apps.imagemanager.app"
 )
 
+// inputRow is a generic launcher row. Path selects the state DB table
+// (defaults to statusBasePath); the remaining fields are passed through
+// verbatim as the row JSON, so the two tables can carry different columns.
 type inputRow struct {
+	Path      string `json:"path,omitempty"`
 	ID        string `json:"id"`
-	Service   string `json:"service"`
-	Health    string `json:"health"`
-	HTTP      string `json:"http"`
-	Image     string `json:"image"`
-	Namespace string `json:"namespace"`
-	Status    string `json:"status"`
-	Open      string `json:"open"`
-	URL       string `json:"url"`
-	Details   string `json:"details"`
+	Service   string `json:"service,omitempty"`
+	Health    string `json:"health,omitempty"`
+	HTTP      string `json:"http,omitempty"`
+	Version   string `json:"version,omitempty"`
+	Image     string `json:"image,omitempty"`
+	Namespace string `json:"namespace,omitempty"`
+	Status    string `json:"status,omitempty"`
+	Open      string `json:"open,omitempty"`
+	URL       string `json:"url,omitempty"`
+	Details   string `json:"details,omitempty"`
 }
 
 type inputPayload struct {
 	Adds    []inputRow `json:"adds"`
 	Deletes []string   `json:"deletes"`
-}
-
-type statusRow struct {
-	ID        string `json:"id"`
-	Service   string `json:"service"`
-	Health    string `json:"health"`
-	HTTP      string `json:"http"`
-	Image     string `json:"image"`
-	Namespace string `json:"namespace"`
-	Status    string `json:"status"`
-	Open      string `json:"open"`
-	URL       string `json:"url"`
-	Details   string `json:"details"`
 }
 
 type publisher struct {
@@ -295,22 +288,17 @@ func (p *publisher) sendAll(payload inputPayload) error {
 		if strings.TrimSpace(row.ID) == "" {
 			continue
 		}
-		body, err := json.Marshal(statusRow{
-			ID:        row.ID,
-			Service:   row.Service,
-			Health:    row.Health,
-			HTTP:      row.HTTP,
-			Image:     row.Image,
-			Namespace: row.Namespace,
-			Status:    row.Status,
-			Open:      row.Open,
-			URL:       row.URL,
-			Details:   row.Details,
-		})
+		base := row.Path
+		if base == "" {
+			base = statusBasePath
+		}
+		rowCopy := row
+		rowCopy.Path = "" // table path is addressing, not row data
+		body, err := json.Marshal(rowCopy)
 		if err != nil {
 			return err
 		}
-		jspath := fmt.Sprintf("%s{.id==%q}", statusBasePath, row.ID)
+		jspath := fmt.Sprintf("%s{.id==%q}", base, row.ID)
 		req := &pb.StateDbRequest{
 			ReqType: &pb.StateDbRequest_Update{
 				Update: &pb.StateDbUpdateRequest{
@@ -331,14 +319,16 @@ func (p *publisher) sendAll(payload inputPayload) error {
 }
 
 func registerSchema(ctx context.Context, client pb.StateAggregatorIfClient) error {
-	_, err := client.OneShotJsonSchema(ctx, &pb.OneShotJsonSchemaRequest{
-		Request: &pb.JsonSchemaRequest{
-			Jspath: statusBasePath,
-			Type:   pb.JsonSchemaRequest_ReqType_REQ_TYPE_CREATE,
-		},
-	})
-	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "already") {
-		return err
+	for _, base := range []string{statusBasePath, appBasePath} {
+		_, err := client.OneShotJsonSchema(ctx, &pb.OneShotJsonSchemaRequest{
+			Request: &pb.JsonSchemaRequest{
+				Jspath: base,
+				Type:   pb.JsonSchemaRequest_ReqType_REQ_TYPE_CREATE,
+			},
+		})
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "already") {
+			return err
+		}
 	}
 	return nil
 }
@@ -348,25 +338,27 @@ func registerStreamingSchema(ctx context.Context, client pb.StateAggregatorIfCli
 	if err != nil {
 		return fmt.Errorf("StreamingJsonSchema: %w", err)
 	}
-	if err := stream.Send(&pb.StreamJsonSchemaRequest{
-		PollType: &pb.StreamJsonSchemaRequest_Create{
-			Create: &pb.StreamJsonSchemaGetRequest{
-				Request: &pb.JsonSchemaRequest{
-					Jspath: statusBasePath,
-					Type:   pb.JsonSchemaRequest_ReqType_REQ_TYPE_CREATE,
+	for _, base := range []string{statusBasePath, appBasePath} {
+		if err := stream.Send(&pb.StreamJsonSchemaRequest{
+			PollType: &pb.StreamJsonSchemaRequest_Create{
+				Create: &pb.StreamJsonSchemaGetRequest{
+					Request: &pb.JsonSchemaRequest{
+						Jspath: base,
+						Type:   pb.JsonSchemaRequest_ReqType_REQ_TYPE_CREATE,
+					},
 				},
 			},
-		},
-	}); err != nil {
-		return fmt.Errorf("StreamingJsonSchema create: %w", err)
-	}
-	resp, err := stream.Recv()
-	if err != nil && !strings.Contains(strings.ToLower(err.Error()), "already") {
-		return fmt.Errorf("StreamingJsonSchema recv: %w", err)
-	}
-	if debugEnabled() && resp != nil {
-		b, _ := protojson.Marshal(resp)
-		fmt.Fprintf(os.Stderr, "status-publisher: schema %s\n", b)
+		}); err != nil {
+			return fmt.Errorf("StreamingJsonSchema create %s: %w", base, err)
+		}
+		resp, err := stream.Recv()
+		if err != nil && !strings.Contains(strings.ToLower(err.Error()), "already") {
+			return fmt.Errorf("StreamingJsonSchema recv %s: %w", base, err)
+		}
+		if debugEnabled() && resp != nil {
+			b, _ := protojson.Marshal(resp)
+			fmt.Fprintf(os.Stderr, "status-publisher: schema %s\n", b)
+		}
 	}
 	go func() {
 		for {

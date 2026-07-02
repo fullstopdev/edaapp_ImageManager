@@ -94,8 +94,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   .brand-logo svg { width:17px; height:17px; display:block; }
   .brand-text { display:flex; flex-direction:column; gap:1px; min-width:0; }
+  .brand-row { display:flex; align-items:center; gap:8px; min-width:0; }
   .brand-name {
     font-size:15px; font-weight:500; letter-spacing:.015em; line-height:1.2; color:var(--fg);
+  }
+  .ver-badge {
+    display:inline-flex; align-items:center; flex:none;
+    padding:1px 7px; border-radius:999px;
+    font-size:10px; font-weight:600; letter-spacing:.05em;
+    font-family:var(--mono, ui-monospace, monospace);
+    color:var(--accent); background:var(--accent-soft);
+    border:1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    line-height:1.5;
   }
   .brand-sub {
     font-size:11px; font-weight:400; color:var(--muted); line-height:1.25;
@@ -485,7 +495,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
       </svg>
     </span>
     <div class="brand-text">
-      <span class="brand-name">Image Manager</span>
+      <span class="brand-row">
+        <span class="brand-name">Image Manager</span>
+        <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
+      </span>
       <span class="brand-sub">Vendor NOS images for EDA bootstrap &amp; Digital Twin</span>
     </div>
   </div>
@@ -1064,6 +1077,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var ui=el("userInfo"); ui.style.display="inline-flex";
       el("uname").textContent=c.user;
       el("avatar").textContent=(c.user||"?").slice(0,1);
+    }
+    if(c.version){
+      var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
     var defaultNs=(c.defaultArtifactNamespace||"").trim();
     fetchJson(api("/api/namespaces")).then(function(res){

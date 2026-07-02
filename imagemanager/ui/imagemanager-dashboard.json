@@ -1,11 +1,11 @@
 {
   "uuid": "1fc6d9e9-d2ab-425a-9c9e-f8dbbacdf793",
   "name": "Image Manager",
-  "version": "0.0.14",
+  "version": "0.0.15",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-02T11:35:00Z",
+  "lastChanged": "2026-07-02T11:45:00Z",
   "screens": [
     {
       "name": "Image Manager",
@@ -23,12 +23,151 @@
           "verticalAlignment": "start",
           "components": [
             {
+              "uuid": "9c41b7a4-33e6-4b5c-8a19-5b0d2c7f61e0",
+              "type": "dashletDataView",
+              "title": "Image Manager Service",
+              "subtitle": "Controller health and UI reachability — click View to open the app",
+              "width": 980,
+              "height": 180,
+              "fillWidth": true,
+              "showStatusBar": false,
+              "showFilters": false,
+              "showInfoPanel": true,
+              "navigationTarget": {
+                "edaRoute": "external",
+                "targetReference": "/core/httpproxy/v1/imagemanager/",
+                "useNewTab": true
+              },
+              "componentConfiguration": {
+                "apiConfiguration": {
+                  "api": ".cluster.apps.imagemanager.app",
+                  "queryType": "eql",
+                  "requestType": "get",
+                  "definition": {
+                    "initialModel": {
+                      "schema": "v1",
+                      "modelName": "ImageManagerApp",
+                      "primaryKey": "id",
+                      "showGroupDisplay": "no",
+                      "flat": true,
+                      "fields": [
+                        {
+                          "fieldName": "service",
+                          "label": "Service",
+                          "type": "string",
+                          "sortable": false,
+                          "minWidth": 140,
+                          "flex": 1.1
+                        },
+                        {
+                          "fieldName": "health",
+                          "label": "Health",
+                          "type": "string",
+                          "sortable": false,
+                          "minWidth": 90,
+                          "flex": 0.7
+                        },
+                        {
+                          "fieldName": "http",
+                          "label": "HTTP",
+                          "type": "string",
+                          "sortable": false,
+                          "minWidth": 100,
+                          "flex": 0.7
+                        },
+                        {
+                          "fieldName": "version",
+                          "label": "Version",
+                          "type": "string",
+                          "sortable": false,
+                          "minWidth": 90,
+                          "flex": 0.7
+                        },
+                        {
+                          "fieldName": "image",
+                          "label": "Images",
+                          "type": "string",
+                          "sortable": false,
+                          "minWidth": 100,
+                          "flex": 0.8
+                        },
+                        {
+                          "fieldName": "status",
+                          "label": "Status",
+                          "type": "string",
+                          "sortable": false,
+                          "minWidth": 160,
+                          "flex": 1.3
+                        },
+                        {
+                          "fieldName": "open",
+                          "label": "View",
+                          "type": "string",
+                          "sortable": false,
+                          "minWidth": 80,
+                          "flex": 0.5
+                        },
+                        {
+                          "fieldName": "namespace",
+                          "label": "Namespace",
+                          "type": "string",
+                          "visible": false,
+                          "sortable": false,
+                          "width": "160px"
+                        },
+                        {
+                          "fieldName": "url",
+                          "label": "URL",
+                          "type": "string",
+                          "visible": false,
+                          "sortable": false,
+                          "width": "260px"
+                        },
+                        {
+                          "fieldName": "id",
+                          "label": "Id",
+                          "type": "string",
+                          "visible": false,
+                          "sortable": false,
+                          "width": "160px"
+                        },
+                        {
+                          "fieldName": "details",
+                          "label": "Details",
+                          "type": "string",
+                          "visible": false,
+                          "sortable": false,
+                          "width": "260px"
+                        }
+                      ]
+                    }
+                  }
+                },
+                "additionalConfiguration": {
+                  "navTargetsConfig": {
+                    "edaRoute": "external",
+                    "targetReference": "/core/httpproxy/v1/imagemanager/",
+                    "useNewTab": true
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "uuid": "7d0f92cb-8f2e-4b6a-a3c4-e19f5d8b0a21",
+          "type": "flexRow",
+          "flexDirection": "row",
+          "horizontalAlignment": "start",
+          "verticalAlignment": "start",
+          "components": [
+            {
               "uuid": "5fafee68-f3e0-4c59-8778-f74ffbf2992f",
               "type": "dashletDataView",
-              "title": "Image Manager",
-              "subtitle": "Tracked images and Artifact download status — click a row's View link to open that image's details (NodeProfile YAML, delete)",
+              "title": "Images",
+              "subtitle": "Artifact download status — click a row for the NodeProfile YAML, View to open its details in the app",
               "width": 980,
-              "height": 420,
+              "height": 340,
               "fillWidth": true,
               "showStatusBar": false,
               "showFilters": false,
@@ -52,43 +191,19 @@
                       "flat": true,
                       "fields": [
                         {
-                          "fieldName": "service",
-                          "label": "Service",
-                          "type": "string",
-                          "sortable": true,
-                          "minWidth": 120,
-                          "flex": 0.9
-                        },
-                        {
-                          "fieldName": "health",
-                          "label": "Health",
-                          "type": "string",
-                          "sortable": true,
-                          "minWidth": 90,
-                          "flex": 0.6
-                        },
-                        {
-                          "fieldName": "http",
-                          "label": "HTTP",
-                          "type": "string",
-                          "sortable": true,
-                          "minWidth": 90,
-                          "flex": 0.6
-                        },
-                        {
                           "fieldName": "image",
                           "label": "Image",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 170,
-                          "flex": 1.4
+                          "minWidth": 200,
+                          "flex": 1.6
                         },
                         {
                           "fieldName": "namespace",
                           "label": "Namespace",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 120,
+                          "minWidth": 130,
                           "flex": 1
                         },
                         {

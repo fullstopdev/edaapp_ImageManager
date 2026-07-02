@@ -35,7 +35,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.14"
+VERSION = "v0.0.15"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -276,6 +276,8 @@ def main():
         logger.error("Serving cert %s not present after 30s; server will fall back "
                      "to HTTP (probes/pulls will fail until cert mounts)", TLS_CRT)
     fileserver.set_config(_read_config())
+    fileserver.APP_VERSION[0] = VERSION
+    app_status.APP_VERSION[0] = VERSION
     fileserver.IMPORT_KICK[0] = lambda: _run_imports_async(_read_config())
     fileserver.start_file_server(PORT)
     fileserver.write_healthz("starting", None)

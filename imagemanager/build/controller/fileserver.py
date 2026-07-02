@@ -69,6 +69,8 @@ IM_CONFIG_NAME = "default"
 # Set by main: zero-arg callable that kicks the ImageImport reconcile
 # immediately (so a URL import starts within seconds, not at the next tick).
 IMPORT_KICK = [None]
+# Set by main at startup; surfaced in /api/config for the UI version chip.
+APP_VERSION = [""]
 
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
@@ -397,6 +399,7 @@ class Handler(BaseHTTPRequestHandler):
             "defaultRepo": c.get("defaultRepo", "images"),
             "maxUploadMiB": c.get("maxUploadMiB", 4096),
             "user": self._authed_user() or "",
+            "version": APP_VERSION[0],
         })
 
     def _serve_settings(self):

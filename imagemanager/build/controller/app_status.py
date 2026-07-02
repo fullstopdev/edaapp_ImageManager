@@ -21,9 +21,11 @@ _PUBLISHER = os.environ.get(
     "STATUS_PUBLISHER_BIN",
     os.path.join(os.path.dirname(__file__), "status-publisher"),
 )
-_STATUS_BASE = ".cluster.apps.imagemanager.status"
+_STATUS_BASE = ".cluster.apps.imagemanager.status"   # per-image rows
+_APP_BASE = ".cluster.apps.imagemanager.app"          # single service/server row
 _HTTPPROXY_PATH = "/core/httpproxy/v1/imagemanager/"
 _SERVICE_LABEL = "Image Manager"
+APP_VERSION = [""]   # set by main at startup; shown in the dashboard app table
 _last_known_ids = set()
 _last_synced = [None]   # last successfully-synced desired dict (skip no-op sends)
 _purged_stale = [False]  # first sync of this process wipes rows from prior installs
@@ -46,18 +48,20 @@ def _http_state():
         return ""
 
 
-def _summary_row(tracked_rows, health, http_state):
-    """Always-present service row (cable-map parity: data=Ready, http=Reachable).
-    Guarantees the dashboard shows the app is installed + live even with zero
-    images, and aggregates per-status counts."""
+def _app_row(tracked_rows, health, http_state):
+    """The single row of the `.app` table (cable-map parity: data=Ready,
+    http=Reachable). Always present, so the dashboard shows the app is
+    installed + live even with zero images."""
     counts = {}
     for row in tracked_rows:
         s = row.get("downloadStatus") or "Unknown"
         counts[s] = counts.get(s, 0) + 1
     agg = ", ".join(f"{n} {s}" for s, n in sorted(counts.items())) if counts else "no images"
     n = len(tracked_rows)
+    version = APP_VERSION[0] or ""
     details = "\n".join([
         "app: Image Manager",
+        f"version: {version}",
         f"health: {health}",
         f"ui: {http_state}",
         f"images: {n}" + (f" ({agg})" if counts else ""),
@@ -65,10 +69,12 @@ def _summary_row(tracked_rows, health, http_state):
         f"url: {_HTTPPROXY_PATH}",
     ])
     return {
-        "id": "imagemanager--app",
+        "path": _APP_BASE,
+        "id": "imagemanager",
         "service": _SERVICE_LABEL,
         "health": health,
         "http": http_state,
+        "version": version,
         "image": f"{n} image(s)",
         "namespace": os.environ.get("POD_NAMESPACE", "eda-system"),
         "status": agg,
@@ -79,12 +85,13 @@ def _summary_row(tracked_rows, health, http_state):
 
 
 def sync_app_status_rows(tracked_rows, health=None):
-    """Upsert/delete .cluster.apps.imagemanager.status rows for launcher EQL.
+    """Sync both launcher tables:
 
-    Publishes one service summary row (health/reachability, always present)
-    plus one row per tracked image. No-op (no publisher spawn, no gRPC
-    traffic) when nothing changed since the last successful sync, so callers
-    can invoke this at a high frequency.
+      .cluster.apps.imagemanager.app     -> one service/server row
+      .cluster.apps.imagemanager.status  -> one row per tracked image
+
+    No-op (no publisher spawn, no gRPC traffic) when nothing changed since the
+    last successful sync, so callers can invoke this at a high frequency.
     """
     if not os.path.isfile(_PUBLISHER):
         logger.debug("status-publisher binary missing at %s; skipping app status sync", _PUBLISHER)
@@ -96,9 +103,7 @@ def sync_app_status_rows(tracked_rows, health=None):
         health = "Degraded" if bad else "Ready"
     http_state = _http_state()
 
-    desired = {}
-    summary = _summary_row(tracked_rows, health, http_state)
-    desired[summary["id"]] = summary
+    desired = {"app": _app_row(tracked_rows, health, http_state)}
     for row in tracked_rows:
         rid = _row_id(row)
         display = row.get("displayName") or row.get("name") or rid
@@ -108,10 +113,8 @@ def sync_app_status_rows(tracked_rows, health=None):
         deep_link = _HTTPPROXY_PATH + (
             f"?details={quote(upload_id, safe='')}" if upload_id else "")
         desired[rid] = {
+            "path": _STATUS_BASE,
             "id": rid,
-            "service": _SERVICE_LABEL,
-            "health": "",   # app-level columns live on the summary row
-            "http": "",
             "image": display,
             "namespace": row.get("namespace") or "",
             "status": row.get("downloadStatus") or row.get("health") or "",
@@ -129,12 +132,14 @@ def sync_app_status_rows(tracked_rows, health=None):
         deletes = []
         if not _purged_stale[0]:
             # Rows survive in the EDA state DB across app restarts/reinstalls;
-            # wipe the whole table once per process so orphans from a previous
+            # wipe both tables once per process so orphans from a previous
             # install (possibly with a deleted PVC) never linger.
             deletes.append(_STATUS_BASE)
+            deletes.append(_APP_BASE)
         deletes.extend(
             f'{_STATUS_BASE}{{.id=="{rid}"}}'
             for rid in sorted(_last_known_ids - set(desired))
+            if rid != "app"
         )
         payload = {
             "adds": list(desired.values()),
