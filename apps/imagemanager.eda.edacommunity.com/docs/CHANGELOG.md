@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.15
+
+Two distinct dashboard tables + version surfaced everywhere:
+
+- **Dashboard split into two dashlets:** a compact **Image Manager Service**
+  panel (Service | Health | HTTP | Version | Images | Status | View, backed by
+  the new `.cluster.apps.imagemanager.app` state DB table) sits above a clean
+  **Images** table (Image | Namespace | Status | View, backed by
+  `.cluster.apps.imagemanager.status`). No more mixed summary + image rows in
+  one table; image rows no longer carry empty app-level columns.
+- **App version everywhere:** the controller version is published in the
+  service dashlet (`version` column + info panel) and shown as a badge next to
+  the app name in the web UI app bar (`/api/config` now returns `version`).
+- **Publisher supports multiple tables:** rows carry an optional `path`
+  selecting the target state DB table; the Go daemon registers schemas for
+  both `.app` and `.status` and the startup purge wipes both, so reinstalls
+  stay clean.
+
 ## v0.0.14
 
 Seamless SSO from the dashboard + cable-map-style liveness columns:
