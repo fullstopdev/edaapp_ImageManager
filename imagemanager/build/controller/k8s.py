@@ -166,6 +166,44 @@ def list_cr_all_namespaces(group, version, plural, label_selector=None):
     return (obj or {}).get("items", [])
 
 
+def watch_cr_all_namespaces(group, version, plural, on_event,
+                            label_selector=None, stop=None, timeout_seconds=240):
+    """Long-lived cluster-wide watch on a namespaced CR type.
+
+    Calls on_event(type, object) for every ADDED/MODIFIED/DELETED event the
+    API server streams (BOOKMARKs are skipped). Returns when the server ends
+    the watch (after timeout_seconds) or `stop` is set; raises on transport
+    errors. No resourceVersion is passed on purpose: each (re)connect replays
+    the current objects as ADDED events, which doubles as anti-entropy.
+    """
+    params = {
+        "watch": "true",
+        "allowWatchBookmarks": "true",
+        "timeoutSeconds": str(timeout_seconds),
+    }
+    if label_selector:
+        params["labelSelector"] = label_selector
+    req = Request(url=f"{_K8S_BASE}/apis/{group}/{version}/{plural}?" + urlencode(params),
+                  method="GET")
+    req.add_header("Authorization", f"Bearer {_token()}")
+    req.add_header("Accept", "application/json")
+    with urlopen(req, context=_ssl_ctx(), timeout=timeout_seconds + 30) as resp:
+        for raw in resp:
+            if stop is not None and stop.is_set():
+                return
+            line = raw.decode("utf-8", errors="replace").strip()
+            if not line:
+                continue
+            try:
+                evt = json.loads(line)
+            except ValueError:
+                continue
+            etype = evt.get("type") or ""
+            if etype == "BOOKMARK":
+                continue
+            on_event(etype, evt.get("object") or {})
+
+
 def delete_namespaced_cr(group, version, namespace, plural, name):
     path = (
         f"/apis/{group}/{version}/namespaces/{quote(namespace, safe='')}"

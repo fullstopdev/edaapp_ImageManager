@@ -29,13 +29,14 @@ import time
 from datetime import datetime, timezone
 
 import app_status
+import artifact
 import artifact_launcher
 import fileserver
 import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.17"
+VERSION = "v0.0.18"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -62,6 +63,9 @@ DEFAULTS = {
 
 logger = logging.getLogger("main")
 shutdown_event = threading.Event()
+# Set by the Artifact watch / UI handlers when something changed; the status
+# sync loop wakes on it instantly instead of waiting out its poll interval.
+sync_kick = threading.Event()
 _last_status_hash = None
 _import_lock = threading.Lock()
 _import_running = False
@@ -221,17 +225,54 @@ def _update_status(health, message, tracked):
         logger.warning("Failed to update CRD status: %s", e)
 
 
-def _status_sync_loop():
-    """Push artifact status to the EDA dashboard near-instantly.
+def _artifact_watch_loop():
+    """Event-driven dashboard sync (cable-map/EDK parity).
 
-    Runs every STATUS_SYNC_INTERVAL seconds: rebuilds the tracked list (short
-    shared cache in fileserver) and syncs `.cluster.apps.imagemanager.status`.
-    The sync itself skips the gRPC round-trip when rows are unchanged, so the
-    steady-state cost is one K8s list call per tick. Also restarts the
-    status-publisher daemon if it died (it would otherwise stay down until the
-    pod restarts, freezing the dashboard).
+    EDK apps like cable-map never poll: the runtime streams CR changes to
+    them and they publish state DB rows the moment something changes. Our
+    stdlib equivalent is a cluster-wide K8s watch on the Artifact CRs this
+    app manages — the API server pushes ADDED/MODIFIED/DELETED the instant
+    eda-asvr updates a download status or a CR is created/removed (from the
+    app, kubectl, anywhere). Each event drops the tracked-list cache and
+    kicks the sync loop, so the dashboard reflects the change within ~a
+    second instead of a poll interval. Each (re)connect replays current CRs
+    as ADDED events, which doubles as anti-entropy after apiserver blips.
     """
     while not shutdown_event.is_set():
+        try:
+            k8s.watch_cr_all_namespaces(
+                artifact.ARTIFACT_GROUP, artifact.ARTIFACT_VERSION,
+                artifact.ARTIFACT_PLURAL,
+                on_event=lambda etype, obj: (
+                    fileserver.invalidate_tracked_cache(), sync_kick.set()),
+                label_selector=f"{artifact.MANAGED_LABEL}=true",
+                stop=shutdown_event,
+            )
+        except Exception as e:  # noqa: BLE001 - reconnect on any failure
+            logger.debug("artifact watch interrupted: %s", e)
+            shutdown_event.wait(timeout=3)
+
+
+def _status_sync_loop():
+    """Push artifact status to the EDA dashboard instantly.
+
+    Sleeps on sync_kick: the Artifact watch and UI actions set it the moment
+    anything changes, so a publish follows within ~0.5s. A STATUS_SYNC_INTERVAL
+    timeout (default 2s) doubles as a safety resync — cheap, because the sync
+    no-ops (no gRPC traffic) when rows are unchanged. Also (re)starts the
+    status-publisher daemon whenever it isn't running (it would otherwise stay
+    down until the pod restarts, freezing the dashboard).
+    """
+    while not shutdown_event.is_set():
+        kicked = sync_kick.wait(timeout=max(1, STATUS_SYNC_INTERVAL))
+        if shutdown_event.is_set():
+            return
+        if kicked:
+            # Coalesce event bursts (multi-artifact uploads, watch replays)
+            # into one rebuild, then clear so new events re-arm the kick.
+            time.sleep(0.3)
+            sync_kick.clear()
+            fileserver.invalidate_tracked_cache()
         try:
             if _status_daemon_proc is None:
                 # First start failed (eda-sa / TLS mounts not ready at pod
@@ -245,7 +286,6 @@ def _status_sync_loop():
             app_status.sync_app_status_rows(tracked)
         except Exception as e:  # noqa: BLE001 - never kill the loop
             logger.debug("fast status sync failed: %s", e)
-        shutdown_event.wait(timeout=max(1, STATUS_SYNC_INTERVAL))
 
 
 def _run_imports_async(cfg):
@@ -294,7 +334,9 @@ def main():
     # the publisher daemon until eda-sa is reachable) and no-ops when rows are
     # unchanged, so the app appears on the dashboard within seconds of pod
     # start instead of after the reconcile settle delay.
+    fileserver.SYNC_KICK[0] = sync_kick.set
     threading.Thread(target=_status_sync_loop, daemon=True, name="status-sync").start()
+    threading.Thread(target=_artifact_watch_loop, daemon=True, name="artifact-watch").start()
 
     if STARTUP_DELAY_SECONDS > 0:
         logger.info("Deferring first reconcile for %ds so EDA install can settle",

@@ -52,6 +52,15 @@ def _sync_app_status_now():
         app_status.sync_app_status_rows(build_tracked_list())
     except Exception as e:  # noqa: BLE001
         logger.debug("immediate app status sync failed: %s", e)
+    # Also wake the sync loop: it re-checks shortly after, catching anything
+    # still settling at the instant of the inline publish (e.g. a CR whose
+    # finalizer hadn't run yet when we listed).
+    kick = SYNC_KICK[0]
+    if kick:
+        try:
+            kick()
+        except Exception:  # noqa: BLE001
+            pass
 
 
 UPLOAD_DIR = "/data/uploads"
@@ -69,6 +78,8 @@ IM_CONFIG_NAME = "default"
 # Set by main: zero-arg callable that kicks the ImageImport reconcile
 # immediately (so a URL import starts within seconds, not at the next tick).
 IMPORT_KICK = [None]
+# Set by main: zero-arg callable that wakes the dashboard status sync loop.
+SYNC_KICK = [None]
 # Set by main at startup; surfaced in /api/config for the UI version chip.
 APP_VERSION = [""]
 
