@@ -84,7 +84,7 @@ _server = None
 _server_lock = threading.Lock()
 _tracked_cache = {"at": 0.0, "data": None}
 _tracked_lock = threading.Lock()
-_TRACKED_TTL = 8  # seconds; UI polls every 10s on the Status tab
+_TRACKED_TTL = 3  # seconds; UI polls at 4s when active, fast status loop at 5s
 
 # OCI distribution (registry v2) path patterns. `name` may contain '/'.
 _V2_MANIFEST_RE = re.compile(r"^/v2/(.+)/manifests/(.+)$")

@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.0.12
+
+Near-instant dashboard status + richer launcher columns:
+
+- **Fast status sync:** dedicated 5s loop (`STATUS_SYNC_INTERVAL`) pushes
+  `.cluster.apps.imagemanager.status` rows as soon as anything changes, instead
+  of waiting for the 60s reconcile. Change-detection makes unchanged ticks
+  free (no publisher spawn, no gRPC traffic). Upload/replace/delete in the app
+  still sync immediately. Tracked-list cache TTL lowered 8s → 3s.
+- **Dashboard columns fixed:** Service (constant "Image Manager"), Image
+  (image/artifact name), Namespace, Status, View — matching the app's own
+  status table.
+- **Row deep links:** each row's `url` now points at
+  `/core/httpproxy/v1/imagemanager/?details=<uploadId>`; clicking View on a row
+  opens the app with that image's details dialog (NodeProfile YAML snippets)
+  already open. The dialog gains a **Delete image** button, so an image can be
+  inspected and deleted starting from the EDA dashboard (the EQL dashlet table
+  itself is read-only, so deletion is confirmed in the app dialog).
+
 ## v0.0.11
 
 UI redesign (cable-map pro look, dashboard-first):

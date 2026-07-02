@@ -34,11 +34,13 @@ const (
 )
 
 type inputRow struct {
-	ID      string `json:"id"`
-	Service string `json:"service"`
-	Status  string `json:"status"`
-	Open    string `json:"open"`
-	URL     string `json:"url"`
+	ID        string `json:"id"`
+	Service   string `json:"service"`
+	Image     string `json:"image"`
+	Namespace string `json:"namespace"`
+	Status    string `json:"status"`
+	Open      string `json:"open"`
+	URL       string `json:"url"`
 }
 
 type inputPayload struct {
@@ -47,11 +49,13 @@ type inputPayload struct {
 }
 
 type statusRow struct {
-	ID      string `json:"id"`
-	Service string `json:"service"`
-	Status  string `json:"status"`
-	Open    string `json:"open"`
-	URL     string `json:"url"`
+	ID        string `json:"id"`
+	Service   string `json:"service"`
+	Image     string `json:"image"`
+	Namespace string `json:"namespace"`
+	Status    string `json:"status"`
+	Open      string `json:"open"`
+	URL       string `json:"url"`
 }
 
 type publisher struct {
@@ -233,11 +237,13 @@ func (p *publisher) sync(payload inputPayload) error {
 			continue
 		}
 		body, err := json.Marshal(statusRow{
-			ID:      row.ID,
-			Service: row.Service,
-			Status:  row.Status,
-			Open:    row.Open,
-			URL:     row.URL,
+			ID:        row.ID,
+			Service:   row.Service,
+			Image:     row.Image,
+			Namespace: row.Namespace,
+			Status:    row.Status,
+			Open:      row.Open,
+			URL:       row.URL,
 		})
 		if err != nil {
 			return err

@@ -711,6 +711,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     </div>
   </div>
   <div class="dialog-actions">
+    <button class="btn text danger ripple" id="npDelete">Delete image</button>
     <button class="btn text subtle ripple" id="npClose">Close</button>
   </div>
 </div>
@@ -1353,7 +1354,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---------- NodeProfile dialog (snippet + complete example) ----------
-  var npSnippet=el("npSnippet"), npFull=el("npFull");
+  var npSnippet=el("npSnippet"), npFull=el("npFull"), npCurrentUid=null;
   function copyBtn(btn, text){
     if(navigator.clipboard) navigator.clipboard.writeText(text||"");
     var t0=btn.textContent; btn.textContent="Copied"; setTimeout(function(){ btn.textContent=t0; }, 1200);
@@ -1361,7 +1362,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function openNodeProfile(uid){
     var t=null;
     for(var i=0;i<currentData.length;i++){ if(currentData[i].uploadId===uid){ t=currentData[i]; break; } }
-    if(!t) return;
+    if(!t) return false;
+    npCurrentUid=uid;
     el("npTitle").textContent = "NodeProfile — " + (t.displayName||t.name||"");
     // SR-SIM emits a containerImage-based sim NodeProfile, not a spec.images
     // fragment; relabel the snippet section + intro accordingly.
@@ -1380,10 +1382,32 @@ INDEX_HTML = r"""<!DOCTYPE html>
     npSnippet.textContent = t.snippet || "(not ready yet)";
     npFull.textContent = t.nodeProfileExample || "(ready once the image is Available)";
     openModal(el("npDialog"));
+    return true;
   }
   el("npClose").addEventListener("click", closeModal);
   el("npCopySnip").addEventListener("click", function(){ copyBtn(this, npSnippet.textContent); });
   el("npCopyFull").addEventListener("click", function(){ copyBtn(this, npFull.textContent); });
+  el("npDelete").addEventListener("click", function(){
+    var uid=npCurrentUid, t=null;
+    if(!uid) return;
+    for(var i=0;i<currentData.length;i++){ if(currentData[i].uploadId===uid){ t=currentData[i]; break; } }
+    closeModal();
+    imDelete(uid, (t&&t.namespace)||"", (t&&t.name)||"");
+  });
+
+  // Deep link from the EDA dashboard: /?details=<uploadId> opens that image's
+  // details dialog (NodeProfile YAML + Delete) as soon as its row is loaded.
+  var pendingDetails=(function(){
+    try{ return new URLSearchParams(location.search).get("details")||null; }
+    catch(e){ return null; }
+  })();
+  function tryPendingDetails(){
+    if(!pendingDetails) return;
+    if(openNodeProfile(pendingDetails)){
+      pendingDetails=null;
+      try{ history.replaceState(null, "", location.pathname); }catch(e){}
+    }
+  }
 
   rows.addEventListener("click", function(e){
     var b = e.target.closest("button[data-act]");
@@ -1622,6 +1646,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
           delete pendingUploads[k];
       });
       render();
+      tryPendingDetails();
     }).catch(function(e){
       rows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
         "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>';

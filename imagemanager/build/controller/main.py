@@ -35,11 +35,14 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.11"
+VERSION = "v0.0.12"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
 RECONCILE_INTERVAL = int(os.environ.get("RECONCILE_INTERVAL", "60"))
+# Fast loop: rebuild artifact status + push dashboard rows every few seconds
+# (sync_app_status_rows is a no-op when nothing changed, so this is cheap).
+STATUS_SYNC_INTERVAL = int(os.environ.get("STATUS_SYNC_INTERVAL", "5"))
 STARTUP_DELAY_SECONDS = int(os.environ.get("STARTUP_DELAY_SECONDS", "45"))
 LAUNCHER_SYNC_GRACE_SECONDS = int(os.environ.get("LAUNCHER_SYNC_GRACE_SECONDS", "0"))
 _MAX_RECONCILE_BACKOFF = int(os.environ.get("MAX_RECONCILE_BACKOFF", "300"))
@@ -217,6 +220,23 @@ def _update_status(health, message, tracked):
         logger.warning("Failed to update CRD status: %s", e)
 
 
+def _status_sync_loop():
+    """Push artifact status to the EDA dashboard near-instantly.
+
+    Runs every STATUS_SYNC_INTERVAL seconds: rebuilds the tracked list (short
+    shared cache in fileserver) and syncs `.cluster.apps.imagemanager.status`.
+    The sync itself skips the gRPC round-trip when rows are unchanged, so the
+    steady-state cost is one K8s list call per tick.
+    """
+    while not shutdown_event.is_set():
+        try:
+            tracked = fileserver.build_tracked_list()
+            app_status.sync_app_status_rows(tracked)
+        except Exception as e:  # noqa: BLE001 - never kill the loop
+            logger.debug("fast status sync failed: %s", e)
+        shutdown_event.wait(timeout=max(2, STATUS_SYNC_INTERVAL))
+
+
 def _run_imports_async(cfg):
     """Run URL imports off the main reconcile path so uploads stay responsive."""
     global _import_running
@@ -264,6 +284,8 @@ def main():
             fileserver.stop_file_server()
             _stop_status_publisher_daemon()
             return
+
+    threading.Thread(target=_status_sync_loop, daemon=True, name="status-sync").start()
 
     while not shutdown_event.is_set():
         cycle_start = time.time()

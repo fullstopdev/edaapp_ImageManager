@@ -1,11 +1,11 @@
 {
   "uuid": "1fc6d9e9-d2ab-425a-9c9e-f8dbbacdf793",
   "name": "Image Manager",
-  "version": "0.0.11",
+  "version": "0.0.12",
   "displayName": "Image Manager",
   "description": "Image Manager status and upload entry point.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-02T09:30:00Z",
+  "lastChanged": "2026-07-02T11:00:00Z",
   "screens": [
     {
       "name": "Image Manager",
@@ -26,7 +26,7 @@
               "uuid": "5fafee68-f3e0-4c59-8778-f74ffbf2992f",
               "type": "dashletDataView",
               "title": "Image Manager",
-              "subtitle": "Tracked images and Artifact download status — click View to open the full UI",
+              "subtitle": "Tracked images and Artifact download status — click a row's View link to open that image's details (NodeProfile YAML, delete)",
               "width": 980,
               "height": 420,
               "fillWidth": true,
@@ -53,27 +53,43 @@
                       "fields": [
                         {
                           "fieldName": "service",
-                          "label": "Name",
+                          "label": "Service",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 160,
-                          "flex": 1.4
+                          "minWidth": 130,
+                          "flex": 1
                         },
                         {
-                          "fieldName": "open",
-                          "label": "View",
+                          "fieldName": "image",
+                          "label": "Image",
                           "type": "string",
-                          "sortable": false,
-                          "minWidth": 100,
-                          "flex": 0.7
+                          "sortable": true,
+                          "minWidth": 180,
+                          "flex": 1.5
+                        },
+                        {
+                          "fieldName": "namespace",
+                          "label": "Namespace",
+                          "type": "string",
+                          "sortable": true,
+                          "minWidth": 120,
+                          "flex": 1
                         },
                         {
                           "fieldName": "status",
                           "label": "Status",
                           "type": "string",
                           "sortable": true,
-                          "minWidth": 170,
-                          "flex": 1.6
+                          "minWidth": 140,
+                          "flex": 1.1
+                        },
+                        {
+                          "fieldName": "open",
+                          "label": "View",
+                          "type": "string",
+                          "sortable": false,
+                          "minWidth": 90,
+                          "flex": 0.6
                         },
                         {
                           "fieldName": "url",
