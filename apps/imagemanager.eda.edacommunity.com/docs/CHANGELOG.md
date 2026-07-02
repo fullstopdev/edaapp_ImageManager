@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.18
+
+Event-driven dashboard sync (EDK/cable-map parity) — no more polling lag:
+
+- **Kubernetes watch on Artifact CRs:** cable-map and other EDK catalog apps
+  never poll — the runtime streams CR changes to them and they publish state
+  DB rows on each change. Image Manager now does the stdlib equivalent: a
+  long-lived cluster-wide watch on its managed Artifact CRs. The API server
+  pushes ADDED/MODIFIED/DELETED the instant eda-asvr flips a download status
+  or a CR appears/disappears (from the app UI, kubectl, anywhere), the
+  tracked-list cache is dropped and the publish happens within ~0.5s.
+- **Sync loop is event-driven:** it sleeps on a kick event (set by the watch
+  and by UI upload/delete/replace actions) with a short safety-resync
+  timeout, instead of blindly rebuilding every 2s. Bursts (multi-artifact
+  uploads, watch reconnect replays) coalesce into one publish.
+- Delete flow: UI delete already publishes inline; the watch now also fires
+  on the CR deletion itself, so rows vanish from the dashboard immediately
+  even when the CR lingered in Terminating at the moment of the inline
+  publish, and even for deletions made outside the app. (Requires the
+  v0.0.16 subtree-rebuild fix — targeted state DB row deletes are ignored by
+  the aggregator.)
+
 ## v0.0.17
 
 Dashboard shows the app within seconds of pod start (was minutes):
