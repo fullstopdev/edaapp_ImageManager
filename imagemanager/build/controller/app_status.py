@@ -26,7 +26,6 @@ _APP_BASE = ".cluster.apps.imagemanager.app"          # single service/server ro
 _HTTPPROXY_PATH = "/core/httpproxy/v1/imagemanager/"
 _SERVICE_LABEL = "Image Manager"
 APP_VERSION = [""]   # set by main at startup; shown in the dashboard app table
-_last_known_ids = set()
 _last_synced = [None]   # last successfully-synced desired dict (skip no-op sends)
 _purged_stale = [False]  # first sync of this process wipes rows from prior installs
 _sync_lock = threading.Lock()
@@ -126,21 +125,20 @@ def sync_app_status_rows(tracked_rows, health=None):
         }
 
     with _sync_lock:
-        global _last_known_ids
         if desired == _last_synced[0] and _purged_stale[0]:
             return
-        deletes = []
+        # Targeted per-row deletes ({.id=="..."} predicates) are silently
+        # ignored by the aggregator (Send errors only surface on the recv
+        # side), which left deleted images on the dashboard forever. Subtree
+        # deletes ARE reliable (proven by the reinstall purge), so rebuild the
+        # whole image table on every publish: wipe .status, then re-add the
+        # current rows — the daemon sends deletes before adds on one ordered
+        # stream. The .app row needs no delete: its add overwrites in place.
+        deletes = [_STATUS_BASE]
         if not _purged_stale[0]:
-            # Rows survive in the EDA state DB across app restarts/reinstalls;
-            # wipe both tables once per process so orphans from a previous
+            # Once per process, also wipe .app so orphans from a previous
             # install (possibly with a deleted PVC) never linger.
-            deletes.append(_STATUS_BASE)
             deletes.append(_APP_BASE)
-        deletes.extend(
-            f'{_STATUS_BASE}{{.id=="{rid}"}}'
-            for rid in sorted(_last_known_ids - set(desired))
-            if rid != "app"
-        )
         payload = {
             "adds": list(desired.values()),
             "deletes": deletes,
@@ -162,7 +160,6 @@ def sync_app_status_rows(tracked_rows, health=None):
             err = (proc.stderr or proc.stdout or b"").decode("utf-8", errors="replace").strip()
             logger.warning("app status sync failed (exit %d): %s", proc.returncode, err[:500])
             return
-        _last_known_ids = set(desired)
         _last_synced[0] = desired
         _purged_stale[0] = True
         logger.info("app status sync: %d row(s)", len(desired))
