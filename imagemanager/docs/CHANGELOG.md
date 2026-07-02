@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.0.35
+
+**Fix embedded EDA sign-in:** v0.0.33/v0.0.34 re-validated Keycloak SSO on every
+load when an `im_session` cookie existed. Inside the EDA iframe, `checkLoginIframe`
+and `check-sso` often false-negative, which cleared a valid cookie and left
+`silentSso()` unable to recover (Keycloak `init()` cannot run twice). Image
+Manager now trusts a valid server session on first load, dedupes Keycloak init,
+disables the login-status iframe in embedded mode, and uses server-side session
+probes plus silent SSO for periodic logout detection in the iframe.
+
 ## v0.0.34
 
 **Auth hardening:** faster EDA logout detection and proper app sign-out.

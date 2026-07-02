@@ -7,8 +7,9 @@ adaptive live polling (4s while work is in flight, 12s at rest, paused when
 the tab is hidden). Sign-in is silent SSO against the EDA Keycloak session
 (new tab from the dashboard or embedded iframe), falling back to the OIDC
 redirect flow; role gating via ALLOWED_ROLES (EDA ClusterRole). Session
-hygiene: Keycloak login-status iframe (~5s), tab-focus revalidation, and a
-Sign out action that ends the EDA session via keycloak-js."""
+hygiene: Keycloak login-status iframe (standalone only), tab-focus revalidation, and a
+Sign out action that ends the EDA session via keycloak-js. Embedded iframe mode
+uses server session probes + silent SSO instead of Keycloak iframe checks."""
 
 SILENT_SSO_HTML = r"""<!doctype html><html><body><script>
 parent.postMessage(location.href, location.origin);
@@ -867,6 +868,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var embedded = window.self !== window.top;
   var authReady = false;
   var kcInstance = null;
+  var kcInitPromise = null;
   var sessionCheckTimer = null;
   var revalidateTimer = null;
   var signOutPending = false;
@@ -908,12 +910,26 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return fetch(api("/oauth/session/logout"), { method: "POST", credentials: "same-origin" })
       .catch(function(){ return null; });
   }
+  function probeSession(){
+    // Embedded iframe: Keycloak login-status iframe and check-sso often false-negative
+    // inside EDA; rely on server session + silent SSO when the cookie is rejected.
+    if(embedded){
+      return fetch(api("/api/config")).then(function(r){
+        if(r.status === 200) return true;
+        if(r.status !== 401) return true;
+        return silentSso().then(function(ex){
+          return !!(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok);
+        });
+      });
+    }
+    return verifyKeycloakSession(false);
+  }
   function scheduleRevalidate(){
     if(revalidateTimer) clearTimeout(revalidateTimer);
     revalidateTimer = setTimeout(function(){
       revalidateTimer = null;
       if(!authReady || document.hidden) return;
-      verifyKeycloakSession(true).then(function(ok){
+      probeSession().then(function(ok){
         if(ok) return;
         handleSessionLoss("Your EDA session has ended.");
       }).catch(function(){});
@@ -923,7 +939,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(sessionCheckTimer) clearInterval(sessionCheckTimer);
     sessionCheckTimer = setInterval(function(){
       if(!authReady || document.hidden) return;
-      verifyKeycloakSession(false).then(function(ok){
+      probeSession().then(function(ok){
         if(ok) return;
         handleSessionLoss("Your EDA session has ended.");
       }).catch(function(){});
@@ -1010,12 +1026,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function initKeycloakCheck(){
     var kc = getKeycloak();
     if(!kc) return Promise.reject(new Error("keycloak-js unavailable"));
-    return kc.init({
+    if(kcInitPromise) return kcInitPromise;
+    kcInitPromise = kc.init({
       onLoad: "check-sso",
       silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-      checkLoginIframe: true,
+      checkLoginIframe: !embedded,
       messageReceiveTimeout: 10000
+    }).catch(function(e){
+      kcInitPromise = null;
+      throw e;
     });
+    return kcInitPromise;
   }
   function verifyKeycloakSession(refreshBanner){
     if(typeof refreshBanner === "undefined") refreshBanner = true;
@@ -1024,6 +1045,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }).then(function(ok){
       var kc = getKeycloak();
       if(!ok || !kc || !kc.authenticated || !kc.token){
+        if(!authReady) return false;
         return clearServerSession().then(function(){
           resetAuthState(refreshBanner
             ? "Your EDA session has ended. Sign in again."
@@ -1038,6 +1060,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
           err.exchange = ex;
           throw err;
         }
+        if(!authReady) return false;
         return clearServerSession().then(function(){
           resetAuthState(refreshBanner
             ? "Your EDA session has ended. Sign in again."
@@ -1045,6 +1068,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
           return false;
         });
       });
+    }).catch(function(){
+      return false;
     });
   }
   function silentSso(){
@@ -1081,36 +1106,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return fetch(api("/api/config")).then(function(r){
       if(r.status === 200){
         return r.json().then(function(c){
-          // Local cookie may outlive the EDA Keycloak session — verify SSO still active.
-          return verifyKeycloakSession(false).then(function(ok){
-            if(ok){
-              authReady = true;
-              scheduleSessionCheck();
-              return c;
-            }
-            return silentSso().then(function(ex){
-              if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-                authReady = true;
-                scheduleSessionCheck();
-                return fetch(api("/api/config")).then(function(r2){
-                  if(r2.status !== 200) throw new Error("config after sso");
-                  return r2.json();
-                });
-              }
-              if(ex && ex.status === 403){
-                var err = new Error("forbidden");
-                err.exchange = ex;
-                throw err;
-              }
-              if(!embedded){
-                window.location = apiBase + "/oauth/login";
-                throw new Error("redirect");
-              }
-              var err2 = new Error("sso failed");
-              err2.exchange = ex;
-              throw err2;
-            });
-          });
+          // Trust a valid im_session on first load; periodic probeSession() detects
+          // EDA logout without clearing the cookie on Keycloak iframe false-negatives.
+          authReady = true;
+          scheduleSessionCheck();
+          return c;
         });
       }
       if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
@@ -1790,6 +1790,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   function handleAuthLoss(){
     authReady = false;
+    kcInitPromise = null;
     syncLiveIndicator();
     return clearServerSession().then(function(){ return ensureAuth(); });
   }
