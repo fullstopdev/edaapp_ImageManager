@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.0.9
+
+Fix CE crash on install/upgrade and reduce API load during bootstrap:
+
+- **CE panic fix:** add empty `ImageManagerArtifactSpec` to the
+  `ImageManagerArtifact` CRD. CE's `propertiesBackwardCompatible` nil-dereferenced
+  when the CRD had status only (no `spec` schema), crashing config-engine during
+  v0.0.8 manifest publish and leaving the dashboard unregistered.
+- Controller: 45s startup delay before first reconcile (`STARTUP_DELAY_SECONDS`).
+- Controller: exponential backoff on reconcile errors (up to `MAX_RECONCILE_BACKOFF`).
+- Launcher sync: skip `ImageManagerArtifact` CR writes for the first 5 minutes
+  when there are no uploads yet (`LAUNCHER_SYNC_GRACE_SECONDS`).
+- Node-agent DaemonSet: init container waits for controller `/healthz` before
+  writing containerd registry redirects.
+- Regenerate dashboard UUIDs; bump dashboard `version` to `0.0.9`.
+
 ## v0.0.8
 
 Fix missing EDA left-nav entry (regression from v0.0.6):
