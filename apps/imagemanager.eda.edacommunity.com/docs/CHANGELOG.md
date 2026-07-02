@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.0.20
+
+Startup self-healing + pro ops UI + HA/storage guidance:
+
+- **Storage reconcile on startup (node-agent parity):** the controller now
+  re-derives upload state from the PVC and live Artifact CRs instead of trusting
+  cached tracking. On every startup and every 10 reconcile cycles it: removes stale
+  `.incoming-*` / `.import-*` temp dirs (configurable via
+  `STALE_WORK_DIR_SECONDS`, default 1h); reports incomplete dirs (bytes but no
+  `meta.json`); auto-repushes uploads whose PVC meta exists but Artifact CRs are
+  missing (`repush_from_local`, no re-download).
+- **Dashboard ops strip:** Controller / Storage / Reconcile cards show deployment
+  mode, PVC posture, last reconcile, and surface warnings (in-flight work dirs,
+  incomplete uploads, repush failures). Settings tab adds an HA & storage panel.
+- **UI polish:** hero-style page header, improved status chips (`Needs republish`
+  for `NoArtifact`), ops alert banner when reconcile finds issues.
+- **Docs:** new `docs/resources/ha-and-storage.md` — PVC backup, external pull
+  URL hook (`filePullBaseUrl`), why single-replica today, operational checklist.
+- **`/api/artifacts`** now includes a `system` object (version, reconcile snapshot,
+  work dirs). `/healthz` includes reconcile metadata.
+
 ## v0.0.19
 
 Publisher redesign after live debugging against eda-sa — fixes stale rows for

@@ -35,6 +35,9 @@ After install, open the app UI (while signed into the EDA UI) at
 namespace, and upload. A status table shows each image move to `Available` (file images) or
 `Ready` (SR‑SIM), with a per‑row **Details** popup giving the NodeProfile to use.
 
+For deployment topology, PVC backup, and external artifact origins, see
+[High availability and storage](resources/ha-and-storage.md).
+
 The application provides the following components:
 
 /// tab | Resources
