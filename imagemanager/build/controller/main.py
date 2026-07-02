@@ -37,7 +37,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.43"
+VERSION = "v0.0.44"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443

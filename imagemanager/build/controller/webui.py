@@ -7,9 +7,12 @@ adaptive live polling (4s while work is in flight, 12s at rest, paused when
 the tab is hidden). Sign-in is silent SSO against the EDA Keycloak session
 (new tab from the dashboard or embedded iframe), falling back to the OIDC
 redirect flow; role gating via ALLOWED_ROLES (EDA ClusterRole). Uploads in
-progress defer auth redirects until the transfer finishes. Post-auth Keycloak
-session iframe + periodic revalidation detect EDA GUI logout; Sign out button
-ends the full EDA session via keycloak-js."""
+progress defer auth redirects until the transfer finishes. Bootstrap: trust
+``im_session`` or silent SSO before showing the UI; session probes and logout
+handlers are deferred until bootstrap completes. Post-auth Keycloak session
+iframe + periodic revalidation detect EDA GUI logout (embedded iframe reloads
+the EDA shell — no in-app banner); Sign out button ends the full EDA session
+via keycloak-js."""
 
 SILENT_SSO_HTML = r"""<!doctype html><html><body><script>
 parent.postMessage(location.href, location.origin);
@@ -871,6 +874,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var maxBytes = 4096*1024*1024;
   var embedded = window.self !== window.top;
   var authReady = false;
+  var authBootstrapComplete = false;
   var deferredSessionLoss = null;
   var pendingUploads = {}, uploadSeq = 0;
   var SSO_TIMEOUT_MS = 15000;
@@ -900,6 +904,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function logoutRedirectUri(){
     return location.origin + apiBase + "/";
+  }
+  function finishBootstrap(){
+    authBootstrapComplete = true;
+  }
+  function redirectToEdaLogin(){
+    try {
+      if(window.top && window.top !== window.self){
+        window.top.location.reload();
+        return;
+      }
+    } catch(e){}
+    window.location = location.origin + "/";
   }
 
   function uploadInFlight(){
@@ -940,11 +956,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
   }
   function handleSessionLoss(msg){
+    if(!authBootstrapComplete) return;
     if(uploadInFlight()){
       deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
       return;
     }
-    var text = msg || "Your EDA session has ended. Sign in again.";
     clearServerSession().then(function(){
       authReady = false;
       sessionWatchReady = false;
@@ -953,14 +969,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
       syncLiveIndicator();
       hideAuthUser();
       if(embedded){
-        showSignInBanner(text + " Reload this page or sign in again from the EDA dashboard.");
+        redirectToEdaLogin();
       } else {
-        showSignInBanner(text);
+        window.location = apiBase + "/oauth/login";
       }
-      if(rows) rows.innerHTML = '<tr><td colspan="5" class="empty">'+esc(text)+'</td></tr>';
     });
   }
   function handleAuthLoss(){
+    if(!authBootstrapComplete) return Promise.resolve();
     if(uploadInFlight()){
       deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
       return Promise.resolve();
@@ -980,6 +996,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!kcInstance){
       kcInstance = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
       kcInstance.onAuthLogout = function(){
+        if(!authBootstrapComplete) return;
         handleSessionLoss("Your EDA session has ended.");
       };
     }
@@ -1006,11 +1023,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function probeSession(force){
     if(uploadInFlight()) return Promise.resolve(true);
+    if(!authBootstrapComplete && !force) return Promise.resolve(true);
     if(!authReady && !force) return Promise.resolve(true);
     return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
       if(r.status === 200) return true;
       if(r.status !== 401) return true;
-      if(embedded) return false;
       return silentSso({ quiet: true }).then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
@@ -1054,7 +1071,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(revalidateTimer) clearTimeout(revalidateTimer);
     revalidateTimer = setTimeout(function(){
       revalidateTimer = null;
-      if(!authReady || document.hidden || uploadInFlight()) return;
+      if(!authBootstrapComplete || !authReady || document.hidden || uploadInFlight()) return;
       probeSession().then(function(ok){
         if(ok) return;
         handleSessionLoss("Your EDA session has ended.");
@@ -1064,7 +1081,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function scheduleSessionCheck(){
     if(sessionCheckTimer) clearInterval(sessionCheckTimer);
     sessionCheckTimer = setInterval(function(){
-      if(!authReady || document.hidden || uploadInFlight()) return;
+      if(!authBootstrapComplete || !authReady || document.hidden || uploadInFlight()) return;
       probeSession().then(function(ok){
         if(ok) return;
         handleSessionLoss("Your EDA session has ended.");
@@ -1081,6 +1098,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     silentSso({ forceScript: true }).then(function(ex){
       if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
         authReady = true;
+        bootDone();
+        if(!authBootstrapComplete) finishBootstrap();
         startSessionWatchers();
         scheduleSessionCheck();
         return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
@@ -1214,26 +1233,35 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
       if(r.status === 200){
         authReady = true;
+        bootDone();
+        finishBootstrap();
         startSessionWatchers();
         scheduleSessionCheck();
         return r.json();
       }
       if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
-      // Silent SSO first (works in the EDA iframe AND a new tab opened from the
-      // dashboard): reuse the browser's existing EDA Keycloak session, no
-      // redirect, no re-login. Falls back to the OIDC redirect flow only when
-      // silent SSO cannot complete (e.g. keycloak-js unavailable).
-      return silentSso().then(function(ex){
+      // Silent SSO (EDA iframe or View new tab): reuse the browser's EDA Keycloak
+      // session, exchange for im_session, then retry config. Standalone falls back
+      // to /oauth/login only after silent SSO truly fails.
+      setAuthBanner("info", "Signing in\u2026");
+      return silentSso({ quiet: true }).then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
-          startSessionWatchers();
-          scheduleSessionCheck();
           return fetch(api("/api/config"), FETCH_OPTS).then(function(r2){
             if(r2.status !== 200) throw new Error("config after sso");
             return r2.json();
+          }).then(function(c){
+            bootDone();
+            finishBootstrap();
+            setAuthBanner("", "");
+            startSessionWatchers();
+            scheduleSessionCheck();
+            return c;
           });
         }
         if(ex && ex.status === 403){
+          finishBootstrap();
+          setAuthBanner("", "");
           var err = new Error("forbidden");
           err.exchange = ex;
           throw err;   // role denied — redirecting would just loop
@@ -1242,23 +1270,27 @@ INDEX_HTML = r"""<!DOCTYPE html>
           deferredSessionLoss = "Your EDA session has ended. Sign in again.";
           throw new Error("deferred");
         }
-        if(!embedded){
-          showSignInBanner("Sign-in required. Try again or use Sign in.");
+        finishBootstrap();
+        setAuthBanner("", "");
+        if(embedded){
+          showSignInBanner("Sign-in required. Try again.");
           throw new Error("sign-in required");
         }
-        var err2 = new Error("sso failed");
-        err2.exchange = ex;
-        throw err2;
+        window.location = apiBase + "/oauth/login";
+        throw new Error("redirect");
       }, function(e){
         if(uploadInFlight()){
           deferredSessionLoss = "Your EDA session has ended. Sign in again.";
           throw new Error("deferred");
         }
-        if(!embedded){
-          showSignInBanner("Sign-in required. Try again or use Sign in.");
+        finishBootstrap();
+        setAuthBanner("", "");
+        if(embedded){
+          showSignInBanner("Sign-in required. Try again.");
           throw new Error("sign-in required");
         }
-        throw e;
+        window.location = apiBase + "/oauth/login";
+        throw new Error("redirect");
       });
     });
   }
@@ -1425,7 +1457,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---------- config + namespaces ----------
-  bootDone();
   ensureAuth().then(function(c){
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
@@ -1446,7 +1477,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     refreshImports();
     syncLiveIndicator();
   }).catch(function(err){
-    if(err && (err.message === "deferred" || err.message === "sign-in required")) return;
+    if(err && (err.message === "deferred" || err.message === "sign-in required" || err.message === "redirect")) return;
     var msg = (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
             : (err && err.exchange) ? authErrorMessage(err.exchange)
             : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
@@ -2124,18 +2155,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }, pollInterval());
   }
   document.addEventListener("visibilitychange", function(){
-    if(!document.hidden && authReady){
+    if(!document.hidden && authReady && authBootstrapComplete){
       scheduleRevalidate();
       refresh(); refreshImports();
     }
     syncLiveIndicator();
   });
   window.addEventListener("storage", function(ev){
-    if(!authReady) return;
+    if(!authBootstrapComplete || !authReady) return;
     if(ev.key === null || ev.key.indexOf("kc-") === 0) scheduleRevalidate();
   });
   window.addEventListener("pageshow", function(ev){
-    if(ev.persisted && authReady) scheduleRevalidate();
+    if(ev.persisted && authBootstrapComplete && authReady) scheduleRevalidate();
   });
   var signOutBtn=el("signOutBtn");
   if(signOutBtn) signOutBtn.addEventListener("click", askSignOut);

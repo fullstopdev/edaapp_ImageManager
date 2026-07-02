@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.0.44
+
+**Fix embedded bootstrap + EDA logout UX (v0.0.43 regression):**
+
+- **Bootstrap gate:** The dashboard shell stays hidden until auth completes
+  (`bootDone()` only after a successful `GET /api/config`). During silent SSO
+  the UI shows **Signing in…** only — no Try again banner mid-bootstrap.
+- **`authBootstrapComplete`:** `probeSession()`, `handleSessionLoss()`, and
+  tab/storage revalidation are skipped until bootstrap finishes, preventing
+  false session-loss banners while Keycloak SSO is still running.
+- **Session probes:** On `401`, both embedded and standalone attempt one quiet
+  silent SSO re-exchange before declaring session loss (restores v0.0.41 probe
+  behaviour; v0.0.43 embedded early-`false` removed).
+- **Embedded EDA logout:** Clears `im_session` then reloads the EDA shell
+  (`window.top.location.reload()`) — no in-app Try again banner (cable-map
+  pattern). Standalone tabs redirect to `/oauth/login` on logout.
+- **Standalone bootstrap fallback:** When silent SSO truly fails, redirect to
+  `/oauth/login` instead of the in-page **Sign in required** banner (empty KPIs
+  + banner flash).
+- **v0.0.43 retained:** Deduped Keycloak script load, upload-in-flight guard,
+  post-auth `checkLoginIframe` + `onAuthLogout` watchers unchanged.
+
 ## v0.0.43
 
 **Fix Keycloak script load breaking artifact refresh (v0.0.42 regression):**
