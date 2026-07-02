@@ -850,8 +850,21 @@ def _dir_age_seconds(path):
         return 0
 
 
+def _work_dir_is_empty(path):
+    """True when a temp work dir has no files (leftover after successful cleanup)."""
+    try:
+        with os.scandir(path) as it:
+            return not any(it)
+    except OSError:
+        return True
+
+
 def cleanup_stale_work_dirs(max_age_seconds=None):
-    """Remove abandoned .incoming-* / .import-* temp dirs (crash mid-upload)."""
+    """Remove abandoned .incoming-* / .import-* temp dirs (crash mid-upload).
+
+    Empty shells (e.g. rmtree left the directory after deleting upload.zip) are
+    removed immediately; non-empty dirs are removed once older than max_age.
+    """
     max_age = _STALE_WORK_DIR_SECONDS if max_age_seconds is None else max_age_seconds
     removed = 0
     try:
@@ -861,7 +874,7 @@ def cleanup_stale_work_dirs(max_age_seconds=None):
             path = os.path.join(DATA_DIR, name)
             if not os.path.isdir(path):
                 continue
-            if _dir_age_seconds(path) >= max_age:
+            if _work_dir_is_empty(path) or _dir_age_seconds(path) >= max_age:
                 shutil.rmtree(path, ignore_errors=True)
                 removed += 1
     except FileNotFoundError:
@@ -870,13 +883,15 @@ def cleanup_stale_work_dirs(max_age_seconds=None):
 
 
 def count_work_dirs():
-    """In-flight upload/import temp dirs (any age)."""
+    """In-flight upload/import temp dirs with bytes on disk (any age)."""
     n = 0
     try:
         for name in os.listdir(DATA_DIR):
-            if any(name.startswith(p) for p in _WORK_PREFIXES):
-                if os.path.isdir(os.path.join(DATA_DIR, name)):
-                    n += 1
+            if not any(name.startswith(p) for p in _WORK_PREFIXES):
+                continue
+            path = os.path.join(DATA_DIR, name)
+            if os.path.isdir(path) and not _work_dir_is_empty(path):
+                n += 1
     except FileNotFoundError:
         pass
     return n

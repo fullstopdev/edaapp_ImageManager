@@ -1483,6 +1483,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
     };
   }
 
+  // Pre-upload existence check — ask to replace before starting XHR / import.
+  function checkConflict(namespace, name){
+    var qs=new URLSearchParams({ namespace:namespace, name:name });
+    return fetchJson(api("/api/check-conflict")+"?"+qs.toString()).then(function(res){
+      if(res.status===401){
+        return handleAuthLoss().then(function(){
+          if(authReady) return checkConflict(namespace, name);
+          throw new Error("sign-in required");
+        });
+      }
+      if(!res.ok || !res.body || !res.body.ok){
+        throw new Error((res.body&&res.body.error)||("check failed (HTTP "+res.status+")"));
+      }
+      return res.body;
+    });
+  }
+
   function fillNamespaceSelects(names, defaultNs){
     [ns, urlNs].forEach(function(sel){
       if(!sel) return;
@@ -1655,7 +1672,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var lic=(licText.value||"").trim();   // optional pasted license key
     if(lic && lic.length>262144){ snack("err","License text is too large (expected a small key)."); return; }
     if(lic && !looksLikeLicense(lic)){ snack("err","That doesn't look like a license key — paste the full “<node-id> <key>” line (extra spaces, quotes or a label are fine)."); return; }
-    doUpload(f, namespace, lic);
+    var name=(imageName.value||deriveName(f.name)).trim().toLowerCase();
+    checkConflict(namespace, name).then(function(body){
+      if(body.exists){
+        askReplace(body.artifactName||name, body.namespace||namespace, function(){
+          doUpload(f, namespace, lic, true);
+        });
+      } else {
+        doUpload(f, namespace, lic, false);
+      }
+    }).catch(function(err){
+      snack("err",(err&&err.message)||"Could not check for duplicate image.", true);
+    });
   });
 
   // ---------- artifacts table ----------
@@ -1939,13 +1967,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
   paintHeaders();
 
   function render(){
-    var serverRows=sortData(currentData);
-    var seen={};
-    currentData.forEach(function(t){ seen[(t.displayName||t.name)+"|"+t.namespace]=true; });
+    var activePending={};
     var pend=[];
     Object.keys(pendingUploads).forEach(function(k){
       var p=pendingUploads[k];
-      if(!seen[p.displayName+"|"+p.namespace]) pend.push(p);  // hide once the real artifact appears
+      activePending[p.displayName+"|"+p.namespace]=true;
+      pend.push(p);
+    });
+    var serverRows=sortData(currentData).filter(function(t){
+      return !activePending[(t.displayName||t.name)+"|"+t.namespace];
     });
     updateKpis();
     if(!(pend.length+serverRows.length)){
@@ -2074,8 +2104,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var payload={ url:url, namespace:namespace, insecureSkipTLSVerify:!!el("urlInsecure").checked };
     var nm=(el("urlName").value||"").trim();
     if(nm) payload.name=nm.toLowerCase();
+    else payload.name=deriveName(url.split("?")[0].split("/").pop()||"import.zip");
     if(lic) payload.licenseKey=lic;
-    startUrlImport(payload, false).catch(function(){ snack("err","Import failed (network).", true); });
+    checkConflict(namespace, payload.name).then(function(body){
+      if(body.exists){
+        askReplace(body.artifactName||payload.name, body.namespace||namespace, function(){
+          startUrlImport(payload, true).catch(function(){ snack("err","Import failed (network).", true); });
+        });
+      } else {
+        startUrlImport(payload, false).catch(function(){ snack("err","Import failed (network).", true); });
+      }
+    }).catch(function(err){
+      snack("err",(err&&err.message)||"Could not check for duplicate image.", true);
+    });
   });
 
   function fmtGB(b){ return ((b||0)/1073741824).toFixed(1)+" GB"; }
@@ -2092,6 +2133,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function updateSystem(sys){
     if(!sys) return;
     var rec=sys.reconcile||{};
+    var workDirsActive=Math.max(rec.workDirsActive||0, sys.workDirsActive||0);
     var sm=el("opsStorageMode");
     if(sm) sm.textContent=(sys.storageBackend||"pvc").toUpperCase();
     var ss=el("opsStorageSub");
@@ -2105,7 +2147,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
     var rv=el("opsReconcile");
     if(rv){
-      var issues=(rec.incompleteDirs||[]).length+(rec.workDirsActive||0);
+      var issues=(rec.incompleteDirs||[]).length+workDirsActive;
       if(issues) rv.textContent=issues+" attention";
       else if((rec.repushed||[]).length) rv.textContent="Self-healed";
       else rv.textContent="Up to date";
@@ -2121,7 +2163,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var alert=el("opsAlert");
     if(alert){
       var msgs=[];
-      if(rec.workDirsActive) msgs.push(rec.workDirsActive+" in-flight upload/import dir(s) on disk");
+      if(workDirsActive) msgs.push(workDirsActive+" in-flight upload/import dir(s) on disk");
       if((rec.incompleteDirs||[]).length)
         msgs.push((rec.incompleteDirs||[]).length+" incomplete upload dir(s) without metadata — may need manual cleanup");
       if((rec.repushFailed||[]).length)
@@ -2157,11 +2199,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       currentData=d.artifacts||[];
       updateStorage(d.storage);
       updateSystem(d.system);
-      Object.keys(pendingUploads).forEach(function(k){
-        var p=pendingUploads[k];
-        if(currentData.some(function(t){ return (t.displayName||t.name)===p.displayName && t.namespace===p.namespace; }))
-          delete pendingUploads[k];
-      });
       render();
       tryPendingDetails();
     }).catch(function(e){

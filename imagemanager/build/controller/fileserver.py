@@ -10,6 +10,7 @@ Serves three audiences on one port:
       PUT  /api/settings     update ImageManagerConfig/default
       GET  /api/namespaces   namespace names for the UI (best-effort)
       GET  /api/artifacts    tracked uploads + live Artifact download status
+      GET  /api/check-conflict  pre-upload existence check (name + namespace)
       GET  /api/imports      ImageImport CR list (Status tab)
       POST /api/upload       raw-body file upload -> store on PVC -> create Artifact
       POST /api/url-import   create ImageImport CR from URL (URL Import tab)
@@ -396,6 +397,8 @@ class Handler(BaseHTTPRequestHandler):
                 self._serve_namespaces()
             elif path == "/api/artifacts":
                 self._serve_artifacts()
+            elif path == "/api/check-conflict":
+                self._serve_check_conflict(q)
             elif path == "/api/imports":
                 self._serve_imports()
             else:
@@ -442,6 +445,38 @@ class Handler(BaseHTTPRequestHandler):
             "user": self._authed_user() or "",
             "version": APP_VERSION[0],
         })
+
+    def _serve_check_conflict(self, q):
+        """Return whether an image/artifact name is already taken (pre-upload check)."""
+
+        def one(name, default=None):
+            v = q.get(name, [default])
+            return v[0] if v else default
+
+        namespace = (one("namespace") or "").strip()
+        name = (one("name") or "").strip().lower()
+        if not namespace:
+            self._send_json({"ok": False, "error": "namespace query param required"}, 400)
+            return
+        if not name:
+            self._send_json({"ok": False, "error": "name query param required"}, 400)
+            return
+        upload_id = uploads.to_k8s_name(name)
+        if not upload_id:
+            self._send_json({"ok": False, "error": "could not derive a valid image name"}, 400)
+            return
+        conflict = import_common.check_conflict(upload_id, namespace, name)
+        if conflict:
+            self._send_json({
+                "ok": True,
+                "exists": True,
+                "artifactName": conflict.get("artifactName"),
+                "displayName": conflict.get("displayName"),
+                "namespace": conflict.get("namespace"),
+                "error": conflict.get("error"),
+            })
+        else:
+            self._send_json({"ok": True, "exists": False})
 
     def _serve_settings(self):
         """Read ImageManagerConfig/default spec + live status for the Settings tab."""
@@ -982,6 +1017,14 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": "Content-Length required"}, 411)
             return
         max_bytes = int(CONFIG.get("maxUploadMiB", 4096)) * 1024 * 1024
+
+        display_name = (name_override or uploads.derive_name(filename)).strip().lower()
+        upload_id = uploads.to_k8s_name(display_name)
+        if upload_id and not replace:
+            conflict = import_common.check_conflict(upload_id, namespace, display_name)
+            if conflict:
+                self._send_json(conflict, 409)
+                return
 
         # Stream the zip to a per-request temp area, auto-detect the NOS from its
         # contents, then dispatch. The temp area is always removed.

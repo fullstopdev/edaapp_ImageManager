@@ -1,5 +1,31 @@
 # Changelog
 
+## v0.0.48
+
+**Pre-upload duplicate check (replace dialog before transfer):**
+Uploading or URL-importing an image whose name already exists (local PVC
+`meta.json` or Artifact CR) now prompts **Replace it?** before any file bytes
+are sent. Confirming retries with `replace=true`; cancel leaves no
+`.incoming-*` temp dir on disk.
+
+- **`GET /api/check-conflict`:** lightweight name + namespace existence probe
+  (uses `uploads.to_k8s_name` + `import_common.check_conflict`).
+- **`POST /api/upload`:** early 409 when `replace` is not set (before streaming
+  the zip), in addition to the existing post-process guard.
+- **UI:** progress row stays visible during replace uploads (pending row no
+  longer hidden when a matching artifact row already exists; refresh no longer
+  drops in-flight pending entries). HTTP 409 replace dialog kept as fallback.
+
+## v0.0.47
+
+**Storage reconcile: ignore empty in-flight temp dirs:**
+Empty `.incoming-*` / `.import-*` shells (left behind when temp cleanup removed
+files but not the directory) are no longer counted as in-flight work and are
+removed immediately on reconcile instead of waiting for `STALE_WORK_DIR_SECONDS`.
+The dashboard ops alert now uses the live work-dir count from `/api/artifacts`
+(in addition to the periodic reconcile snapshot) so the banner clears as soon
+as temp dirs are gone.
+
 ## v0.0.46
 
 **Dashboard: OS column on Artifacts table:**
