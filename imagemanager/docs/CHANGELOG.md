@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.32
+
+Update app bar and favicon **Nokia wordmark** (`nokia-logo.png`) to the new
+official blue logo asset (transparent background, cropped to the letters).
+
 ## v0.0.31
 
 Replace app bar **Nokia wordmark** with a cleaner cropped asset (`nokia-logo.png`:
