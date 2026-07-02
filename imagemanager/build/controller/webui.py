@@ -181,7 +181,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   /* Layout */
   .app-shell { max-width:1240px; margin:0 auto; padding:20px 20px 56px; }
   .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
-    margin:0 0 18px; flex-wrap:wrap; }
+    margin:0 0 20px; flex-wrap:wrap; padding:18px 20px; border-radius:var(--radius-lg);
+    border:1px solid var(--line); background:linear-gradient(135deg,
+      color-mix(in srgb, var(--panel) 92%, var(--accent) 8%),
+      color-mix(in srgb, var(--panel) 96%, var(--surface) 4%));
+    box-shadow:var(--shadow-sm); }
   .page-title { margin:0; font-size:22px; font-weight:600; letter-spacing:-.01em;
     display:flex; align-items:center; gap:10px; }
   .page-sub { margin:6px 0 0; color:var(--muted); font-size:13px; max-width:640px; line-height:1.5; }
@@ -464,6 +468,44 @@ INDEX_HTML = r"""<!DOCTYPE html>
     font-variant-numeric:tabular-nums; transition:color var(--transition); }
   .kpi-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
   .kpi-val.bump { animation:badgePop .35s ease; }
+
+  /* Platform ops strip (controller / storage / reconcile) */
+  .ops-grid {
+    display:grid; grid-template-columns:repeat(3, minmax(0,1fr)); gap:12px; margin-bottom:12px;
+  }
+  @media (max-width:900px){ .ops-grid { grid-template-columns:1fr; } }
+  .ops-card {
+    padding:14px 16px; background:var(--panel); border:1px solid var(--line);
+    border-radius:var(--radius-lg); box-shadow:var(--shadow-sm);
+    transition:border-color var(--transition), transform var(--transition);
+  }
+  .ops-card:hover { border-color:color-mix(in srgb,var(--line) 55%, var(--accent)); }
+  .ops-head { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:700;
+    color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; }
+  .ops-icon { width:28px; height:28px; border-radius:8px; display:flex; align-items:center;
+    justify-content:center; flex:none; }
+  .ops-icon svg { width:15px; height:15px; display:block; }
+  .ops-icon.ctrl { background:var(--accent-soft); color:var(--accent2); }
+  .ops-icon.store { background:var(--info-bg); color:var(--info-fg); }
+  .ops-icon.sync { background:var(--ok-bg); color:var(--ok-fg); }
+  .ops-val { font-size:17px; font-weight:700; letter-spacing:-.01em; line-height:1.2; }
+  .ops-sub { margin-top:4px; font-size:12px; color:var(--muted); line-height:1.45; }
+  .ops-alert {
+    display:none; margin-bottom:14px; padding:12px 14px; border-radius:var(--radius-md);
+    border:1px solid var(--warn-bd); background:var(--warn-bg); color:var(--warn-fg);
+    font-size:12.5px; line-height:1.5;
+  }
+  .ops-alert span { display:block; }
+  .ops-alert span + span { margin-top:4px; }
+  .ha-panel { margin-top:16px; padding:14px 16px; border-radius:var(--radius-md);
+    border:1px dashed var(--line); background:color-mix(in srgb, var(--panel) 90%, var(--surface)); }
+  .ha-panel h3 { margin:0 0 8px; font-size:13px; font-weight:600; }
+  .ha-panel p, .ha-panel li { margin:0 0 8px; font-size:12.5px; color:var(--muted); line-height:1.55; }
+  .ha-panel ul { margin:0; padding-left:18px; }
+  .ha-badge { display:inline-flex; align-items:center; gap:6px; padding:2px 8px; border-radius:999px;
+    font-size:10px; font-weight:700; letter-spacing:.06em; text-transform:uppercase;
+    background:var(--neutral-bg); color:var(--neutral-fg); border:1px solid var(--neutral-bd); }
+
   .empty .btn { margin-top:10px; }
   .imports-table { padding:0; }
   .imports-table .card-body { padding:14px 18px 18px; }
@@ -627,6 +669,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <button class="btn text subtle ripple" id="settingsReload">Reload</button>
         <button class="btn contained ripple" id="settingsSave">Save settings</button>
       </div>
+      <div class="ha-panel" id="haPanel">
+        <h3>High availability &amp; storage <span class="ha-badge">Lab-friendly</span></h3>
+        <p>Image Manager runs as a <strong>single-replica</strong> controller with a <strong>ReadWriteOnce PVC</strong>. This is ideal for lab and pilot deployments; the controller re-derives upload state from the PVC and Artifact CRs on every startup.</p>
+        <ul>
+          <li><strong>PVC backup:</strong> back up the <span class="mono">imagemanager-data</span> volume periodically — it is the durable origin eda-asvr re-pulls from.</li>
+          <li><strong>External origin:</strong> set <em>File-pull base URL</em> above to point Artifact CRs at an existing HTTPS artifact store (S3-compatible gateway, Artifactory, etc.) instead of this pod.</li>
+          <li><strong>Node agent:</strong> the DaemonSet re-resolves the in-cluster registry redirect every cycle — no cached ClusterIP assumptions.</li>
+        </ul>
+      </div>
       </div>
     </div>
   </section>
@@ -659,6 +710,33 @@ INDEX_HTML = r"""<!DOCTYPE html>
         <div><div class="kpi-val" id="kpiFailed">&mdash;</div><div class="kpi-label">Failed</div></div>
       </div>
     </div>
+    <div class="ops-grid" aria-label="Platform status">
+      <div class="ops-card">
+        <div class="ops-head">
+          <span class="ops-icon ctrl" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="6" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="4" y="13" width="16" height="6" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg></span>
+          Controller
+        </div>
+        <div class="ops-val" id="opsHealth">&mdash;</div>
+        <div class="ops-sub" id="opsHealthMsg">Single-replica deployment</div>
+      </div>
+      <div class="ops-card">
+        <div class="ops-head">
+          <span class="ops-icon store" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="6" rx="7" ry="3" stroke="currentColor" stroke-width="1.8"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" stroke="currentColor" stroke-width="1.8"/></svg></span>
+          Storage
+        </div>
+        <div class="ops-val" id="opsStorageMode">PVC</div>
+        <div class="ops-sub" id="opsStorageSub">RWO volume &mdash; durable origin for eda-asvr</div>
+      </div>
+      <div class="ops-card">
+        <div class="ops-head">
+          <span class="ops-icon sync" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0113.7-5.7M20 12a8 8 0 01-13.7 5.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M20 4v4h-4M4 20v-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+          Reconcile
+        </div>
+        <div class="ops-val" id="opsReconcile">&mdash;</div>
+        <div class="ops-sub" id="opsReconcileSub">Re-derives PVC vs Artifact state on startup</div>
+      </div>
+    </div>
+    <div id="opsAlert" class="ops-alert" style="display:none" role="status" aria-live="polite"></div>
     <div class="status-grid">
     <div class="card storage-card">
       <div class="storage-row">
@@ -1230,7 +1308,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // ---------- artifacts table ----------
   var pendingUploads={}, uploadSeq=0, lastImports=[];   // in-flight browser->controller uploads
-  function chip(s){ var c=s||"NoArtifact"; return '<span class="chip c-'+c+'">'+esc(c)+'</span>'; }
+  function chip(s){
+    var c=s||"NoArtifact";
+    if(c==="NoArtifact") return '<span class="chip c-NoArtifact" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">Needs republish</span>';
+    return '<span class="chip c-'+c+'">'+esc(c)+'</span>';
+  }
   function fmtElapsed(sec){ sec=Math.max(0,Math.floor(sec)); var m=Math.floor(sec/60), s=sec%60;
     return m+":"+(s<10?"0":"")+s; }
   function fmtEta(loaded, total, speedMbps, elapsed){
@@ -1567,6 +1649,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(s.version) meta.push("Controller: <span class='mono'>"+esc(s.version)+"</span>");
       if(s.message) meta.push(esc(s.message));
       el("settingsMeta").innerHTML = meta.length ? meta.join(" &middot; ") : "&mdash;";
+      updateOpsHealth(s.health, s.message);
+      if(el("opsStorageSub") && (s.filePullBaseUrl||"").trim())
+        el("opsStorageSub").textContent="External pull URL: "+esc(s.filePullBaseUrl);
     });
   }
   el("settingsReload").addEventListener("click", loadSettings);
@@ -1641,6 +1726,59 @@ INDEX_HTML = r"""<!DOCTYPE html>
       fmtGB(s.freeBytes)+'</span> free of <span class="mono">'+fmtGB(s.totalBytes)+'</span>';
   }
 
+  function updateSystem(sys){
+    if(!sys) return;
+    var rec=sys.reconcile||{};
+    var sm=el("opsStorageMode");
+    if(sm) sm.textContent=(sys.storageBackend||"pvc").toUpperCase();
+    var ss=el("opsStorageSub");
+    if(ss){
+      var ext=(sys.filePullBaseUrl||"").trim();
+      ss.textContent=ext
+        ? "External pull URL configured"
+        : ((sys.deploymentMode||"single-replica")==="single-replica"
+          ? "Single controller · RWO PVC (durable origin)"
+          : (sys.deploymentMode||""));
+    }
+    var rv=el("opsReconcile");
+    if(rv){
+      var issues=(rec.incompleteDirs||[]).length+(rec.workDirsActive||0);
+      if(issues) rv.textContent=issues+" attention";
+      else if((rec.repushed||[]).length) rv.textContent="Self-healed";
+      else rv.textContent="Up to date";
+    }
+    var rs=el("opsReconcileSub");
+    if(rs){
+      var bits=[];
+      if(rec.at) bits.push("Last check "+rec.at.replace("T"," ").replace("Z"," UTC"));
+      if((rec.repushed||[]).length) bits.push((rec.repushed||[]).length+" republish(es)");
+      if((rec.staleWorkDirsRemoved||0)>0) bits.push(rec.staleWorkDirsRemoved+" stale temp dir(s) cleaned");
+      rs.textContent=bits.length?bits.join(" · "):"Re-derives PVC vs Artifact state on startup";
+    }
+    var alert=el("opsAlert");
+    if(alert){
+      var msgs=[];
+      if(rec.workDirsActive) msgs.push(rec.workDirsActive+" in-flight upload/import dir(s) on disk");
+      if((rec.incompleteDirs||[]).length)
+        msgs.push((rec.incompleteDirs||[]).length+" incomplete upload dir(s) without metadata — may need manual cleanup");
+      if((rec.repushFailed||[]).length)
+        msgs.push((rec.repushFailed||[]).length+" automatic republish failure(s) — see controller logs");
+      if(msgs.length){
+        alert.style.display="block";
+        alert.innerHTML=msgs.map(function(m){ return "<span>"+esc(m)+"</span>"; }).join("");
+      } else alert.style.display="none";
+    }
+  }
+
+  function updateOpsHealth(health, message){
+    var h=el("opsHealth"), m=el("opsHealthMsg");
+    if(!h) return;
+    var ok=(health||"ok").toLowerCase()==="ok";
+    h.textContent=ok?"Ready":"Degraded";
+    h.style.color=ok?"var(--ok-fg)":"var(--warn-fg)";
+    if(m) m.textContent=message||"Single-replica · Recreate strategy";
+  }
+
   function refresh(){
     fetchJson(api("/api/artifacts")).then(function(res){
       if(res.status===401){
@@ -1656,6 +1794,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var d=res.body||{};
       currentData=d.artifacts||[];
       updateStorage(d.storage);
+      updateSystem(d.system);
       Object.keys(pendingUploads).forEach(function(k){
         var p=pendingUploads[k];
         if(currentData.some(function(t){ return (t.displayName||t.name)===p.displayName && t.namespace===p.namespace; }))

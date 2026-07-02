@@ -33,6 +33,7 @@ import os
 import re
 import shutil
 import tarfile
+import time
 import zipfile
 from datetime import datetime, timezone
 
@@ -758,6 +759,75 @@ def list_meta():
             m = read_meta(uid)
             if m:
                 out.append(m)
+    except FileNotFoundError:
+        pass
+    return out
+
+
+_WORK_PREFIXES = (".incoming-", ".import-")
+_STALE_WORK_DIR_SECONDS = int(os.environ.get("STALE_WORK_DIR_SECONDS", "3600"))
+
+
+def _dir_age_seconds(path):
+    try:
+        return max(0, time.time() - os.path.getmtime(path))
+    except OSError:
+        return 0
+
+
+def cleanup_stale_work_dirs(max_age_seconds=None):
+    """Remove abandoned .incoming-* / .import-* temp dirs (crash mid-upload)."""
+    max_age = _STALE_WORK_DIR_SECONDS if max_age_seconds is None else max_age_seconds
+    removed = 0
+    try:
+        for name in os.listdir(DATA_DIR):
+            if not any(name.startswith(p) for p in _WORK_PREFIXES):
+                continue
+            path = os.path.join(DATA_DIR, name)
+            if not os.path.isdir(path):
+                continue
+            if _dir_age_seconds(path) >= max_age:
+                shutil.rmtree(path, ignore_errors=True)
+                removed += 1
+    except FileNotFoundError:
+        pass
+    return removed
+
+
+def count_work_dirs():
+    """In-flight upload/import temp dirs (any age)."""
+    n = 0
+    try:
+        for name in os.listdir(DATA_DIR):
+            if any(name.startswith(p) for p in _WORK_PREFIXES):
+                if os.path.isdir(os.path.join(DATA_DIR, name)):
+                    n += 1
+    except FileNotFoundError:
+        pass
+    return n
+
+
+def scan_incomplete_dirs():
+    """Dirs with bytes on PVC but no meta.json (pod died mid-finalize)."""
+    out = []
+    try:
+        for name in os.listdir(DATA_DIR):
+            if any(name.startswith(p) for p in _WORK_PREFIXES):
+                continue
+            path = os.path.join(DATA_DIR, name)
+            if not os.path.isdir(path) or os.path.isfile(os.path.join(path, "meta.json")):
+                continue
+            has_files = False
+            for _root, _dirs, files in os.walk(path):
+                if files:
+                    has_files = True
+                    break
+            if has_files:
+                out.append({
+                    "uploadId": name,
+                    "bytes": upload_dir_size(name),
+                    "ageSeconds": int(_dir_age_seconds(path)),
+                })
     except FileNotFoundError:
         pass
     return out

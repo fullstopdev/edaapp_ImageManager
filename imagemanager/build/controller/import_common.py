@@ -292,6 +292,56 @@ def repush_from_local(upload_id, config):
     return _repush_srl(meta, upload_id, namespace, base_url)
 
 
+def upload_needs_repush(meta, upload_id):
+    """True when PVC meta exists but one or more expected Artifact CRs are missing."""
+    if not meta:
+        return False
+    namespace = meta.get("namespace")
+    if not namespace:
+        return False
+    primary = meta.get("artifactName") or upload_id
+    for name in collect_artifact_names(meta, primary):
+        if not artifact_cr_exists(namespace, name):
+            return True
+    return False
+
+
+def reconcile_local_uploads(config):
+    """Re-derive PVC vs Artifact state on startup (node-agent parity).
+
+    Cleans stale in-flight temp dirs, reports incomplete uploads (meta missing),
+    and repushes any upload whose bytes are on the PVC but Artifact CRs were
+    lost (pod crash after finalize, manual CR delete, etc.).
+    """
+    report = {
+        "staleWorkDirsRemoved": 0,
+        "workDirsActive": 0,
+        "incompleteDirs": [],
+        "repushed": [],
+        "repushFailed": [],
+        "incompleteBytes": 0,
+    }
+    report["staleWorkDirsRemoved"] = uploads.cleanup_stale_work_dirs()
+    report["workDirsActive"] = uploads.count_work_dirs()
+    incomplete = uploads.scan_incomplete_dirs()
+    report["incompleteDirs"] = incomplete
+    report["incompleteBytes"] = sum(d.get("bytes") or 0 for d in incomplete)
+    for meta in uploads.list_meta():
+        uid = meta.get("uploadId") or meta.get("artifactName") or ""
+        if not uid or not upload_needs_repush(meta, uid):
+            continue
+        logger.info("Storage reconcile: repushing %s (PVC present, Artifact CR missing)", uid)
+        result = repush_from_local(uid, config)
+        if result.get("ok"):
+            report["repushed"].append(uid)
+        else:
+            report["repushFailed"].append({
+                "uploadId": uid,
+                "error": result.get("error") or "repush failed",
+            })
+    return report
+
+
 def _ensure_replace(upload_id, display_name, artifact_name, namespace, replace):
     """When replace is set, drop Artifact CRs only (PVC kept for repush); else 409."""
     if replace:

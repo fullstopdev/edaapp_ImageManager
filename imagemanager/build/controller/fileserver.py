@@ -45,6 +45,14 @@ import webui
 logger = logging.getLogger("fileserver")
 
 
+def set_storage_reconcile(report):
+    _storage_reconcile[0] = dict(report or {})
+
+
+def get_storage_reconcile():
+    return dict(_storage_reconcile[0] or {})
+
+
 def _sync_app_status_now():
     """Push launcher rows immediately after upload/delete (don't wait for reconcile)."""
     try:
@@ -80,6 +88,8 @@ IM_CONFIG_NAME = "default"
 IMPORT_KICK = [None]
 # Set by main: zero-arg callable that wakes the dashboard status sync loop.
 SYNC_KICK = [None]
+# Last storage reconcile snapshot (startup + periodic re-derive).
+_storage_reconcile = [{}]
 # Set by main at startup; surfaced in /api/config for the UI version chip.
 APP_VERSION = [""]
 
@@ -533,8 +543,19 @@ class Handler(BaseHTTPRequestHandler):
         self._send_json({"namespaces": names})
 
     def _serve_artifacts(self):
-        self._send_json({"artifacts": build_tracked_list(),
-                         "storage": uploads.disk_usage()})
+        snap = get_storage_reconcile()
+        self._send_json({
+            "artifacts": build_tracked_list(),
+            "storage": uploads.disk_usage(),
+            "system": {
+                "version": APP_VERSION[0],
+                "deploymentMode": "single-replica",
+                "storageBackend": "pvc",
+                "filePullBaseUrl": CONFIG.get("filePullBaseUrl") or "",
+                "workDirsActive": uploads.count_work_dirs(),
+                "reconcile": snap,
+            },
+        })
 
     def _serve_file(self, rest, head_only):
         # rest = "<uploadId>/<filename>" (filename may end with .md5)
@@ -1370,9 +1391,12 @@ def _build_tracked_list():
     return out
 
 
-def write_healthz(status="ok", last_reconcile=None):
+def write_healthz(status="ok", last_reconcile=None, extra=None):
     """Atomic write of .healthz.json via rename."""
-    data = json.dumps({"status": status, "last_reconcile": last_reconcile})
+    payload = {"status": status, "last_reconcile": last_reconcile}
+    if extra:
+        payload.update(extra)
+    data = json.dumps(payload)
     tmp = HEALTHZ_FILE + ".tmp"
     with open(tmp, "w") as f:
         f.write(data)

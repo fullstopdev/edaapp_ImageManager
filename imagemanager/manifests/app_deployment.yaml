@@ -30,7 +30,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: imagemanager-controller
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.19
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.0.20
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAMESPACE
@@ -43,6 +43,9 @@ spec:
               value: "45"
             - name: STATUS_PUBLISHER_BIN
               value: /app/status-publisher
+            # Abandoned .incoming-* / .import-* dirs older than this are removed on reconcile.
+            - name: STALE_WORK_DIR_SECONDS
+              value: "3600"
             - name: ALLOWED_ROLES
               value: "imagemanager-viewer,system-administrator" # app-set: ${allowedRoles}
           ports:

@@ -32,11 +32,12 @@ import app_status
 import artifact
 import artifact_launcher
 import fileserver
+import import_common
 import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.19"
+VERSION = "v0.0.20"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -72,6 +73,8 @@ _import_running = False
 _startup_monotonic = time.monotonic()
 _consecutive_reconcile_errors = 0
 _status_daemon_proc = None
+_storage_reconcile_lock = threading.Lock()
+_reconcile_cycle = 0
 
 
 def _start_status_publisher_daemon():
@@ -312,6 +315,35 @@ def _run_imports_async(cfg):
     threading.Thread(target=_work, daemon=True, name="imports").start()
 
 
+def _reconcile_storage(cfg):
+    """Re-derive upload state from PVC + Artifact CRs; self-heal after restarts."""
+    try:
+        report = import_common.reconcile_local_uploads(cfg)
+        snapshot = {
+            **report,
+            "at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+        with _storage_reconcile_lock:
+            fileserver.set_storage_reconcile(snapshot)
+        fileserver.invalidate_tracked_cache()
+        sync_kick.set()
+        if (report["repushed"] or report["staleWorkDirsRemoved"]
+                or report["incompleteDirs"] or report["workDirsActive"]):
+            logger.info(
+                "Storage reconcile: %d stale work dir(s) removed, %d active work dir(s), "
+                "%d incomplete dir(s), %d repush(es)",
+                report["staleWorkDirsRemoved"], report["workDirsActive"],
+                len(report["incompleteDirs"]), len(report["repushed"]),
+            )
+        for fail in report.get("repushFailed", []):
+            logger.warning("Storage reconcile repush failed for %s: %s",
+                           fail.get("uploadId"), fail.get("error"))
+        return report
+    except Exception as e:  # noqa: BLE001
+        logger.warning("Storage reconcile failed: %s", e)
+        return None
+
+
 def main():
     _setup_logging()
     logger.info("Image Manager controller started (version %s)", VERSION)
@@ -350,10 +382,18 @@ def main():
             _stop_status_publisher_daemon()
             return
 
+    cfg = _read_config()
+    _reconcile_storage(cfg)
+
     while not shutdown_event.is_set():
         cycle_start = time.time()
         cfg = _read_config()
         fileserver.set_config(cfg)
+
+        global _reconcile_cycle
+        _reconcile_cycle += 1
+        if _reconcile_cycle == 1 or _reconcile_cycle % 10 == 0:
+            _reconcile_storage(cfg)
 
         health, message = "ok", "All systems operational"
         tracked = []
@@ -373,7 +413,15 @@ def main():
             logger.warning("Reconcile listing failed: %s", e)
 
         now_str = datetime.now(timezone.utc).isoformat(timespec="seconds")
-        fileserver.write_healthz(health, now_str)
+        reconcile_snap = fileserver.get_storage_reconcile()
+        fileserver.write_healthz(
+            health, now_str,
+            extra={
+                "storageReconcile": reconcile_snap.get("at"),
+                "workDirsActive": reconcile_snap.get("workDirsActive", 0),
+                "incompleteUploads": len(reconcile_snap.get("incompleteDirs") or []),
+            },
+        )
         _update_status(health, message, tracked)
         try:
             artifact_launcher.sync_launcher_rows(
