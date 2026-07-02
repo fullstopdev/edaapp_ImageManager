@@ -48,7 +48,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     color-scheme:dark;
   }
   html[data-theme="light"] {
-    --bg:#e7ecf2; --surface:#f3f6fa; --panel:#fff; --panel2:#f2f4f8; --input-bg:#fff;
+    --bg:#f7f9fd; --surface:#f7f9fd; --panel:#fff; --panel2:#f2f4f8; --input-bg:#fff;
     --line:#bcc5d2; --line-soft:rgba(188,197,210,.65); --fg:#0b1119; --muted:#4a5563;
     --accent:var(--eda-blue-500); --accent2:var(--eda-blue-600); --accent-soft:#e4f0ff;
     --state:rgba(0,90,255,.06); --state-strong:rgba(0,90,255,.12); --row-hover:rgba(0,90,255,.045);
