@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.0.40
+
+**Revert client auth to v0.0.30 silent SSO:** Restore the simpler pre-v0.0.33
+auth flow that worked reliably in the EDA embedded iframe: trust a valid
+`im_session` on load, run Keycloak silent SSO only when config returns 401,
+`checkLoginIframe: false`, no periodic session polling, no Keycloak singleton
+watchers, no in-page Try again / Sign in banner complexity, and no Sign out
+button. Standalone tabs still fall back to `/oauth/login` redirect when silent
+SSO fails. **Retained from v0.0.36:** upload-in-flight guard — auth redirects
+and session-loss handling are deferred while a file upload is active, then
+applied via `flushDeferredSessionLoss()` when the transfer completes.
+`type="button"` on upload/action buttons unchanged. Server-side
+`POST /oauth/session/logout` and token-bound session cookies (`te` field) kept.
+
 ## v0.0.39
 
 **Durable embedded EDA sign-in (cable-map parity):** Simplify auth to two clear
