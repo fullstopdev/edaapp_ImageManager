@@ -2,7 +2,7 @@
 
 Unified single-page app, dashboard-first: Dashboard (KPIs + live artifact
 status) | Upload | URL Import | Settings. Cable-map / Nokia EDA design
-language: dark/light theme, app logo + single EDA-style app bar, KPI overview cards,
+language: dark/light theme, Nokia logo + single EDA-style app bar, KPI overview cards,
 adaptive live polling (4s while work is in flight, 12s at rest, paused when
 the tab is hidden). Sign-in is silent SSO against the EDA Keycloak session
 (new tab from the dashboard or embedded iframe), falling back to the OIDC
@@ -19,7 +19,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <meta name="imagemanager-api-base" content="/core/httpproxy/v1/imagemanager">
 <title>EDA Image Manager</title>
-<link rel="icon" type="image/png" href="/core/httpproxy/v1/imagemanager/assets/logo.png">
+<link rel="icon" type="image/png" href="/core/httpproxy/v1/imagemanager/assets/nokia-logo.png">
 <style>
   :root {
     --eda-blue-100:#e4f0ff; --eda-blue-400:#4092ff; --eda-blue-500:#005aff; --eda-blue-600:#005adf;
@@ -61,8 +61,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --neutral-fg:#687282; --neutral-bg:#eef0f3; --neutral-bd:#cfcfcf;
     --snack-bg:#2b303a; --snack-fg:#f3f5f8; --snack-action:#9cc0ff;
     --scrim:rgba(16,24,36,.46);
-    --chrome-top-bg:#eceef2; --chrome-top-fg:#0b1119; --chrome-top-muted:#4a5563;
-    --chrome-line:#d5dbe3;
+    --chrome-top-bg:#f7f9fd; --chrome-top-fg:#0b1119; --chrome-top-muted:#4a5563;
+    --chrome-line:#e4e8ee;
     --transition:180ms cubic-bezier(.4,0,.2,1);
     color-scheme:light;
   }
@@ -93,7 +93,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     display:flex; align-items:center; gap:16px; flex-shrink:0;
   }
   .appbar-brand { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 auto; }
-  .app-logo { height:30px; width:30px; display:block; flex:none; object-fit:contain; border-radius:6px; }
+  .nokia-logo { height:14px; width:auto; display:block; flex:none; object-fit:contain; }
   .appbar-title {
     font-size:15px; font-weight:400; letter-spacing:.01em; line-height:1.2;
     color:var(--chrome-top-fg); white-space:nowrap;
@@ -534,7 +534,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   in a new tab.</div></noscript>
 <header class="appbar">
   <div class="appbar-brand">
-    <img class="app-logo" src="/core/httpproxy/v1/imagemanager/assets/logo.png" alt="Image Manager">
+    <img class="nokia-logo" src="/core/httpproxy/v1/imagemanager/assets/nokia-logo.png" alt="Nokia">
     <span class="appbar-title">Image Manager</span>
     <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
   </div>

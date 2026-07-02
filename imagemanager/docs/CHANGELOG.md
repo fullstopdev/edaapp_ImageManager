@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.30
+
+Light mode app bar matches EDA shell (**`#f7f9fd`** background). Replace the custom
+mark with the blue **Nokia wordmark** (`nokia-logo.png`, 14px height).
+
 ## v0.0.29
 
 Light mode page background updated to **`#f7f9fd`** (EDA soft off-white).

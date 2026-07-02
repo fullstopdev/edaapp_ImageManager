@@ -95,7 +95,7 @@ _storage_reconcile = [{}]
 APP_VERSION = [""]
 
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
-APP_LOGO_PNG = (_ASSETS_DIR / "logo.png").read_bytes()
+APP_LOGO_PNG = (_ASSETS_DIR / "nokia-logo.png").read_bytes()
 
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
@@ -355,7 +355,7 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/oauth/silent-sso.html":
                 self._send_text(webui.SILENT_SSO_HTML, ctype="text/html; charset=utf-8")
                 return
-            if path == "/assets/logo.png":
+            if path == "/assets/nokia-logo.png":
                 self._send_text(APP_LOGO_PNG, ctype="image/png")
                 return
             # UI shell loads without a session so keycloak-js can perform silent SSO
