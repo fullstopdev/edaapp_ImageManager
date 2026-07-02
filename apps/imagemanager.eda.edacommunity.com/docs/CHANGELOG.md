@@ -1,6 +1,6 @@
 # Changelog
 
-## v0.0.10
+## v0.0.11
 
 UI redesign (cable-map pro look, dashboard-first):
 
@@ -16,6 +16,8 @@ UI redesign (cable-map pro look, dashboard-first):
   fallback. Expired sessions self-heal on the next API call the same way.
 - Authorization unchanged and enforced server-side: EDA OIDC + `ALLOWED_ROLES`
   (`imagemanager-viewer` EDA ClusterRole or `system-administrator`).
+
+## v0.0.10
 
 Fix empty Image Manager launcher table (cable-map app-status parity):
 
