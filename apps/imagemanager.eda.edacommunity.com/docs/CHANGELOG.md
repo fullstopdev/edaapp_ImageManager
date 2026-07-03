@@ -1,5 +1,11 @@
 # Changelog
 
+## v0.0.50
+
+**App bar wordmark + N favicon:**
+The top bar shows the full **Nokia wordmark** (`nokia-logo.png`, 14px height);
+the browser tab favicon keeps the **N mark** only (`nokia-n.png`).
+
 ## v0.0.49
 
 **Background refresh no longer disrupts upload forms:**

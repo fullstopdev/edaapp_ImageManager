@@ -99,7 +99,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     display:flex; align-items:center; gap:16px; flex-shrink:0;
   }
   .appbar-brand { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 auto; }
-  .nokia-logo { height:20px; width:auto; display:block; flex:none; object-fit:contain; }
+  .nokia-logo { height:14px; width:auto; display:block; flex:none; object-fit:contain; }
   .appbar-title {
     font-size:15px; font-weight:400; letter-spacing:.01em; line-height:1.2;
     color:var(--chrome-top-fg); white-space:nowrap;
@@ -547,7 +547,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   in a new tab.</div></noscript>
 <header class="appbar">
   <div class="appbar-brand">
-    <img class="nokia-logo" src="/core/httpproxy/v1/imagemanager/assets/nokia-n.png" alt="Nokia">
+    <img class="nokia-logo" src="/core/httpproxy/v1/imagemanager/assets/nokia-logo.png" alt="Nokia">
     <span class="appbar-title">Image Manager</span>
     <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
   </div>
