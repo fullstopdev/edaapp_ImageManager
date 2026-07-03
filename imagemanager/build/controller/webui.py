@@ -1290,7 +1290,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function showFatal(msg){
     bootDone();
     setAuthBanner("err", msg);
-    if(rows) rows.innerHTML = '<tr><td colspan="6" class="empty">'+esc(msg)+'</td></tr>';
+    if(rows) setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">'+esc(msg)+'</td></tr>');
     snack("err", msg, true);
   }
   function ensureAuth(){
@@ -1618,8 +1618,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
     xhr.send(licStr);
   }
   function paintPendingCell(p){
-    var c=document.getElementById("upstat-"+p.key);
-    if(c) c.innerHTML=pendStatusHtml(p); else render();
+    var key=rowKeyPending(p);
+    var tr=artifactRowEls[key];
+    if(tr){
+      var html=pendStatusHtml(p);
+      var td=tr.children[4];
+      if(td.innerHTML!==html) td.innerHTML=html;
+      if(artifactRowSnap[key]) artifactRowSnap[key][4]=html;
+    } else render();
   }
 
   // Shared XHR uploader: streams `file` to `url`, driving the live pending row `p`.
@@ -1714,8 +1720,51 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   });
 
-  // ---------- artifacts table ----------
+  // ---------- artifacts table (incremental DOM; keyed by upload key or name+namespace) ----------
   var lastImports=[];   // in-flight browser->controller uploads tracked in pendingUploads
+  var artifactRowEls={}, artifactRowSnap={};
+  function resetArtifactRowState(){
+    artifactRowEls={}; artifactRowSnap={};
+  }
+  function setArtifactRowsMessage(html){
+    resetArtifactRowState();
+    rows.innerHTML=html;
+  }
+  function rowKeyPending(p){ return "p:"+p.key; }
+  function rowKeyServer(t){ return "s:"+(t.displayName||t.name)+"\0"+(t.namespace||""); }
+  function createPendingTr(p){
+    var tr=document.createElement("tr");
+    var td0=document.createElement("td"); td0.className="mono namecell";
+    var td1=document.createElement("td");
+    var td2=document.createElement("td");
+    var td3=document.createElement("td"); td3.className="num";
+    var td4=document.createElement("td"); td4.id="upstat-"+p.key;
+    var td5=document.createElement("td");
+    tr.appendChild(td0); tr.appendChild(td1); tr.appendChild(td2);
+    tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5);
+    return tr;
+  }
+  function createServerTr(){
+    var tr=document.createElement("tr");
+    for(var i=0;i<6;i++){
+      var td=document.createElement("td");
+      if(i===0) td.className="mono namecell";
+      else if(i===3) td.className="num";
+      else if(i===5) td.style.whiteSpace="nowrap";
+      tr.appendChild(td);
+    }
+    return tr;
+  }
+  function patchRowCells(tr, htmls, snapKey){
+    var prev=artifactRowSnap[snapKey], cells=tr.children, changed=false;
+    for(var i=0;i<htmls.length;i++){
+      if(!prev || prev[i]!==htmls[i]){
+        cells[i].innerHTML=htmls[i];
+        changed=true;
+      }
+    }
+    if(changed || !prev) artifactRowSnap[snapKey]=htmls.slice();
+  }
   var NOS_LABELS={srl:"Nokia SR Linux",sros:"Nokia SR OS",srsim:"Nokia SR OS (SIM)"};
   function osLabel(t){
     var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
@@ -1811,12 +1860,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
            '<div class="uprog indet"><div></div></div>'+
            '<div class="upinfo">'+esc(sub)+'</div>';
   }
-  function pendingRowHtml(p){
-    return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td><span class="os-empty">&mdash;</span></td><td>'+esc(p.namespace)+
-      '</td><td class="num">'+fmtBytes(p.total)+'</td><td id="upstat-'+p.key+'">'+pendStatusHtml(p)+
-      '</td><td></td></tr>';
+  function pendingCellHtmls(p){
+    return [
+      esc(p.displayName),
+      '<span class="os-empty">&mdash;</span>',
+      esc(p.namespace),
+      fmtBytes(p.total),
+      pendStatusHtml(p),
+      ""
+    ];
   }
-  function serverRowHtml(t){
+  function serverCellHtmls(t){
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
@@ -1824,10 +1878,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
       ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'">Details</button> ')
       :'';
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
-    return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
-      '</td><td>'+esc(t.namespace)+
-      '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
-      '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
+    return [
+      esc(t.displayName||t.name)+fcount+lic,
+      osLabel(t),
+      esc(t.namespace),
+      fmtBytes(t.sizeBytes),
+      chip(t.downloadStatus)+reason,
+      view+del
+    ];
   }
 
   function imDelete(uid, nsv, name){
@@ -1999,20 +2057,62 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var pend=[];
     Object.keys(pendingUploads).forEach(function(k){
       var p=pendingUploads[k];
-      activePending[p.displayName+"|"+p.namespace]=true;
+      activePending[(p.displayName||"")+"|"+p.namespace]=true;
       pend.push(p);
     });
     var serverRows=sortData(currentData).filter(function(t){
       return !activePending[(t.displayName||t.name)+"|"+t.namespace];
     });
     updateKpis();
-    if(!(pend.length+serverRows.length)){
-      rows.innerHTML='<tr><td colspan="6" class="empty">No images yet.<br>'+
-        '<button class="btn contained ripple" data-goto="upload">Upload an image</button> '+
-        '<button class="btn text ripple" data-goto="url-import">Import from URL</button></td></tr>';
-      el("statusCount").style.display="none"; return;
+
+    var desired=[];
+    pend.forEach(function(p){
+      desired.push({ kind:"pending", key:rowKeyPending(p), data:p });
+    });
+    serverRows.forEach(function(t){
+      desired.push({ kind:"server", key:rowKeyServer(t), data:t });
+    });
+
+    if(!desired.length){
+      if(!rows.querySelector("tr.im-empty")){
+        setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">No images yet.<br>'+
+          '<button class="btn contained ripple" data-goto="upload">Upload an image</button> '+
+          '<button class="btn text ripple" data-goto="url-import">Import from URL</button></td></tr>');
+      }
+      el("statusCount").style.display="none";
+      return;
     }
-    rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
+
+    var emptyRow=rows.querySelector("tr.im-empty");
+    if(emptyRow) emptyRow.remove();
+
+    var desiredKeys={};
+    desired.forEach(function(d){ desiredKeys[d.key]=true; });
+    Object.keys(artifactRowEls).forEach(function(k){
+      if(!desiredKeys[k]){
+        var tr=artifactRowEls[k];
+        if(tr && tr.parentNode) tr.parentNode.removeChild(tr);
+        delete artifactRowEls[k];
+        delete artifactRowSnap[k];
+      }
+    });
+
+    desired.forEach(function(item, idx){
+      var tr=artifactRowEls[item.key];
+      if(!tr){
+        tr=item.kind==="pending" ? createPendingTr(item.data) : createServerTr();
+        artifactRowEls[item.key]=tr;
+        artifactRowSnap[item.key]=null;
+      }
+      var htmls=item.kind==="pending" ? pendingCellHtmls(item.data) : serverCellHtmls(item.data);
+      patchRowCells(tr, htmls, item.key);
+      var at=rows.children[idx];
+      if(at!==tr) rows.insertBefore(tr, at||null);
+    });
+    while(rows.children.length>desired.length){
+      rows.removeChild(rows.lastChild);
+    }
+
     updateStatusBadge();
   }
   rows.addEventListener("click", function(e){
@@ -2227,8 +2327,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
       if(!res.ok){
         if(!opts.silent){
-          rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
-            "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>';
+          setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">'+esc(
+            "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>');
           snack("err","Could not load artifacts (HTTP "+res.status+").", true);
         }
         return;
@@ -2243,8 +2343,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       tryPendingDetails();
     }).catch(function(e){
       if(!opts.silent){
-        rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
-          "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
+        setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">'+esc(
+          "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>');
       }
     });
   }
