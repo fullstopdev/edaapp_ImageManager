@@ -1454,6 +1454,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(f){ try{ f.focus(); }catch(e){} }
   }
   function closeModal(){
+    if(openDlg === el("npDialog")){ closeNodeProfile(); return; }
     if(openDlg){ openDlg.classList.remove("open"); }
     scrim.classList.remove("show"); document.body.style.overflow=""; openDlg=null;
   }
@@ -1924,13 +1925,40 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // ---------- NodeProfile dialog (snippet + complete example) ----------
   var npSnippet=el("npSnippet"), npFull=el("npFull"), npCurrentUid=null;
+  var suppressPopstate=false, detailsPushed=false;
   function copyBtn(btn, text){
     if(navigator.clipboard) navigator.clipboard.writeText(text||"");
     var t0=btn.textContent; btn.textContent="Copied"; setTimeout(function(){ btn.textContent=t0; }, 1200);
   }
-  function openNodeProfile(uid){
-    var t=null;
-    for(var i=0;i<currentData.length;i++){ if(currentData[i].uploadId===uid){ t=currentData[i]; break; } }
+  function parseDetailsParam(){
+    try{ return new URLSearchParams(location.search).get("details")||null; }
+    catch(e){ return null; }
+  }
+  function detailsUrl(uid){
+    var qs=new URLSearchParams(location.search);
+    if(uid) qs.set("details", uid);
+    else qs.delete("details");
+    var q=qs.toString();
+    return location.pathname+(q?"?"+q:"")+location.hash;
+  }
+  function setDetailsInUrl(uid, mode){
+    var url=detailsUrl(uid), state=uid?{details:uid}:{};
+    suppressPopstate=true;
+    try{
+      if(mode==="push") history.pushState(state, "", url);
+      else history.replaceState(state, "", url);
+    }catch(e){}
+    suppressPopstate=false;
+  }
+  function findArtifactByUid(uid){
+    for(var i=0;i<currentData.length;i++){
+      if(currentData[i].uploadId===uid) return currentData[i];
+    }
+    return null;
+  }
+  function openNodeProfile(uid, opts){
+    opts=opts||{};
+    var t=findArtifactByUid(uid);
     if(!t) return false;
     npCurrentUid=uid;
     el("npTitle").textContent = "NodeProfile — " + (t.displayName||t.name||"")
@@ -1951,8 +1979,32 @@ INDEX_HTML = r"""<!DOCTYPE html>
       : 'Snippet &mdash; <span class="mono">spec.images</span>';
     npSnippet.textContent = t.snippet || "(not ready yet)";
     npFull.textContent = t.nodeProfileExample || "(ready once the image is Available)";
-    openModal(el("npDialog"));
+    openDlg=el("npDialog"); scrim.classList.add("show"); openDlg.classList.add("open");
+    document.body.style.overflow="hidden";
+    if(!opts.skipUrl){
+      var cur=parseDetailsParam();
+      if(!cur){ setDetailsInUrl(uid, "push"); detailsPushed=true; }
+      else if(cur!==uid){ setDetailsInUrl(uid, "replace"); detailsPushed=false; }
+      else { setDetailsInUrl(uid, "replace"); detailsPushed=false; }
+    }
     return true;
+  }
+  function closeNodeProfile(skipUrl){
+    if(openDlg!==el("npDialog")) return;
+    npCurrentUid=null;
+    openDlg.classList.remove("open");
+    scrim.classList.remove("show");
+    document.body.style.overflow="";
+    openDlg=null;
+    if(skipUrl || !parseDetailsParam()) return;
+    if(detailsPushed){
+      detailsPushed=false;
+      suppressPopstate=true;
+      try{ history.back(); }catch(e){ setDetailsInUrl(null, "replace"); }
+      suppressPopstate=false;
+    } else {
+      setDetailsInUrl(null, "replace");
+    }
   }
   el("npClose").addEventListener("click", closeModal);
   el("npCopySnip").addEventListener("click", function(){ copyBtn(this, npSnippet.textContent); });
@@ -1967,17 +2019,30 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // Deep link from the EDA dashboard: /?details=<uploadId> opens that image's
   // details dialog (NodeProfile YAML + Delete) as soon as its row is loaded.
-  var pendingDetails=(function(){
-    try{ return new URLSearchParams(location.search).get("details")||null; }
-    catch(e){ return null; }
-  })();
+  // Opening Details in-app pushes the same query param so the URL is copyable.
+  var pendingDetails=parseDetailsParam();
   function tryPendingDetails(){
     if(!pendingDetails) return;
-    if(openNodeProfile(pendingDetails)){
+    if(openNodeProfile(pendingDetails, {skipUrl:true})){
+      setDetailsInUrl(pendingDetails, "replace");
       pendingDetails=null;
-      try{ history.replaceState(null, "", location.pathname); }catch(e){}
     }
   }
+  window.addEventListener("popstate", function(){
+    if(suppressPopstate) return;
+    var uid=parseDetailsParam();
+    if(uid){
+      openNodeProfile(uid, {skipUrl:true});
+      detailsPushed=false;
+    } else if(openDlg===el("npDialog")){
+      npCurrentUid=null;
+      openDlg.classList.remove("open");
+      scrim.classList.remove("show");
+      document.body.style.overflow="";
+      openDlg=null;
+      detailsPushed=false;
+    }
+  });
 
   rows.addEventListener("click", function(e){
     var b = e.target.closest("button[data-act]");

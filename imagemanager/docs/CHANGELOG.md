@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.53
+
+**Deep-linkable image details URLs:**
+
+- Opening **Details** in the app now updates the browser URL with
+  `?details=<uploadId>` (same query param the EDA dashboard View links already
+  use). The URL stays copyable/shareable while the NodeProfile dialog is open.
+- Loading `/core/httpproxy/v1/imagemanager/?details=<uploadId>` auto-opens that
+  image's details dialog once artifact rows are loaded (unchanged behaviour, but
+  the param is no longer stripped after open).
+- Closing the details dialog clears the query param; browser **Back** / **Forward**
+  opens and closes the dialog when navigating between detail URLs.
+
 ## v0.0.52
 
 **Fix page refresh loop + live indicator on all tabs (cable-map pattern):**
