@@ -981,10 +981,29 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!embedded){
       var signInBtn = el("authSignInBtn");
       if(signInBtn) signInBtn.addEventListener("click", function(){
+        if(signInRetryPending) return;
+        signInRetryPending = true;
         setAuthBanner("info", "Signing in\u2026");
-        keycloakLoginRedirect().catch(function(){
+        keycloakLoginRedirect().then(function(ex){
+          if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
+            authReady = true;
+            return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+              if(r.status !== 200) throw new Error("config after sign-in");
+              return r.json();
+            }).then(function(c){
+              hideSignInBanner();
+              if(!authBootstrapComplete) finishBootstrap();
+              startSessionWatchers();
+              scheduleSessionCheck();
+              if(c.user) showAuthUser(c.user);
+              refresh();
+              refreshImports();
+            });
+          }
           window.location = apiBase + "/oauth/login";
-        });
+        }).catch(function(){
+          window.location = apiBase + "/oauth/login";
+        }).finally(function(){ signInRetryPending = false; setAuthBanner("", ""); });
       });
     }
   }
@@ -1190,13 +1209,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
       showSignInBanner("Sign-in failed. Try again" + (embedded ? "." : " or use Sign in."));
     }).catch(function(){
-      if(embedded){
-        showSignInBanner("Sign-in failed. Try again.");
-        return;
-      }
-      keycloakLoginRedirect().catch(function(){
-        window.location = apiBase + "/oauth/login";
-      });
+      showSignInBanner("Sign-in failed. Try again" + (embedded ? "." : " or use Sign in."));
     }).finally(function(){ signInRetryPending = false; setAuthBanner("", ""); });
   }
 
@@ -1376,9 +1389,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
         return c;
       });
     }
-    function standaloneLoginFallback(ex){
+    function bootstrapAuthFailed(ex){
       if(ex && ex.status === 403){
         finishBootstrap();
+        bootDone();
         setAuthBanner("", "");
         var err = new Error("forbidden");
         err.exchange = ex;
@@ -1386,24 +1400,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
       if(uploadInFlight()){
         deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+        bootDone();
         throw new Error("deferred");
       }
       finishBootstrap();
+      bootDone();
       setAuthBanner("", "");
-      if(embedded){
-        showSignInBanner("Sign-in required. Try again.");
-        throw new Error("sign-in required");
-      }
-      return keycloakLoginRedirect().then(function(kex){
-        return afterSessionExchange(kex).then(function(c){
-          if(c) return c;
-          window.location = apiBase + "/oauth/login";
-          throw new Error("redirect");
-        });
-      }).catch(function(){
-        window.location = apiBase + "/oauth/login";
-        throw new Error("redirect");
-      });
+      showSignInBanner("Sign-in required. Try again" + (embedded ? "." : " or use Sign in."));
+      throw new Error("sign-in required");
     }
     return processKcCallbackReturn().then(afterSessionExchange).then(function(c){
       if(c) return c;
@@ -1421,12 +1425,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
         return silentSso({ quiet: true }).then(function(ex){
           return afterSessionExchange(ex).then(function(c){
             if(c) return c;
-            return standaloneLoginFallback(ex);
+            return bootstrapAuthFailed(ex);
           });
         }, function(){
-          return standaloneLoginFallback(null);
+          return bootstrapAuthFailed(null);
         });
       });
+    }).catch(function(err){
+      if(err && (err.message === "deferred" || err.message === "sign-in required" || err.message === "redirect")) throw err;
+      bootDone();
+      throw err;
     });
   }
 

@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.68
+
+**Fix auth redirect loop:** no auto keycloak.login on bootstrap; sign-in only on
+user click.
+
 ## v0.0.67
 
 **Fix OAuth "invalid state" and sign-in failures:**

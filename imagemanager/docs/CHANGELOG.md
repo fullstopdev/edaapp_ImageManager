@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.0.68
+
+**Fix auth redirect loop (v0.0.67 regression):**
+
+- Bootstrap no longer auto-calls `keycloak.login()` or `/oauth/login` on silent
+  SSO failure — stops the full-page reload loop showing *Loading Image Manager*.
+- Failed bootstrap shows the in-place **Try again** / **Sign in** banner and always
+  calls `bootDone()` so the shell is visible.
+- **Sign in** / **Try again** are user-initiated only; server OAuth + signed state
+  (v0.0.67) remain as explicit fallbacks.
+
 ## v0.0.67
 
 **Fix OAuth "invalid state" and sign-in failures:**
