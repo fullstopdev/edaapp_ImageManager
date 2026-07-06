@@ -58,7 +58,6 @@ CALLBACK_SUBPATH = "/oauth/callback"
 
 SESSION_COOKIE = "im_session"
 STATE_COOKIE = "im_oauth_state"
-RETURN_COOKIE = "im_oauth_return"
 SESSION_TTL = 8 * 3600  # 8 hours
 _HTTP_TIMEOUT = 20
 
@@ -74,7 +73,6 @@ _SIGNING_KEY = os.urandom(32)
 _ca_cache = [None]
 _secret_cache = [None]
 _admin_tok_cache = {"tok": None, "exp": 0}
-_browser_client_cache = {"info": None, "exp": 0}
 
 
 # --------------------------- config ---------------------------
@@ -147,71 +145,20 @@ def _kc_admin_token():
     return _admin_tok_cache["tok"]
 
 
-def _kc_client_by_id(client_id, admin_hdr):
-    """Return the first Keycloak client dict for *client_id*, or None."""
-    clients = _get_json(
-        f"{KC_INTERNAL_BASE}/admin/realms/{REALM}/clients?clientId={client_id}", admin_hdr)
-    return clients[0] if clients else None
-
-
 def _client_secret(force=False):
     if _secret_cache[0] and not force:
         return _secret_cache[0]
     admin = _kc_admin_token()
     hdr = {"Authorization": f"Bearer {admin}"}
-    row = _kc_client_by_id(CLIENT_ID, hdr)
-    if not row:
+    clients = _get_json(
+        f"{KC_INTERNAL_BASE}/admin/realms/{REALM}/clients?clientId={CLIENT_ID}", hdr)
+    if not clients:
         raise RuntimeError(f"Keycloak client '{CLIENT_ID}' not found")
+    uuid = clients[0]["id"]
     cs = _get_json(
-        f"{KC_INTERNAL_BASE}/admin/realms/{REALM}/clients/{row['id']}/client-secret", hdr)
+        f"{KC_INTERNAL_BASE}/admin/realms/{REALM}/clients/{uuid}/client-secret", hdr)
     _secret_cache[0] = cs["value"]
     return _secret_cache[0]
-
-
-def _redirect_uri_covers_proxy(redirect_uris):
-    """True when redirect URIs admit our HttpProxy prefix (or wildcard)."""
-    prefix = APP_PROXY_PREFIX.rstrip("/")
-    for raw in redirect_uris or []:
-        u = (raw or "").rstrip("/")
-        if u in ("/*", "+"):
-            return True
-        if u.endswith("/*") and prefix.startswith(u[:-1].rstrip("/")):
-            return True
-        if u == prefix or prefix.startswith(u + "/") or u.startswith(prefix):
-            return True
-    return False
-
-
-def browser_client_info(force=False):
-    """Inspect the public ``auth`` client used by keycloak-js (admin API)."""
-    now = time.time()
-    if _browser_client_cache["info"] and not force and _browser_client_cache["exp"] > now:
-        return dict(_browser_client_cache["info"])
-    info = {
-        "clientId": BROWSER_CLIENT_ID,
-        "exists": False,
-        "redirectUris": [],
-        "webOrigins": [],
-        "coversImProxy": False,
-    }
-    try:
-        admin = _kc_admin_token()
-        hdr = {"Authorization": f"Bearer {admin}"}
-        row = _kc_client_by_id(BROWSER_CLIENT_ID, hdr)
-        if row:
-            info["exists"] = True
-            info["redirectUris"] = list(row.get("redirectUris") or [])
-            info["webOrigins"] = list(row.get("webOrigins") or [])
-            info["publicClient"] = bool(row.get("publicClient"))
-            info["standardFlowEnabled"] = bool(row.get("standardFlowEnabled"))
-            info["coversImProxy"] = _redirect_uri_covers_proxy(info["redirectUris"])
-    except Exception as e:
-        info["error"] = str(e)
-        logger.warning("Keycloak browser client '%s' check failed: %s",
-                       BROWSER_CLIENT_ID, e)
-    _browser_client_cache["info"] = info
-    _browser_client_cache["exp"] = now + 300
-    return dict(info)
 
 
 # --------------------------- OIDC flow ---------------------------
@@ -381,22 +328,6 @@ def verify_session(cookie):
     if int(payload.get("te", 0)) and int(payload["te"]) < now:
         return None
     return payload.get("u")
-
-
-def user_from_bearer(headers, session_cookie=""):
-    """Username if the request carries a valid session or Keycloak bearer token."""
-    if not enabled():
-        return "local"
-    user = verify_session(session_cookie)
-    if user:
-        return user
-    auth_hdr = headers.get("Authorization", "")
-    if auth_hdr.lower().startswith("bearer "):
-        token = auth_hdr[7:].strip()
-        user, roles = jwt_identity(token)
-        if user and is_allowed(roles):
-            return user
-    return None
 
 
 def new_state():

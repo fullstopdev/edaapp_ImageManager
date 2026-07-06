@@ -205,8 +205,11 @@ class Handler(BaseHTTPRequestHandler):
         return m.value if m else ""
 
     def _authed_user(self):
-        """Username if the request carries a valid session or bearer token."""
-        return auth.user_from_bearer(self.headers, self._cookie(auth.SESSION_COOKIE))
+        """Username if the request carries a valid session, else None.
+        With auth disabled (local dev), returns a placeholder user."""
+        if not auth.enabled():
+            return "local"
+        return auth.verify_session(self._cookie(auth.SESSION_COOKIE))
 
     def _set_cookie(self, name, value, max_age):
         parts = [f"{name}={value}", f"Path={auth.APP_PROXY_PREFIX}",
@@ -223,16 +226,7 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _sanitize_return_path(self, raw):
-        """Post-login redirect must stay under our HttpProxy prefix."""
-        path = (raw or "").strip()
-        if not path.startswith(auth.APP_PROXY_PREFIX):
-            return auth.APP_PROXY_PREFIX + "/"
-        if path.startswith("//") or "://" in path:
-            return auth.APP_PROXY_PREFIX + "/"
-        return path
-
-    def _redirect_to_login(self, q=None):
+    def _redirect_to_login(self):
         state = auth.new_state()
         try:
             url = auth.authorize_url(self.headers, state)
@@ -240,11 +234,7 @@ class Handler(BaseHTTPRequestHandler):
             logger.error("Cannot build authorize URL: %s", e)
             self._send_text("Sign-in is unavailable: cannot reach EDA Keycloak.", 503)
             return
-        cookies = [(auth.STATE_COOKIE, state, 600)]
-        ret = self._sanitize_return_path((q.get("return") or [""])[0] if q else "")
-        if ret != auth.APP_PROXY_PREFIX + "/":
-            cookies.append((auth.RETURN_COOKIE, ret, 600))
-        self._redirect(url, cookies=cookies)
+        self._redirect(url, cookies=[(auth.STATE_COOKIE, state, 600)])
 
     def _handle_oauth_session(self):
         """Exchange a keycloak-js access token for an HTTP-only session cookie."""
@@ -299,7 +289,7 @@ class Handler(BaseHTTPRequestHandler):
             tok = auth.exchange_code(code, self.headers)
         except Exception as e:
             logger.error("OIDC code exchange failed: %s", e)
-            self._redirect(auth.APP_PROXY_PREFIX + "/?auth_error=callback")
+            self._send_text("Sign-in failed: could not complete authentication.", 502)
             return
         user, roles = auth.token_identity(tok)
         if not user:
@@ -313,13 +303,11 @@ class Handler(BaseHTTPRequestHandler):
         logger.info("Sign-in OK: %s", user)
         access = tok.get("access_token", "")
         tok_exp = auth.jwt_exp(access)
-        landing = self._sanitize_return_path(self._cookie(auth.RETURN_COOKIE))
-        self._redirect(landing, cookies=[
+        self._redirect(auth.APP_PROXY_PREFIX + "/", cookies=[
             (auth.SESSION_COOKIE,
              auth.make_session(user, token_exp=tok_exp),
              auth.session_cookie_max_age(tok_exp)),
             (auth.STATE_COOKIE, "", 0),
-            (auth.RETURN_COOKIE, "", 0),
         ])
 
     def _handle_logout(self):
@@ -373,7 +361,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_logout()
                 return
             if path == "/oauth/login":
-                self._redirect_to_login(q)
+                self._redirect_to_login()
                 return
             if path == "/oauth/silent-sso.html":
                 self._send_text(webui.SILENT_SSO_HTML, ctype="text/html; charset=utf-8")
@@ -450,19 +438,13 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_config(self):
         c = CONFIG
-        payload = {
+        self._send_json({
             "defaultArtifactNamespace": c.get("defaultArtifactNamespace", "eda"),
             "defaultRepo": c.get("defaultRepo", "images"),
             "maxUploadMiB": c.get("maxUploadMiB", 4096),
             "user": self._authed_user() or "",
             "version": APP_VERSION[0],
-        }
-        if auth.enabled():
-            try:
-                payload["keycloakBrowserClient"] = auth.browser_client_info()
-            except Exception as e:
-                logger.warning("browser client info for /api/config failed: %s", e)
-        self._send_json(payload)
+        })
 
     def _serve_check_conflict(self, q):
         """Return whether an image/artifact name is already taken (pre-upload check)."""

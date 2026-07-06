@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.0.64
+
+**Revert auth to v0.0.51 baseline (working sign-in):** Restore `webui.py`,
+`fileserver.py`, and `auth.py` from v0.0.51 (`037f8cb`) — the last release with
+reliable sign-in before v0.0.52–v0.0.63 auth regressions. Drops v0.0.52 session
+refresh changes, v0.0.53 deep-link URL sync, and v0.0.55–v0.0.63 cable-map/OIDC
+fallback experiments. **Retained from v0.0.51:** incremental artifact table DOM
+updates (no poll flicker).
+
 ## v0.0.63
 
 **Fix sign-in failure — wire server OIDC fallback + auth diagnostics:**

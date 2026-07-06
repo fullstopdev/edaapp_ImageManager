@@ -31,14 +31,13 @@ from datetime import datetime, timezone
 import app_status
 import artifact
 import artifact_launcher
-import auth
 import fileserver
 import import_common
 import imports
 import k8s
 import uploads
 
-VERSION = "v0.0.63"
+VERSION = "v0.0.64"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -375,25 +374,6 @@ def _reconcile_storage(cfg):
 def main():
     _setup_logging()
     logger.info("Image Manager controller started (version %s)", VERSION)
-    if auth.enabled():
-        try:
-            bc = auth.browser_client_info()
-            if bc.get("exists"):
-                logger.info(
-                    "Keycloak browser client '%s': public=%s standardFlow=%s "
-                    "coversImProxy=%s redirectUris=%s",
-                    bc.get("clientId"), bc.get("publicClient"),
-                    bc.get("standardFlowEnabled"), bc.get("coversImProxy"),
-                    bc.get("redirectUris"),
-                )
-            else:
-                logger.warning(
-                    "Keycloak browser client '%s' not found — keycloak-js SSO "
-                    "will fail; server OIDC (client '%s') is the fallback",
-                    auth.BROWSER_CLIENT_ID, auth.CLIENT_ID,
-                )
-        except Exception as e:
-            logger.warning("Keycloak browser client check at startup failed: %s", e)
     os.makedirs(UPLOAD_DIR, exist_ok=True)
 
     signal.signal(signal.SIGTERM, _signal_handler)
