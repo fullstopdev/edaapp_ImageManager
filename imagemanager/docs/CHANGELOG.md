@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.3
+
+**Fix artifact TLS pulls after internal-CA rotation.**
+
+- `ensure_trust_bundle` now updates the per-namespace `imagemanager-trust-bundle`
+  ConfigMap when the cert-manager CSI serving CA changes, not only on first create.
+- Storage reconcile refreshes trust bundles for every namespace with uploads or
+  managed Artifacts so `eda-asvr` always trusts the current serving certificate.
+
 ## v0.1.2
 
 **Fix sign-out and EDA SSO session persistence.**

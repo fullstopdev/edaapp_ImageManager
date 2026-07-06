@@ -38,33 +38,67 @@ SERVICE_PORT = 8443
 TRUST_BUNDLE_CM = "imagemanager-trust-bundle"
 TRUST_BUNDLE_KEY = "trust-bundle.pem"
 SERVING_CA_PATH = "/var/run/eda/tls/serving/ca.crt"
-_ca_cache = [None]
 
 
 def _serving_ca():
-    if _ca_cache[0] is None:
-        try:
-            with open(SERVING_CA_PATH) as f:
-                _ca_cache[0] = f.read()
-        except OSError:
-            _ca_cache[0] = ""
-    return _ca_cache[0]
+    """Read the CA that signs our serving cert (CSI may rotate it in place)."""
+    try:
+        with open(SERVING_CA_PATH) as f:
+            return f.read()
+    except OSError:
+        return ""
+
+
+def _normalize_pem(pem):
+    return (pem or "").strip()
 
 
 def ensure_trust_bundle(namespace):
     """Ensure a trust-bundle ConfigMap with our serving CA exists in `namespace`.
+    Creates or updates the ConfigMap when the CSI serving CA rotates.
     Returns the ConfigMap name, or None if we have no CA (plain-HTTP mode)."""
     ca = _serving_ca()
     if not ca.strip():
         return None
-    if k8s.read_configmap(TRUST_BUNDLE_CM, namespace) is None:
+    data = {TRUST_BUNDLE_KEY: ca}
+    cm = k8s.read_configmap(TRUST_BUNDLE_CM, namespace)
+    if cm is None:
         try:
-            k8s.create_configmap(TRUST_BUNDLE_CM, namespace, {TRUST_BUNDLE_KEY: ca})
+            k8s.create_configmap(TRUST_BUNDLE_CM, namespace, data)
             logger.info("Created trust bundle ConfigMap %s/%s", namespace, TRUST_BUNDLE_CM)
         except Exception as e:
             logger.warning("Failed to create trust bundle CM in %s: %s", namespace, e)
             return None
+        return TRUST_BUNDLE_CM
+    existing = _normalize_pem((cm.get("data") or {}).get(TRUST_BUNDLE_KEY))
+    if existing == _normalize_pem(ca):
+        return TRUST_BUNDLE_CM
+    try:
+        k8s.replace_configmap(TRUST_BUNDLE_CM, namespace, data)
+        logger.info("Updated trust bundle ConfigMap %s/%s (serving CA changed)",
+                    namespace, TRUST_BUNDLE_CM)
+    except Exception as e:
+        logger.warning("Failed to update trust bundle CM in %s: %s", namespace, e)
+        return None
     return TRUST_BUNDLE_CM
+
+
+def refresh_trust_bundles(namespaces):
+    """Refresh per-namespace trust bundles (e.g. after internal-CA rotation)."""
+    updated = []
+    for ns in sorted({n for n in namespaces if n}):
+        before = k8s.read_configmap(TRUST_BUNDLE_CM, ns)
+        before_pem = _normalize_pem(((before or {}).get("data") or {}).get(TRUST_BUNDLE_KEY))
+        name = ensure_trust_bundle(ns)
+        if not name:
+            continue
+        after = k8s.read_configmap(TRUST_BUNDLE_CM, ns)
+        after_pem = _normalize_pem(((after or {}).get("data") or {}).get(TRUST_BUNDLE_KEY))
+        if before_pem != after_pem:
+            updated.append(ns)
+    if updated:
+        logger.info("Refreshed trust bundle in namespace(s): %s", ", ".join(updated))
+    return updated
 
 
 def default_base_url(pod_namespace):

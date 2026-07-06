@@ -37,7 +37,7 @@ import imports
 import k8s
 import uploads
 
-VERSION = "v0.1.2"
+VERSION = "v0.1.3"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -345,6 +345,15 @@ def _reconcile_storage(cfg):
         cr = k8s.read_cr(CRD_GROUP, CRD_VERSION, CRD_PLURAL, CRD_NAME)
         if cr:
             uploads.reconcile_install_identity((cr.get("metadata") or {}).get("uid"))
+        trust_ns = set()
+        try:
+            for m in uploads.list_meta():
+                trust_ns.add(m.get("namespace"))
+            for art in artifact.list_managed_artifacts():
+                trust_ns.add((art.get("metadata") or {}).get("namespace"))
+        except Exception as e:  # noqa: BLE001
+            logger.debug("trust-bundle namespace discovery failed: %s", e)
+        artifact.refresh_trust_bundles(trust_ns)
         report = import_common.reconcile_local_uploads(cfg)
         snapshot = {
             **report,
