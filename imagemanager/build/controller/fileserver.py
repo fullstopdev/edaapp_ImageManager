@@ -450,13 +450,19 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_config(self):
         c = CONFIG
-        self._send_json({
+        payload = {
             "defaultArtifactNamespace": c.get("defaultArtifactNamespace", "eda"),
             "defaultRepo": c.get("defaultRepo", "images"),
             "maxUploadMiB": c.get("maxUploadMiB", 4096),
             "user": self._authed_user() or "",
             "version": APP_VERSION[0],
-        })
+        }
+        if auth.enabled():
+            try:
+                payload["keycloakBrowserClient"] = auth.browser_client_info()
+            except Exception as e:
+                logger.warning("browser client info for /api/config failed: %s", e)
+        self._send_json(payload)
 
     def _serve_check_conflict(self, q):
         """Return whether an image/artifact name is already taken (pre-upload check)."""

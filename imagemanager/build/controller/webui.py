@@ -913,9 +913,32 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var keycloakScriptFailed = false;
   var OIDC_GUARD_KEY = "im_kc_login_attempt";
   var AUTO_LOGIN_KEY = "im_auto_kc_login";
+  var OIDC_SERVER_GUARD_KEY = "im_oidc_login_attempt";
+  var AUTO_OIDC_KEY = "im_auto_oidc_login";
   var SSO_RETRY_ATTEMPTS = 2;
   var SSO_RETRY_DELAY_MS = 500;
   var KEYCLOAK_SCRIPT = "/core/proxy/v1/identity/js/keycloak.min.js";
+  var AUTH_DEBUG = false;
+  try{
+    var _ad = new URLSearchParams(location.search).get("auth_debug");
+    if(_ad === "1" || _ad === "true") AUTH_DEBUG = true;
+  }catch(e){}
+  function authLog(){
+    var args = Array.prototype.slice.call(arguments);
+    var force = args.length && args[0] && args[0].fail;
+    if(force) args.shift();
+    if(AUTH_DEBUG || force) console.log.apply(console, ["[imagemanager auth]"].concat(args));
+  }
+  function authLogError(label, err, extra){
+    var parts = [label];
+    if(err) parts.push(err.message || String(err), err);
+    if(extra !== undefined) parts.push(extra);
+    authLog.apply(null, [{fail:true}].concat(parts));
+  }
+  function formatExchange(ex){
+    if(!ex) return null;
+    return { status: ex.status, body: ex.body };
+  }
   var el = function(id){ return document.getElementById(id); };
 
   function showAuthUser(user){
@@ -992,8 +1015,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var signInBtn = el("authSignInBtn");
       if(signInBtn) signInBtn.addEventListener("click", function(){
         clearKeycloakLoginGuard();
-        fallBackKeycloakLogin().catch(function(){
-          showSignInBanner("Sign-in unavailable. Try again or use Sign in.");
+        fallBackKeycloakLogin().catch(function(e){
+          authLogError("Sign in: keycloak.login failed", e);
+          try{
+            redirectToOidcLogin();
+          }catch(re){
+            if(re && re.message === "redirect") throw re;
+            showSignInBanner(authErrorMessage(null));
+          }
         });
       });
     }
@@ -1038,8 +1067,33 @@ INDEX_HTML = r"""<!DOCTYPE html>
         if(authBootstrapping || !authBootstrapComplete) return;
         handleSessionLoss("Your EDA session has ended.");
       };
+      kcInstance.onAuthError = function(err){
+        authLogError("Keycloak onAuthError", err || new Error("auth error"));
+      };
+      kcInstance.onAuthRefreshError = function(){
+        authLogError("Keycloak onAuthRefreshError", new Error("refresh failed"));
+      };
     }
     return kcInstance;
+  }
+  function probeKeycloakAssets(){
+    return fetch(KEYCLOAK_SCRIPT, { method: "HEAD", credentials: "omit" }).then(function(r){
+      authLog("keycloak.min.js HEAD", r.status, KEYCLOAK_SCRIPT);
+      return r.ok;
+    }).catch(function(e){
+      authLogError("keycloak.min.js unreachable", e, KEYCLOAK_SCRIPT);
+      return false;
+    });
+  }
+  function logKeycloakClientConfig(c){
+    if(!c || !c.keycloakBrowserClient) return;
+    var bc = c.keycloakBrowserClient;
+    if(bc.exists){
+      authLog("Keycloak browser client", bc.clientId,
+        "coversImProxy="+bc.coversImProxy, "redirectUris=", bc.redirectUris);
+    }else{
+      authLog({fail:true}, "Keycloak browser client missing:", bc.clientId, bc.error || "");
+    }
   }
   function silentCheckSsoUri(){
     // Must use apiBase — new URL("oauth/...", location.href) breaks when the
@@ -1095,17 +1149,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var kc = getKeycloak();
     if(!kc) return Promise.reject(new Error("keycloak-js unavailable"));
     if(kcInitPromise) return kcInitPromise;
+    authLog("initKeycloakCheck", { forceRetry: forceRetry, onLoad: hasOAuthCallback() ? "login-required" : "check-sso" });
     kcInitPromise = kc.init({
       onLoad: hasOAuthCallback() ? "login-required" : "check-sso",
       pkceMethod: "S256",
       silentCheckSsoRedirectUri: silentCheckSsoUri(),
       checkLoginIframe: !embedded,
-      messageReceiveTimeout: 10000
+      messageReceiveTimeout: 10000,
+      enableLogging: AUTH_DEBUG
     }).then(function(ok){
+      authLog("initKeycloakCheck result", ok, kc.authenticated ? "authenticated" : "not authenticated");
       if(!ok) kcInitPromise = null;   // allow silentSso retry after iframe false-negative
       return ok;
     }).catch(function(e){
       kcInitPromise = null;
+      authLogError("initKeycloakCheck failed", e);
       throw e;
     });
     return kcInitPromise;
@@ -1115,7 +1173,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     kcWatchersReady = true;
     loadKeycloakScript(false).then(function(){
       return initKeycloakCheck(false);
-    }).catch(function(){ kcWatchersReady = false; });
+    }).catch(function(e){
+      authLogError("ensureKeycloakWatchers failed", e);
+      kcWatchersReady = false;
+    });
   }
   function verifyKeycloakSession(){
     if(sessionInterruptBlocked()) return Promise.resolve(true);
@@ -1129,10 +1190,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(typeof kc.updateToken !== "function") return true;
       return kc.updateToken(-1).then(function(){
         return !!kc.authenticated;
-      }).catch(function(){
+      }).catch(function(e){
+        authLogError("verifyKeycloakSession updateToken failed", e);
         return false;
       });
-    }).catch(function(){
+    }).catch(function(e){
+      authLogError("verifyKeycloakSession failed", e);
       return false;
     });
   }
@@ -1169,8 +1232,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
         }
         kcInitPromise = null;
         return false;
-      }).catch(function(){ kcInitPromise = null; return false; });
-    }).catch(function(){ return false; });
+      }).catch(function(e){
+        authLogError("probeSession silentSso failed", e);
+        kcInitPromise = null;
+        return false;
+      });
+    }).catch(function(e){
+      authLogError("probeSession failed", e);
+      return false;
+    });
   }
   function startSessionWatchers(){
     if(!authReady) return;
@@ -1252,18 +1322,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
         return;
       }
       if(canAutoKeycloakLogin()){
-        return fallBackKeycloakLogin().catch(function(){
-          showSignInBanner(authErrorMessage(null));
+        return fallBackKeycloakLogin().catch(function(e){
+          authLogError("retrySilentSignIn: keycloak.login failed", e);
+          return tryServerOidcFallback(null);
         });
       }
-      showSignInBanner(authErrorMessage(null));
-    }).catch(function(){
+      return tryServerOidcFallback(null);
+    }).catch(function(e){
+      authLogError("retrySilentSignIn failed", e);
       if(canAutoKeycloakLogin()){
-        return fallBackKeycloakLogin().catch(function(){
-          showSignInBanner(authErrorMessage(null));
+        return fallBackKeycloakLogin().catch(function(e2){
+          authLogError("retrySilentSignIn: keycloak.login failed", e2);
+          return tryServerOidcFallback(null);
         });
       }
-      showSignInBanner(authErrorMessage(null));
+      return tryServerOidcFallback(null);
     }).finally(function(){ signInRetryPending = false; setAuthBanner("", ""); });
   }
 
@@ -1321,9 +1394,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     keycloakScriptPromise = loadScript(KEYCLOAK_SCRIPT).then(function(){
       if(typeof Keycloak === "undefined") throw new Error("keycloak-js unavailable");
       keycloakScriptFailed = false;
+      authLog("keycloak-js loaded", KEYCLOAK_SCRIPT);
     }).catch(function(e){
       keycloakScriptPromise = null;
       keycloakScriptFailed = true;
+      authLogError("loadKeycloakScript failed", e, KEYCLOAK_SCRIPT);
       throw e;
     });
     return keycloakScriptPromise;
@@ -1342,12 +1417,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
       loadKeycloakScript(forceRetry).then(function(){
         return initKeycloakCheck(forceRetry).then(function(ok){
           if(ok && kcInstance && kcInstance.token) return exchangeToken(kcInstance.token);
+          authLog("silentSsoAttempt: no token", { ok: ok, hasInstance: !!kcInstance });
           return null;
         });
       }),
       SSO_TIMEOUT_MS,
       "Sign-in timed out after " + (SSO_TIMEOUT_MS / 1000) + "s"
-    ).finally(function(){ if(showUi) setAuthBanner("", ""); });
+    ).catch(function(e){
+      authLogError("silentSsoAttempt failed", e);
+      throw e;
+    }).finally(function(){ if(showUi) setAuthBanner("", ""); });
   }
   function silentSsoWithRetries(showUi, maxAttempts){
     maxAttempts = maxAttempts || SSO_RETRY_ATTEMPTS;
@@ -1383,24 +1462,31 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }),
       SSO_TIMEOUT_MS,
       "OAuth callback timed out"
-    ).catch(function(){
+    ).catch(function(e){
+      authLogError("processOAuthCallback failed", e);
       kcInitPromise = null;
       return null;
     });
   }
   function runAuthBootstrap(){
+    probeKeycloakAssets();
     return processOAuthCallback().then(function(fromCallback){
       if(fromCallback) return fromCallback;
       // Fast path: existing im_session cookie (no keycloak-js round-trip).
       return fetchConfig().then(function(r){
-        if(r.status === 200) return r.json().then(completeAuthBootstrap);
+        if(r.status === 200) return r.json().then(function(c){
+          logKeycloakClientConfig(c);
+          return completeAuthBootstrap(c);
+        });
         if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
+        authLog("runAuthBootstrap: no session, starting keycloak-js check-sso");
         // Cable-map: keycloak.init (check-sso) then exchange or login redirect.
         return loadKeycloakScript(false).then(function(){
           return initKeycloakCheck(false);
         }).then(function(ok){
           if(ok && kcInstance && kcInstance.token){
             return exchangeToken(kcInstance.token).then(function(ex){
+              authLog("runAuthBootstrap exchange", formatExchange(ex));
               if(exchangeOk(ex)){
                 stripOAuthQueryParams();
                 return loadConfigAfterExchange(3).then(completeAuthBootstrap);
@@ -1412,9 +1498,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
               });
             });
           }
+          authLog("runAuthBootstrap check-sso false", { embedded: embedded });
           // check-sso false with active EDA session — standalone: immediate login.
           if(!embedded){
-            return fallBackKeycloakLogin(true);
+            return fallBackKeycloakLogin(true).catch(function(e){
+              authLogError("runAuthBootstrap: keycloak.login failed", e);
+              return tryServerOidcFallback(null);
+            });
           }
           // Embedded: silent SSO retries only (never keycloak.login in iframe).
           return silentSsoWithRetries(true, SSO_RETRY_ATTEMPTS).then(function(ex){
@@ -1424,6 +1514,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
             }
             return bootstrapAuthFailed(ex);
           });
+        }).catch(function(e){
+          authLogError("runAuthBootstrap keycloak path failed", e);
+          return tryServerOidcFallback(null);
         });
       });
     });
@@ -1472,7 +1565,53 @@ INDEX_HTML = r"""<!DOCTYPE html>
     try{
       sessionStorage.removeItem(OIDC_GUARD_KEY);
       sessionStorage.removeItem(AUTO_LOGIN_KEY);
+      sessionStorage.removeItem(OIDC_SERVER_GUARD_KEY);
+      sessionStorage.removeItem(AUTO_OIDC_KEY);
     }catch(e){}
+  }
+  function canAutoOidcLogin(){
+    if(embedded) return false;
+    try{
+      var autoCount = parseInt(sessionStorage.getItem(AUTO_OIDC_KEY) || "0", 10);
+      if(autoCount >= 1) return false;
+      var last = parseInt(sessionStorage.getItem(OIDC_SERVER_GUARD_KEY) || "0", 10);
+      if(Date.now() - last < 5000) return false;
+    }catch(e){}
+    return true;
+  }
+  function markOidcLoginAttempt(){
+    try{
+      sessionStorage.setItem(OIDC_SERVER_GUARD_KEY, String(Date.now()));
+      var n = parseInt(sessionStorage.getItem(AUTO_OIDC_KEY) || "0", 10);
+      sessionStorage.setItem(AUTO_OIDC_KEY, String(n + 1));
+    }catch(e){}
+  }
+  function shouldSkipAutoOidc(ex){
+    if(ex && ex.status === 403) return true;
+    if(ex && ex.body && ex.body.error === "not authenticated") return true;
+    if(ex && ex.body && ex.body.error === "forbidden") return true;
+    return false;
+  }
+  function finishAuthFailure(ex){
+    bootDone();
+    finishBootstrap();
+    showSignInBanner(authErrorMessage(ex));
+    setUnauthenticatedTables(authErrorMessage(ex));
+    throw new Error("sign-in required");
+  }
+  function tryServerOidcFallback(ex){
+    if(shouldSkipAutoOidc(ex)){
+      authLog("skip server OIDC fallback", formatExchange(ex));
+      return finishAuthFailure(ex);
+    }
+    if(!embedded && canAutoOidcLogin()){
+      authLog("trying server OIDC fallback via /oauth/login");
+      markOidcLoginAttempt();
+      redirectToOidcLogin();
+      return Promise.reject(new Error("redirect"));
+    }
+    authLog({fail:true}, "server OIDC fallback unavailable", formatExchange(ex));
+    return finishAuthFailure(ex);
   }
   // Cable-map fallback: keycloak.login() when check-sso misses an active EDA session.
   function fallBackKeycloakLogin(force){
@@ -1480,18 +1619,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!force && !canAutoKeycloakLogin()) throw new Error("sign-in required");
     markKeycloakLoginAttempt();
     kcInitPromise = null;
+    authLog("fallBackKeycloakLogin", { force: force, redirectUri: loginRedirectUri() });
     return loadKeycloakScript(false).then(function(){
       var kc = getKeycloak();
       kc.login({ redirectUri: loginRedirectUri() });
       throw new Error("redirect");
+    }).catch(function(e){
+      if(e && e.message === "redirect") throw e;
+      authLogError("fallBackKeycloakLogin failed", e);
+      throw e;
     });
   }
   function redirectToOidcLogin(){
     var ret = location.pathname + location.search + location.hash;
+    authLog("redirectToOidcLogin", apiBase + "/oauth/login?return=" + encodeURIComponent(ret));
     window.location = apiBase + "/oauth/login?return=" + encodeURIComponent(ret);
     throw new Error("redirect");
   }
   function bootstrapAuthFailed(ex){
+    authLog({fail:true}, "bootstrapAuthFailed", formatExchange(ex));
     if(ex && ex.status === 403){
       bootDone();
       finishBootstrap();
@@ -1507,13 +1653,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
     kcInitPromise = null;
     if(!embedded && canAutoKeycloakLogin()){
-      return fallBackKeycloakLogin();
+      return fallBackKeycloakLogin().catch(function(e){
+        authLogError("bootstrapAuthFailed: keycloak.login failed", e, formatExchange(ex));
+        return tryServerOidcFallback(ex);
+      });
     }
-    bootDone();
-    finishBootstrap();
-    showSignInBanner(authErrorMessage(ex));
-    setUnauthenticatedTables(authErrorMessage(ex));
-    throw new Error("sign-in required");
+    return tryServerOidcFallback(ex);
   }
   function showAuthFailure(msg){
     bootDone();
@@ -1550,6 +1695,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(e && (e.message === "sign-in required" || e.message === "redirect" || e.message === "deferred")) throw e;
       if(e && e.exchange) throw e;
       if(e && e.message && e.message.indexOf("config unavailable") === 0) throw e;
+      authLogError("ensureAuth bootstrap failed", e);
       kcInitPromise = null;
       return bootstrapAuthFailed(null);
     }).finally(function(){

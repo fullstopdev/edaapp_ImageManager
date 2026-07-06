@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.0.63
+
+**Fix sign-in failure — wire server OIDC fallback + auth diagnostics:**
+
+- **Root cause:** `redirectToOidcLogin()` (server confidential-client `eda` flow via
+  `/oauth/login`) was never called; 100% of sign-in depended on keycloak-js public
+  client `auth`. When keycloak-js failed (script, check-sso iframe, or token
+  exchange), bootstrap showed *Sign-in failed* with no second path.
+- **Server OIDC fallback:** After keycloak-js failure, auto-try `/oauth/login` once
+  (guarded like `canAutoKeycloakLogin`). **Sign in** button: `keycloak.login()`
+  first, then `/oauth/login` on reject. `return` query round-trips through callback
+  → `im_session` cookie → SPA fast path.
+- **Diagnostics:** Console logging on auth failures (`authLog`); errors no longer
+  swallowed in `.catch()` blocks; Keycloak `onAuthError` / `onAuthRefreshError`;
+  `keycloak.min.js` HEAD probe; `?auth_debug=1` enables verbose init logging.
+- **Keycloak admin check:** `auth.browser_client_info()` verifies public client
+  `auth` exists and redirect URIs cover `/core/httpproxy/v1/imagemanager/*`;
+  logged at controller startup and exposed in `/api/config` when authed.
+- **v0.0.60 preserved:** 20s bootstrap cap, 8s SSO timeout, unconditional
+  `bootDone()` / `hideSignInBanner()` in `finally`.
+
 ## v0.0.62
 
 **Fix sign-in failure — silent-sso URL + bootstrap (v0.0.55–61 regression):**
