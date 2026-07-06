@@ -552,7 +552,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
   </div>
   <div class="appbar-actions">
-    <span id="liveIndicator" class="live-pill" title="Status polling active on the Dashboard tab">
+    <span id="liveIndicator" class="live-pill" title="Background refresh active">
       <span class="live-dot" aria-hidden="true"></span><span class="live-label">Live</span>
     </span>
     <span class="toolbar-sep" aria-hidden="true"></span>
@@ -915,16 +915,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function finishBootstrap(){
     authBootstrapComplete = true;
   }
-  function redirectToEdaLogin(){
-    try {
-      if(window.top && window.top !== window.self){
-        window.top.location.reload();
-        return;
-      }
-    } catch(e){}
-    window.location = location.origin + "/";
-  }
-
   function uploadInFlight(){
     return Object.keys(pendingUploads).length > 0;
   }
@@ -999,7 +989,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       syncLiveIndicator();
       hideAuthUser();
       if(embedded){
-        redirectToEdaLogin();
+        showSignInBanner(msg || "Your EDA session has ended. Sign in again.");
       } else {
         window.location = apiBase + "/oauth/login";
       }
@@ -1051,7 +1041,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return kc.init({
         onLoad: "check-sso",
         silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-        checkLoginIframe: true,
+        checkLoginIframe: !embedded,
         messageReceiveTimeout: 10000
       });
     }).then(function(ok){
@@ -1083,6 +1073,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!authBootstrapComplete && !force) return Promise.resolve(true);
     if(!authReady && !force) return Promise.resolve(true);
     function afterConfigOk(){
+      if(embedded) return true;
       if(authReady && authBootstrapComplete) return verifyKeycloakSession();
       return true;
     }
@@ -1101,9 +1092,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function startSessionWatchers(){
     if(!authReady) return;
     initKeycloakWatch().then(function(ok){
-      if(!ok && authBootstrapComplete){
-        handleSessionLoss("Your EDA session has ended.");
+      if(ok || !authBootstrapComplete) return;
+      if(embedded){
+        return probeSession(true).then(function(stillOk){
+          if(!stillOk) handleSessionLoss("Your EDA session has ended.");
+        });
       }
+      handleSessionLoss("Your EDA session has ended.");
     }).catch(function(){
       sessionWatchReady = false;
     });
@@ -2356,13 +2351,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function syncLiveIndicator(){
     var pill=el("liveIndicator");
     if(!pill) return;
-    var live = authReady && !document.hidden && activeTab === "status" && !uploadFormActive();
+    var live = authReady && !document.hidden && !uploadFormActive();
     pill.classList.toggle("active", live);
     pill.title = live
-      ? "Status polling active on the Dashboard tab"
+      ? "Background refresh active"
       : (uploadFormActive()
         ? "Live polling paused while you compose an upload"
-        : "Live polling runs on the Dashboard tab");
+        : (document.hidden ? "Background refresh paused while tab is hidden" : "Signing in…"));
   }
   (function(){
     var btn=el("themeBtn");
@@ -2413,7 +2408,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   window.addEventListener("storage", function(ev){
     if(!authBootstrapComplete || !authReady) return;
     if(ev.key === null || ev.key.indexOf("kc-") === 0){
-      verifyKeycloakSession().then(function(ok){
+      var check = embedded ? probeSession(true) : verifyKeycloakSession();
+      check.then(function(ok){
         if(!ok) handleSessionLoss("Your EDA session has ended.");
       }).catch(function(){});
     }

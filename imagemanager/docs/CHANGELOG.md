@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.52
+
+**Fix page refresh loop + live indicator on all tabs (cable-map pattern):**
+
+- **No full-page reload:** Embedded session loss shows an in-app **Try again**
+  banner (silent SSO re-exchange) instead of `window.top.location.reload()`.
+  Standalone still redirects to `/oauth/login` on logout.
+- **Embedded session probes:** Periodic and tab-focus checks trust
+  `GET /api/config` 200 (server `im_session` cookie) — Keycloak
+  `checkLoginIframe` is disabled in the embedded iframe to avoid false logout
+  loops. Standalone probes still revalidate via Keycloak after bootstrap.
+- **Live indicator:** Stays green on Upload, URL Import, and Settings tabs
+  whenever auth is ready and background polling is active (not only on
+  Dashboard). Pauses only while composing an upload or when the tab is hidden.
+- **v0.0.49–v0.0.51 retained:** Upload form pause, deferred session loss,
+  incremental artifact table DOM diff rendering.
+
 ## v0.0.50
 
 **App bar wordmark + N favicon:**
