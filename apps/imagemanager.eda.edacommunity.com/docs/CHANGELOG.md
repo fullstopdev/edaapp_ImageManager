@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.1
+
+**Restore kkayhan server-side OIDC auth (drop keycloak-js).**
+
+- Replace broken client-side keycloak-js silent SSO with kkayhan's proven
+  server-side Authorization Code flow: unauthenticated requests redirect to
+  Keycloak via `/core/proxy/v1/identity`; callback exchanges code in-cluster
+  (trusting `eda-api-ca` for TLS).
+- Remove vendored `keycloak.min.js`, `/oauth/session`, silent-sso.html, and
+  keycloak-js bootstrap from the UI. Sign out clears the local `im_session`
+  only (EDA Keycloak session stays).
+- UI and upload features unchanged; auth diff only.
+
 ## v0.1.0
 
 **Fresh start — stability baseline.**

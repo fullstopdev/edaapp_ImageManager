@@ -98,8 +98,6 @@ APP_VERSION = [""]
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 APP_LOGO_PNG = (_ASSETS_DIR / "nokia-logo.png").read_bytes()
 APP_N_LOGO_PNG = (_ASSETS_DIR / "nokia-n.png").read_bytes()
-KEYCLOAK_MIN_JS = (_ASSETS_DIR / "keycloak.min.js").read_bytes()
-
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
     "defaultArtifactNamespace": "eda",
@@ -237,48 +235,6 @@ class Handler(BaseHTTPRequestHandler):
             return
         self._redirect(url, cookies=[(auth.STATE_COOKIE, state, 600)])
 
-    def _handle_oauth_session(self):
-        """Exchange a keycloak-js access token for an HTTP-only session cookie."""
-        auth_hdr = self.headers.get("Authorization", "")
-        token = ""
-        if auth_hdr.lower().startswith("bearer "):
-            token = auth_hdr[7:].strip()
-        if not token:
-            n = int(self.headers.get("Content-Length", 0) or 0)
-            body = self.rfile.read(n) if n else b""
-            try:
-                token = (json.loads(body.decode("utf-8")) if body else {}).get("token", "")
-            except Exception:
-                token = ""
-        user, roles = auth.jwt_identity(token)
-        if not user:
-            self._send_json({"ok": False, "error": "invalid or expired token"}, 401)
-            return
-        if not auth.is_allowed(roles):
-            self._send_json({
-                "ok": False,
-                "error": "forbidden",
-                "user": user,
-                "allowedRoles": auth.allowed_roles(),
-            }, 403)
-            return
-        tok_exp = auth.jwt_exp(token)
-        self.send_response(200)
-        self._set_cookie(auth.SESSION_COOKIE,
-                         auth.make_session(user, token_exp=tok_exp),
-                         auth.session_cookie_max_age(tok_exp))
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps({"ok": True, "user": user}).encode("utf-8"))
-
-    def _handle_oauth_session_logout(self):
-        """Clear the local session cookie (browser-initiated SSO loss)."""
-        self.send_response(200)
-        self._set_cookie(auth.SESSION_COOKIE, "", 0)
-        self.send_header("Content-Type", "application/json")
-        self.end_headers()
-        self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
-
     def _handle_oauth_callback(self, q):
         code = (q.get("code") or [None])[0]
         state = (q.get("state") or [None])[0]
@@ -302,24 +258,26 @@ class Handler(BaseHTTPRequestHandler):
             self._deny_page(user)
             return
         logger.info("Sign-in OK: %s", user)
-        access = tok.get("access_token", "")
-        tok_exp = auth.jwt_exp(access)
         self._redirect(auth.APP_PROXY_PREFIX + "/", cookies=[
-            (auth.SESSION_COOKIE,
-             auth.make_session(user, token_exp=tok_exp),
-             auth.session_cookie_max_age(tok_exp)),
+            (auth.SESSION_COOKIE, auth.make_session(user), auth.SESSION_TTL),
             (auth.STATE_COOKIE, "", 0),
         ])
 
     def _handle_logout(self):
-        """Clear local session and end the EDA Keycloak session (RP-initiated logout)."""
-        post = auth.external_base(self.headers) + auth.APP_PROXY_PREFIX + "/"
-        try:
-            url = auth.end_session_url(self.headers, post)
-        except Exception as e:
-            logger.warning("Cannot build end_session URL: %s", e)
-            url = auth.APP_PROXY_PREFIX + "/"
-        self._redirect(url, cookies=[(auth.SESSION_COOKIE, "", 0)])
+        # Local logout: clear our session only; the EDA Keycloak session stays.
+        link = auth.APP_PROXY_PREFIX + "/oauth/login"
+        body = _MSG_PAGE.format(
+            title="Signed out",
+            heading="Signed out of Image Manager",
+            body="<p>You're still logged into EDA.</p>",
+            action=f"<a class='imbtn' href='{link}'>Sign in again</a>",
+        ).encode("utf-8")
+        self.send_response(200)
+        self._set_cookie(auth.SESSION_COOKIE, "", 0)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def _deny_page(self, user):
         roles = ", ".join(auth.allowed_roles())
@@ -364,20 +322,19 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/oauth/login":
                 self._redirect_to_login()
                 return
-            if path == "/oauth/silent-sso.html":
-                self._send_text(webui.SILENT_SSO_HTML, ctype="text/html; charset=utf-8")
-                return
             if path == "/assets/nokia-logo.png":
                 self._send_text(APP_LOGO_PNG, ctype="image/png")
                 return
             if path == "/assets/nokia-n.png":
                 self._send_text(APP_N_LOGO_PNG, ctype="image/png")
                 return
-            if path == "/assets/keycloak.min.js":
-                self._send_text(KEYCLOAK_MIN_JS, ctype="application/javascript; charset=utf-8")
+            # Everything else requires a valid EDA session.
+            if auth.enabled() and not self._authed_user():
+                if path.startswith("/api/"):
+                    self._send_json({"ok": False, "error": "not authenticated"}, 401)
+                else:
+                    self._redirect_to_login()
                 return
-            # UI shell loads without a session so keycloak-js can perform silent SSO
-            # inside the EDA iframe (cable-map.eda.labs pattern). Data APIs stay gated.
             if path == "/":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -386,14 +343,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-                return
-            if auth.enabled() and not self._authed_user():
-                if path.startswith("/api/"):
-                    self._send_json({"ok": False, "error": "not authenticated"}, 401)
-                else:
-                    self.send_error(404, "Not Found")
-                return
-            if path == "/api/config":
+            elif path == "/api/config":
                 self._serve_config()
             elif path == "/api/settings":
                 self._serve_settings()
@@ -805,13 +755,7 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, q = self._route()
         try:
-            if path == "/oauth/session":
-                self._handle_oauth_session()
-                return
-            if path == "/oauth/session/logout":
-                self._handle_oauth_session_logout()
-                return
-            # All other POSTs are user actions — require a valid EDA session.
+            # All POSTs are user actions — require a valid EDA session.
             if auth.enabled() and not self._authed_user():
                 self._send_json({"ok": False, "error": "not authenticated"}, 401)
                 return

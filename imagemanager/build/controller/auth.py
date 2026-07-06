@@ -46,9 +46,10 @@ logger = logging.getLogger("auth")
 POD_NAMESPACE = os.environ.get("POD_NAMESPACE", "eda-system")
 REALM = "eda"
 CLIENT_ID = "eda"
-# Public browser client used by keycloak-js for silent SSO inside the EDA GUI
-# iframe (same pattern as cable-map.eda.labs).
-BROWSER_CLIENT_ID = "auth"
+# Browser-facing authorize URL goes through EDA's identity proxy — the SAME
+# Keycloak base the EDA GUI logs in through — so an already-logged-in EDA user
+# is 302'd back with a code and never sees a login form (seamless SSO in the
+# embedded panel). Server-to-server calls below still use KC_PROXY_PATH.
 IDENTITY_PROXY_PATH = "/core/proxy/v1/identity"
 KC_PROXY_PATH = "/core/httpproxy/v1/keycloak"
 # In-cluster Keycloak (server-to-server: admin token, client-secret, code exchange).
@@ -179,15 +180,6 @@ def redirect_uri(headers):
 
 
 def authorize_url(headers, state):
-    """Browser-facing authorize URL.
-
-    Uses the EDA identity proxy path — the SAME Keycloak base the EDA GUI logs
-    in through. Keycloak session cookies are scoped to the KC base path, so
-    only this base sees the user's existing GUI session and can 302 straight
-    back with a code (true SSO, no login form). The httpproxy Keycloak path
-    (KC_PROXY_PATH) serves the same realm but its cookie path never matches
-    the GUI session, which forced a fresh login page.
-    """
     base = external_base(headers)
     q = urllib.parse.urlencode({
         "client_id": CLIENT_ID,
@@ -196,6 +188,8 @@ def authorize_url(headers, state):
         "redirect_uri": redirect_uri(headers),
         "state": state,
     })
+    # Identity proxy (not KC_PROXY_PATH): its Keycloak session cookie matches the
+    # EDA GUI's, so an already-logged-in user is admitted with no login form.
     return f"{base}{IDENTITY_PROXY_PATH}/realms/{REALM}/protocol/openid-connect/auth?{q}"
 
 
@@ -229,12 +223,8 @@ def _decode_jwt(token):
 
 def token_identity(token_resp):
     """(username, set_of_roles) from a token response, or (None, set())."""
-    return jwt_identity(token_resp.get("access_token", ""))
-
-
-def jwt_identity(access_token):
-    """(username, set_of_roles) from a bearer access token, or (None, set())."""
-    p = _decode_jwt(access_token or "")
+    at = token_resp.get("access_token", "")
+    p = _decode_jwt(at)
     if not p:
         return None, set()
     if p.get("exp", 0) < time.time():
@@ -242,35 +232,6 @@ def jwt_identity(access_token):
     user = p.get("preferred_username") or p.get("sub")
     roles = set((p.get("realm_access") or {}).get("roles") or [])
     return user, roles
-
-
-def identity_base(headers):
-    """Browser-facing Keycloak base URL for keycloak-js (EDA identity proxy)."""
-    return external_base(headers) + IDENTITY_PROXY_PATH
-
-
-def silent_sso_redirect_uri(headers):
-    return external_base(headers) + APP_PROXY_PREFIX + "/oauth/silent-sso.html"
-
-
-def session_cookie_max_age(token_exp=None):
-    """HttpOnly session cookie Max-Age: min(app TTL, remaining access-token life)."""
-    if token_exp:
-        remaining = int(token_exp) - int(time.time())
-        if remaining > 0:
-            return min(SESSION_TTL, remaining)
-    return SESSION_TTL
-
-
-def end_session_url(headers, post_logout_redirect=None):
-    """Browser-facing Keycloak RP-initiated logout (public ``auth`` client)."""
-    redirect = post_logout_redirect or (external_base(headers) + APP_PROXY_PREFIX + "/")
-    q = urllib.parse.urlencode({
-        "client_id": BROWSER_CLIENT_ID,
-        "post_logout_redirect_uri": redirect,
-    })
-    return (identity_base(headers)
-            + f"/realms/{REALM}/protocol/openid-connect/logout?{q}")
 
 
 def is_allowed(roles):
@@ -295,17 +256,8 @@ def _sign(body_bytes):
     return _b64u(hmac.new(_SIGNING_KEY, body_bytes, hashlib.sha256).digest())
 
 
-def jwt_exp(access_token):
-    """Access-token expiry (unix seconds) from a bearer token, or None."""
-    p = _decode_jwt(access_token or "")
-    exp = int(p.get("exp", 0) or 0)
-    return exp if exp else None
-
-
-def make_session(username, token_exp=None):
+def make_session(username):
     payload = {"u": username, "exp": int(time.time()) + SESSION_TTL}
-    if token_exp:
-        payload["te"] = int(token_exp)
     body = _b64u(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     return f"{body}.{_sign(body.encode('ascii'))}"
 
@@ -321,11 +273,7 @@ def verify_session(cookie):
         payload = json.loads(_b64u_dec(body).decode("utf-8"))
     except Exception:
         return None
-    now = time.time()
-    if int(payload.get("exp", 0)) < now:
-        return None
-    # Bound session lifetime to the Keycloak access token that minted it.
-    if int(payload.get("te", 0)) and int(payload["te"]) < now:
+    if int(payload.get("exp", 0)) < time.time():
         return None
     return payload.get("u")
 

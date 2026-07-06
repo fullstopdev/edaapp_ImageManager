@@ -4,19 +4,11 @@ Unified single-page app, dashboard-first: Dashboard (KPIs + live artifact
 status) | Upload | URL Import | Settings. Cable-map / Nokia EDA design
 language: dark/light theme, Nokia logo + single EDA-style app bar, KPI overview cards,
 adaptive live polling (4s while work is in flight, 12s at rest, paused when
-the tab is hidden). Sign-in is silent SSO against the EDA Keycloak session
-(new tab from the dashboard or embedded iframe), falling back to the OIDC
-redirect flow; role gating via ALLOWED_ROLES (EDA ClusterRole). Uploads in
-progress defer auth redirects until the transfer finishes. Bootstrap: trust
-``im_session`` or silent SSO before showing the UI; session probes and logout
-handlers are deferred until bootstrap completes. Post-auth Keycloak session
-iframe + periodic revalidation detect EDA GUI logout (embedded iframe reloads
-the EDA shell — no in-app banner); Sign out button ends the full EDA session
-via keycloak-js."""
-
-SILENT_SSO_HTML = r"""<!doctype html><html><body><script>
-parent.postMessage(location.href, location.origin);
-</script></body></html>"""
+the tab is hidden). Sign-in is server-side OIDC (Authorization Code flow via
+EDA's identity proxy); unauthenticated requests redirect to Keycloak. Role
+gating via ALLOWED_ROLES (EDA ClusterRole). Sign out clears the local session
+only (EDA Keycloak session stays).
+"""
 
 INDEX_HTML = r"""<!DOCTYPE html>
 <html lang="en">
@@ -424,14 +416,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   html.eda-embedded .app-shell { max-width:none; padding:16px 18px 40px; min-height:60vh; }
   #boot-shell { padding:12px 4px 8px; color:var(--muted); font-size:13px; }
   #boot-shell.hide { display:none; }
-  .auth-banner {
-    display:none; margin:0 0 14px; padding:10px 14px; border-radius:var(--radius-md);
-    background:var(--info-bg); color:var(--info-fg); border:1px solid var(--info-bd);
-    font-size:13px; line-height:1.45;
-  }
-  .auth-banner.show { display:block; }
-  .auth-banner.err { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
-  .auth-banner .auth-actions { display:inline-flex; gap:8px; margin-left:12px; vertical-align:middle; flex-wrap:wrap; }
 
   /* Tabs — EDA-style segmented bar */
   .tabs {
@@ -561,13 +545,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></svg>
     </button>
     <span id="userInfo" class="user-chip" style="display:none"><span class="avatar" id="avatar"></span><span class="uname" id="uname"></span></span>
-    <button type="button" id="signOutBtn" class="btn text subtle ripple" style="display:none" title="Sign out of EDA and Image Manager">Sign out</button>
+    <a id="signoutLink" class="btn text subtle ripple" title="Sign out of Image Manager">Sign out</a>
   </div>
 </header>
 
 <main class="app-shell">
   <div id="boot-shell" role="status">Loading Image Manager&hellip;</div>
-  <div id="authBanner" class="auth-banner" role="status" aria-live="polite"></div>
 
   <nav class="tabs" role="tablist" aria-label="Image Manager sections">
     <button type="button" class="tab active ripple" id="tab-status" data-tab="status" role="tab" aria-selected="true" aria-controls="panel-status">Dashboard <span class="count" id="statusCount" style="display:none"></span></button>
@@ -823,19 +806,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   </div>
 </div>
 
-<!-- sign-out confirm dialog -->
-<div class="dialog confirm" id="logoutDialog" role="dialog" aria-modal="true" aria-labelledby="logoutTitle">
-  <h2 class="dialog-title" id="logoutTitle">Sign out</h2>
-  <div class="dialog-body">
-    <p id="logoutLead">Sign out of Image Manager and end your EDA session on this browser?</p>
-    <p class="hint">You will need to sign in again to use Image Manager or other EDA apps.</p>
-  </div>
-  <div class="dialog-actions">
-    <button class="btn text subtle ripple" id="logoutCancel">Cancel</button>
-    <button class="btn text danger ripple" id="logoutOk">Sign out</button>
-  </div>
-</div>
-
 <!-- delete-artifact confirm dialog (warning + explicit acknowledgement) -->
 <div class="dialog confirm" id="confirmDialog" role="dialog" aria-modal="true" aria-labelledby="confirmTitle">
   <h2 class="dialog-title danger-title" id="confirmTitle">Delete artifact</h2>
@@ -879,23 +849,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   }
   var maxBytes = 4096*1024*1024;
-  var embedded = window.self !== window.top;
-  var authReady = false;
-  var authBootstrapComplete = false;
-  var deferredSessionLoss = null;
   var pendingUploads = {}, uploadSeq = 0;
-  var SSO_TIMEOUT_MS = 15000;
-  var SESSION_CHECK_MS = 15000;
-  var REVALIDATE_DEBOUNCE_MS = 2000;
-  var sessionCheckTimer = null;
-  var revalidateTimer = null;
-  var kcInstance = null;
-  var sessionWatchReady = false;
-  var signOutPending = false;
-  var signInRetryPending = false;
-  var keycloakScriptPromise = null;
-  var keycloakScriptFailed = false;
-  var KEYCLOAK_SCRIPT = api("/assets/keycloak.min.js");
   var el = function(id){ return document.getElementById(id); };
 
   function showAuthUser(user){
@@ -903,32 +857,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var ui=el("userInfo"); if(ui) ui.style.display="inline-flex";
     el("uname").textContent=user;
     el("avatar").textContent=(user||"?").slice(0,1);
-    var so=el("signOutBtn"); if(so) so.style.display="inline-flex";
   }
-  function hideAuthUser(){
-    var ui=el("userInfo"); if(ui) ui.style.display="none";
-    var so=el("signOutBtn"); if(so) so.style.display="none";
+  function bootDone(){
+    var b = document.getElementById("boot-shell");
+    if(b) b.classList.add("hide");
   }
-  function logoutRedirectUri(){
-    return location.origin + apiBase + "/";
+  function showFatal(msg){
+    bootDone();
+    if(rows) rows.innerHTML = '<tr><td colspan="6" class="empty">'+esc(msg)+'</td></tr>';
+    snack("err", msg, true);
   }
-  function finishBootstrap(){
-    authBootstrapComplete = true;
-  }
-  function redirectToEdaLogin(){
-    try {
-      if(window.top && window.top !== window.self){
-        window.top.location.reload();
-        return;
-      }
-    } catch(e){}
-    window.location = location.origin + "/";
-  }
-
   function uploadInFlight(){
     return Object.keys(pendingUploads).length > 0;
   }
-  // Block session loss / background refresh while the user is composing an upload.
   function uploadFormActive(){
     if(uploadInFlight()) return true;
     var tab = typeof activeTab !== "undefined" ? activeTab : "";
@@ -948,464 +889,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
     return false;
   }
-  function sessionInterruptBlocked(){
-    return uploadInFlight() || uploadFormActive();
-  }
-  function flushDeferredSessionLoss(){
-    if(!deferredSessionLoss || sessionInterruptBlocked()) return;
-    var msg = deferredSessionLoss;
-    deferredSessionLoss = null;
-    handleSessionLoss(msg);
-  }
-  function clearServerSession(){
-    return fetch(api("/oauth/session/logout"), Object.assign({ method: "POST" }, FETCH_OPTS))
-      .catch(function(){ return null; });
-  }
-  function hideSignInBanner(){
-    setAuthBanner("", "");
-  }
-  function showSignInBanner(msg){
-    var b = el("authBanner");
-    if(!b) return;
-    b.className = "auth-banner show err";
-    var html = esc(msg || "Sign in required.");
-    html += '<span class="auth-actions">'+
-      '<button type="button" class="btn text subtle ripple" id="authRetryBtn">Try again</button>';
-    if(!embedded){
-      html += '<button type="button" class="btn contained ripple" id="authSignInBtn">Sign in</button>';
-    }
-    html += '</span>';
-    b.innerHTML = html;
-    var retryBtn = el("authRetryBtn");
-    if(retryBtn) retryBtn.addEventListener("click", retrySilentSignIn);
-    if(!embedded){
-      var signInBtn = el("authSignInBtn");
-      if(signInBtn) signInBtn.addEventListener("click", keycloakSignIn);
-    }
-  }
-  function handleSessionLoss(msg){
-    if(!authBootstrapComplete) return;
-    if(sessionInterruptBlocked()){
-      deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
-      return;
-    }
-    clearServerSession().then(function(){
-      authReady = false;
-      sessionWatchReady = false;
-      kcInstance = null;
-      if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
-      syncLiveIndicator();
-      hideAuthUser();
-      showSignInBanner("Sign-in required. Try again or use Sign in.");
-    });
-  }
   function handleAuthLoss(){
-    if(!authBootstrapComplete) return Promise.resolve();
-    if(sessionInterruptBlocked()){
-      deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
+    if(uploadInFlight() || uploadFormActive()){
+      snack("err", "Session ended. Finish your upload, then reload.", true);
       return Promise.resolve();
     }
-    return probeSession(true).then(function(ok){
-      if(ok){
-        authReady = true;
-        return;
-      }
-      handleSessionLoss("Your EDA session has ended. Sign in again.");
-    }).catch(function(){
-      handleSessionLoss("Your EDA session has ended. Sign in again.");
-    });
+    window.location = apiBase + "/oauth/login";
+    return Promise.resolve();
   }
-  function getKeycloak(){
-    if(typeof Keycloak === "undefined") return null;
-    if(!kcInstance){
-      kcInstance = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
-      kcInstance.onAuthLogout = function(){
-        if(!authBootstrapComplete) return;
-        handleSessionLoss("Your EDA session has ended.");
-      };
-    }
-    return kcInstance;
-  }
-  function initKeycloakWatch(){
-    if(sessionWatchReady){
-      var kc = getKeycloak();
-      if(!kc) return Promise.resolve(false);
-      if(typeof kc.updateToken === "function"){
-        return kc.updateToken(-1).then(function(){
-          return !!kc.authenticated;
-        }).catch(function(){
-          return false;
-        });
-      }
-      return Promise.resolve(!!kc.authenticated);
-    }
-    return loadKeycloakScript(false).then(function(){
-      var kc = getKeycloak();
-      if(!kc) throw new Error("keycloak-js unavailable");
-      return kc.init({
-        onLoad: "check-sso",
-        silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-        checkLoginIframe: true,
-        messageReceiveTimeout: 10000
-      });
-    }).then(function(ok){
-      sessionWatchReady = true;
-      return ok;
-    });
-  }
-  function verifyKeycloakSession(){
-    if(sessionInterruptBlocked()) return Promise.resolve(true);
-    if(!authBootstrapComplete || !authReady) return Promise.resolve(true);
-    return loadKeycloakScript(false).then(function(){
-      return initKeycloakWatch();
-    }).then(function(ok){
-      if(!ok) return false;
-      var kc = getKeycloak();
-      if(!kc || !kc.authenticated) return false;
-      if(typeof kc.updateToken !== "function") return true;
-      return kc.updateToken(-1).then(function(){
-        return !!kc.authenticated;
-      }).catch(function(){
-        return false;
-      });
-    }).catch(function(){
-      return false;
-    });
-  }
-  function probeSession(force){
-    if(sessionInterruptBlocked()) return Promise.resolve(true);
-    if(!authBootstrapComplete && !force) return Promise.resolve(true);
-    if(!authReady && !force) return Promise.resolve(true);
-    function afterConfigOk(){
-      if(authReady && authBootstrapComplete) return verifyKeycloakSession();
-      return true;
-    }
-    return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status === 200) return afterConfigOk();
-      if(r.status !== 401) return true;
-      return silentSso({ quiet: true }).then(function(ex){
-        if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-          authReady = true;
-          return verifyKeycloakSession();
-        }
-        return false;
-      }).catch(function(){ return false; });
-    }).catch(function(){ return false; });
-  }
-  function startSessionWatchers(){
-    if(!authReady) return;
-    initKeycloakWatch().then(function(ok){
-      if(!ok && authBootstrapComplete){
-        handleSessionLoss("Your EDA session has ended.");
-      }
-    }).catch(function(){
-      sessionWatchReady = false;
-    });
-  }
-  function performSignOut(){
-    if(signOutPending) return;
-    signOutPending = true;
-    setAuthBanner("info", "Signing out\u2026");
-    return clearServerSession().then(function(){
-      authReady = false;
-      sessionWatchReady = false;
-      if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
-      syncLiveIndicator();
-      hideAuthUser();
-      var kc = getKeycloak();
-      if(kc && typeof kc.logout === "function"){
-        kc.logout({ redirectUri: logoutRedirectUri() });
-        return;
-      }
-      window.location = apiBase + "/oauth/logout";
-    }).catch(function(){
-      signOutPending = false;
-      window.location = apiBase + "/oauth/logout";
-    });
-  }
-  function askSignOut(){
-    openModal(el("logoutDialog"));
-  }
-  function scheduleRevalidate(){
-    if(revalidateTimer) clearTimeout(revalidateTimer);
-    revalidateTimer = setTimeout(function(){
-      revalidateTimer = null;
-      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
-      probeSession().then(function(ok){
-        if(ok) return;
-        handleSessionLoss("Your EDA session has ended.");
-      }).catch(function(){});
-    }, REVALIDATE_DEBOUNCE_MS);
-  }
-  function scheduleSessionCheck(){
-    if(sessionCheckTimer) clearInterval(sessionCheckTimer);
-    sessionCheckTimer = setInterval(function(){
-      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
-      probeSession().then(function(ok){
-        if(ok) return;
-        handleSessionLoss("Your EDA session has ended.");
-      }).catch(function(){});
-    }, SESSION_CHECK_MS);
-  }
-  function startLogoutWatchers(){
-    startSessionWatchers();
-  }
-  function retrySilentSignIn(){
-    if(signInRetryPending) return;
-    signInRetryPending = true;
-    setAuthBanner("info", "Signing in\u2026");
-    silentSso({ forceScript: true }).then(function(ex){
-      if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-        authReady = true;
-        bootDone();
-        if(!authBootstrapComplete) finishBootstrap();
-        startSessionWatchers();
-        scheduleSessionCheck();
-        return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-          if(r.status !== 200) throw new Error("config after sso");
-          return r.json();
-        }).then(function(c){
-          hideSignInBanner();
-          if(c.user) showAuthUser(c.user);
-          refresh();
-          refreshImports();
-        });
-      }
-      if(ex && ex.status === 403){
-        showFatal(authErrorMessage({ exchange: ex, status: 403, body: ex.body }));
-        return;
-      }
-      showSignInBanner("Sign-in failed. Try again" + (embedded ? "." : " or use Sign in."));
-    }).catch(function(){
-      showSignInBanner("Sign-in failed. Try again" + (embedded ? "." : " or use Sign in."));
-    }).finally(function(){ signInRetryPending = false; setAuthBanner("", ""); });
-  }
-
-  function bootDone(){
-    var b = document.getElementById("boot-shell");
-    if(b) b.classList.add("hide");
-  }
-  function setAuthBanner(kind, text){
-    var b = document.getElementById("authBanner");
-    if(!b) return;
-    if(!text){ b.className = "auth-banner"; b.textContent = ""; return; }
-    b.className = "auth-banner show" + (kind === "err" ? " err" : "");
-    b.textContent = text;
-  }
-  function withTimeout(promise, ms, label){
-    return new Promise(function(resolve, reject){
-      var done = false;
-      var timer = setTimeout(function(){
-        if(done) return;
-        done = true;
-        reject(new Error(label || "timed out"));
-      }, ms);
-      promise.then(function(v){
-        if(done) return;
-        done = true; clearTimeout(timer); resolve(v);
-      }, function(e){
-        if(done) return;
-        done = true; clearTimeout(timer); reject(e);
-      });
-    });
-  }
-
-  function loadScript(src){
-    return new Promise(function(resolve, reject){
-      var existing = document.querySelector('script[src="'+src+'"]');
-      if(existing){
-        if(existing.getAttribute("data-loaded")==="1") return resolve();
-        existing.addEventListener("load", function(){ resolve(); }, { once: true });
-        existing.addEventListener("error", function(){
-          reject(new Error("script load failed: "+src));
-        }, { once: true });
-        return;
-      }
-      var s = document.createElement("script");
-      s.src = src; s.async = true;
-      s.onload = function(){ s.setAttribute("data-loaded","1"); resolve(); };
-      s.onerror = function(){ reject(new Error("script load failed: "+src)); };
-      document.head.appendChild(s);
-    });
-  }
-  function loadKeycloakScript(forceRetry){
-    if(typeof Keycloak !== "undefined") return Promise.resolve();
-    if(!forceRetry && keycloakScriptFailed) return Promise.reject(new Error("keycloak script unavailable"));
-    if(!forceRetry && keycloakScriptPromise) return keycloakScriptPromise;
-    keycloakScriptPromise = loadScript(KEYCLOAK_SCRIPT).then(function(){
-      if(typeof Keycloak === "undefined") throw new Error("keycloak-js unavailable");
-      keycloakScriptFailed = false;
-    }).catch(function(e){
-      keycloakScriptPromise = null;
-      keycloakScriptFailed = true;
-      throw e;
-    });
-    return keycloakScriptPromise;
-  }
-  function stripOAuthQueryParams(){
-    try{
-      var qs = new URLSearchParams(location.search);
-      var changed = false;
-      ["code","state","session_state","iss"].forEach(function(k){
-        if(qs.has(k)){ qs.delete(k); changed = true; }
-      });
-      if(!changed) return;
-      var q = qs.toString();
-      history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
-    }catch(e){}
-  }
-  function keycloakSignIn(){
-    setAuthBanner("info", "Signing in\u2026");
-    return loadKeycloakScript(true).then(function(){
-      var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
-      return kc.login({ redirectUri: location.origin + apiBase + "/" });
-    }).catch(function(){
-      setAuthBanner("", "");
-      showSignInBanner("Sign-in failed. Try again or use Sign in.");
-    });
-  }
-  function processKcCallbackReturn(){
-    try{
-      var qs = new URLSearchParams(location.search);
-      if(!qs.get("code") || !qs.get("state")) return Promise.resolve(null);
-    }catch(e){ return Promise.resolve(null); }
-    return loadKeycloakScript(false).then(function(){
-      var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
-      return kc.init({
-        onLoad: "check-sso",
-        silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-        checkLoginIframe: false
-      }).then(function(ok){
-        if(ok && kc.token) return exchangeToken(kc.token);
-        return null;
-      });
-    }).then(function(ex){
-      if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-        stripOAuthQueryParams();
-        authReady = true;
-      }
-      return ex;
-    });
-  }
-  function exchangeToken(token){
-    return fetch(api("/oauth/session"), Object.assign({
-      method: "POST",
-      headers: { "Authorization": "Bearer "+token, "Content-Type": "application/json" }
-    }, FETCH_OPTS)).then(function(r){
-      return r.json().then(function(j){ return {status:r.status, body:j}; });
-    });
-  }
-  function silentSso(opts){
-    opts = opts || {};
-    var quiet = !!opts.quiet;
-    var forceScript = !!opts.forceScript;
-    if(!quiet) setAuthBanner("info", "Signing in\u2026");
-    return withTimeout(
-      loadKeycloakScript(forceScript).then(function(){
-        var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
-        return kc.init({
-          onLoad: "check-sso",
-          silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-          checkLoginIframe: false
-        }).then(function(ok){
-          if(ok && kc.token) return exchangeToken(kc.token);
-          return null;
-        });
-      }),
-      SSO_TIMEOUT_MS,
-      "Sign-in timed out after " + (SSO_TIMEOUT_MS / 1000) + "s"
-    ).finally(function(){ if(!quiet) setAuthBanner("", ""); });
-  }
-  function authErrorMessage(ex){
-    if(ex && ex.status === 403 && ex.body){
-      var roles = (ex.body.allowedRoles || []).join(", ");
-      return "Access denied"+(ex.body.user ? (" for "+ex.body.user) : "")+
-        (roles ? (": Image Manager requires one of: "+roles+".") : ".");
-    }
-    if(ex && ex.body && ex.body.error === "not authenticated")
-      return "Sign-in required. Reload this page or open Image Manager in a new browser tab.";
-    return "Sign-in failed inside EDA. Reload this page or open Image Manager in a new tab.";
-  }
-  function showFatal(msg){
-    bootDone();
-    setAuthBanner("err", msg);
-    if(rows) rows.innerHTML = '<tr><td colspan="6" class="empty">'+esc(msg)+'</td></tr>';
-    snack("err", msg, true);
-  }
-  function ensureAuth(){
-    if(authReady) return Promise.resolve();
-    return processKcCallbackReturn().then(function(ex){
-      if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-        return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-          if(r.status !== 200) throw new Error("config after sign-in");
-          bootDone();
-          finishBootstrap();
-          setAuthBanner("", "");
-          startSessionWatchers();
-          scheduleSessionCheck();
-          return r.json();
-        });
-      }
-      return null;
-    }).then(function(c){
-      if(c) return c;
-      return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status === 200){
-        authReady = true;
-        bootDone();
-        finishBootstrap();
-        startSessionWatchers();
-        scheduleSessionCheck();
-        return r.json();
-      }
-      if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
-      // Silent SSO (EDA iframe or View new tab): reuse the browser's EDA Keycloak
-      // session, exchange for im_session, then retry config. Standalone falls back
-      // to /oauth/login only after silent SSO truly fails.
-      setAuthBanner("info", "Signing in\u2026");
-      return silentSso({ quiet: true }).then(function(ex){
-        if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-          authReady = true;
-          return fetch(api("/api/config"), FETCH_OPTS).then(function(r2){
-            if(r2.status !== 200) throw new Error("config after sso");
-            return r2.json();
-          }).then(function(c){
-            bootDone();
-            finishBootstrap();
-            setAuthBanner("", "");
-            startSessionWatchers();
-            scheduleSessionCheck();
-            return c;
-          });
-        }
-        if(ex && ex.status === 403){
-          finishBootstrap();
-          setAuthBanner("", "");
-          var err = new Error("forbidden");
-          err.exchange = ex;
-          throw err;   // role denied — redirecting would just loop
-        }
-        if(uploadInFlight()){
-          deferredSessionLoss = "Your EDA session has ended. Sign in again.";
-          throw new Error("deferred");
-        }
-        finishBootstrap();
-        setAuthBanner("", "");
-        showSignInBanner("Sign-in required. Try again or use Sign in.");
-        throw new Error("sign-in required");
-      }, function(e){
-        if(uploadInFlight()){
-          deferredSessionLoss = "Your EDA session has ended. Sign in again.";
-          throw new Error("deferred");
-        }
-        finishBootstrap();
-        setAuthBanner("", "");
-        showSignInBanner("Sign-in required. Try again or use Sign in.");
-        throw new Error("sign-in required");
-      });
-    });
-    });
-  }
+  var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
 
   var binFile=el("binFile"), ns=el("namespace"), urlNs=el("urlNamespace"),
       imageName=el("imageName"), btn=el("uploadBtn"), binHint=el("binHint"),
@@ -1559,8 +1051,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return fetchJson(api("/api/check-conflict")+"?"+qs.toString()).then(function(res){
       if(res.status===401){
         return handleAuthLoss().then(function(){
-          if(authReady) return checkConflict(namespace, name);
-          throw new Error("sign-in required");
+          return checkConflict(namespace, name);
         });
       }
       if(!res.ok || !res.body || !res.body.ok){
@@ -1586,7 +1077,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---------- config + namespaces ----------
-  ensureAuth().then(function(c){
+  fetchJson(api("/api/config")).then(function(res){
+    if(res.status === 401){ window.location = apiBase + "/oauth/login"; return; }
+    if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
+    var c = res.body || {};
+    bootDone();
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
     if(c.user) showAuthUser(c.user);
@@ -1594,23 +1089,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
     var defaultNs=(c.defaultArtifactNamespace||"").trim();
-    fetchJson(api("/api/namespaces")).then(function(res){
-      if(res.status===401) return;
-      if(!res.ok){
-        snack("err","Could not load namespaces (HTTP "+res.status+").", true);
+    fetchJson(api("/api/namespaces")).then(function(nsRes){
+      if(nsRes.status===401) return;
+      if(!nsRes.ok){
+        snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
         return;
       }
-      fillNamespaceSelects((res.body||{}).namespaces, defaultNs);
+      fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
     });
     refresh();
     refreshImports();
     syncLiveIndicator();
   }).catch(function(err){
-    if(err && (err.message === "deferred" || err.message === "sign-in required" || err.message === "redirect")) return;
-    var msg = (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
-            : (err && err.exchange) ? authErrorMessage(err.exchange)
-            : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
-            : authErrorMessage(null);
+    var msg = (err && err.message && err.message.indexOf("config unavailable")===0)
+            ? err.message : "Failed to load Image Manager configuration.";
     showFatal(msg);
   });
 
@@ -2091,7 +1583,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   function refreshImports(){
     fetchJson(api("/api/imports")).then(function(res){
-      if(res.status===401){ return handleAuthLoss().then(function(){ if(authReady) refreshImports(); }); }
+      if(res.status===401){ return handleAuthLoss().then(function(){ refreshImports(); }); }
       if(!res.ok){
         importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
           "Could not load URL imports (HTTP "+res.status+").")+'</td></tr>';
@@ -2270,7 +1762,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     opts = opts || {};
     return fetchJson(api("/api/artifacts")).then(function(res){
       if(res.status===401){
-        return handleAuthLoss().then(function(){ if(authReady) return refreshArtifacts(opts); });
+        return handleAuthLoss().then(function(){ return refreshArtifacts(opts); });
       }
       if(!res.ok){
         if(!opts.silent){
@@ -2303,7 +1795,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function syncLiveIndicator(){
     var pill=el("liveIndicator");
     if(!pill) return;
-    var live = authReady && !document.hidden && activeTab === "status" && !uploadFormActive();
+    var live = !document.hidden && activeTab === "status" && !uploadFormActive();
     pill.classList.toggle("active", live);
     pill.title = live
       ? "Status polling active on the Dashboard tab"
@@ -2324,8 +1816,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   window.addEventListener("error", function(e){
     var msg = (e && e.message) ? e.message : "JavaScript error";
-    setAuthBanner("err", "Image Manager failed to start: " + msg);
-    bootDone();
+    showFatal("Image Manager failed to start: " + msg);
   });
 
   // Adaptive reactive polling: 4s while anything is uploading/downloading,
@@ -2335,7 +1826,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function schedulePoll(){
     if(pollTimer) clearTimeout(pollTimer);
     pollTimer=setTimeout(function(){
-      if(!document.hidden && authReady){
+      if(!document.hidden){
         if(activeTab === "status"){
           refreshArtifacts();
           refreshImports();
@@ -2348,32 +1839,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }, pollInterval());
   }
   document.addEventListener("visibilitychange", function(){
-    if(!document.hidden && authReady && authBootstrapComplete){
-      scheduleRevalidate();
-      if(activeTab === "status" && !uploadFormActive()){
-        refreshArtifacts();
-        refreshImports();
-      }
+    if(!document.hidden && activeTab === "status" && !uploadFormActive()){
+      refreshArtifacts();
+      refreshImports();
     }
     syncLiveIndicator();
-  });
-  window.addEventListener("storage", function(ev){
-    if(!authBootstrapComplete || !authReady) return;
-    if(ev.key === null || ev.key.indexOf("kc-") === 0){
-      verifyKeycloakSession().then(function(ok){
-        if(!ok) handleSessionLoss("Your EDA session has ended.");
-      }).catch(function(){});
-    }
-  });
-  window.addEventListener("pageshow", function(ev){
-    if(ev.persisted && authBootstrapComplete && authReady) scheduleRevalidate();
-  });
-  var signOutBtn=el("signOutBtn");
-  if(signOutBtn) signOutBtn.addEventListener("click", askSignOut);
-  el("logoutCancel").addEventListener("click", closeModal);
-  el("logoutOk").addEventListener("click", function(){
-    closeModal();
-    performSignOut();
   });
   var refreshBtn=el("refreshBtn");
   if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });
