@@ -1,5 +1,10 @@
 # Changelog
 
+## v0.0.69
+
+**Permanent auth fix:** stop Keycloak watchers from clearing valid sessions; Sign in
+uses server OAuth; cookie retry after login.
+
 ## v0.0.68
 
 **Fix auth redirect loop (v0.0.67 regression):**
