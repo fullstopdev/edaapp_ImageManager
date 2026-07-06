@@ -1,4 +1,4 @@
-# Changes in this checkout vs. upstream kkayhan/edaapp_ImageManager
+# Changes in this checkout vs. upstream edaapp_ImageManager
 
 Adds a declarative `ImageImport` CRD (import an image by URL from EDA's
 native resource UI, with live status columns) and the missing nav/launcher

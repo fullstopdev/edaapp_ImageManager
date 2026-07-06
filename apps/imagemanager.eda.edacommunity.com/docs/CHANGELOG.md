@@ -2,9 +2,9 @@
 
 ## v0.1.1
 
-**Restore kkayhan server-side OIDC auth (drop keycloak-js).**
+**Restore server-side OIDC auth (drop keycloak-js).**
 
-- Replace broken client-side keycloak-js silent SSO with kkayhan's proven
+- Replace broken client-side keycloak-js silent SSO with proven
   server-side Authorization Code flow: unauthenticated requests redirect to
   Keycloak via `/core/proxy/v1/identity`; callback exchanges code in-cluster
   (trusting `eda-api-ca` for TLS).
@@ -24,7 +24,7 @@
   keeps silent SSO working.
 - **Stability baseline:** retain the v0.0.51-era auth bootstrap (keycloak-js
   silent SSO + explicit Sign in / Try again) without the v0.0.52–v0.0.72 auth
-  experiment churn; adopt kkayhan-style discipline — fewer moving parts, one
+  experiment churn; adopt proven discipline — fewer moving parts, one
   version bump per intentional release.
 
 ## v0.0.72
