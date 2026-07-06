@@ -8,7 +8,8 @@
   after a successful auth bootstrap the saved tab is restored instead of defaulting
   to Dashboard.
 - **Background checks no longer navigate:** `handleSessionLoss()` only shows the
-  in-place sign-in banner — no reload or redirect to `/oauth/login`.
+  in-place sign-in banner — no `window.top.location.reload()` or redirect to
+  `/oauth/login`. Navigation happens only when the user clicks **Sign in**.
 - **Trust server session cookie:** `probeSession()` treats `GET /api/config` 200 as
   sufficient; Keycloak/silent-SSO runs only on a genuine 401.
 
