@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.0.61
+
+**Fix standalone View-link sign-in failure (v0.0.60 regression):**
+
+- **Root cause:** Bootstrap called `GET /api/config` first, then spent up to ~16s on
+  silent-SSO retries before attempting `keycloak.login()`. With an active EDA session,
+  `check-sso` often returns false in a new tab; the delay let the 20s bootstrap timeout
+  fire and showed *Sign in failed* before the cable-map auto-login redirect ran.
+  `redirectUri` was rebuilt from `apiBase` instead of the full `location.href`, so
+  post-login token exchange could fail after redirect.
+- **Cable-map parity:** Run `keycloak.init` (`check-sso`) **before** API calls; on
+  false in standalone tabs call `keycloak.login({ redirectUri: location.href })`
+  **immediately** (no error banner, no SSO retries first). After redirect back,
+  `processOAuthCallback` uses `login-required` + `POST /oauth/session`.
+- **`redirectUri`:** Full current URL with OIDC noise stripped (preserves `?details=`).
+- **403 exchange:** Shows role-denied message, not generic sign-in failure.
+- **Embedded unchanged:** Trust `im_session` / silent SSO retries + **Try again** banner.
+
 ## v0.0.60
 
 **Fix infinite "Signing in…" bootstrap hang (v0.0.59 regression):**
