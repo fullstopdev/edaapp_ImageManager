@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.71
+
+**Fix sign-in:** use keycloak-js only; remove broken server `/oauth/login` path.
+
 ## v0.0.70
 
 **Full rollback to v0.0.51 controller code** (`037f8cb`): reverts all auth

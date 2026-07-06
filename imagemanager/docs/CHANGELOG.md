@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.0.71
+
+**Fix sign-in: stop using broken server `/oauth/login` flow.**
+
+The error *Sign-in failed: could not complete authentication* comes from the
+server confidential-client code exchange (`exchange_code`) failing — not the
+node agent. v0.0.70 still routed Sign in through `/oauth/login`, which hits
+that broken path.
+
+- **Sign in / Try again:** keycloak-js public client `auth` + `POST /oauth/session`
+  (cable-map pattern) — never `/oauth/login`.
+- **Bootstrap:** silent SSO only; on failure show banner (no auto-redirect).
+- **Session:** trust `im_session` cookie in probes; no Keycloak iframe logout veto.
+- **Tab persistence** and in-place session-loss banner (no navigation on background checks).
+- Server callback exchange failures redirect to SPA instead of plain-text 502.
+
 ## v0.0.70
 
 **Full rollback to v0.0.51 controller code** (`037f8cb`): reverts all auth
