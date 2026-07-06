@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.0.67
+
+**Fix OAuth "invalid state" and sign-in failures:**
+
+- **Signed OIDC state** (`auth.py`): CSRF state is HMAC-signed in the URL so
+  `/oauth/callback` no longer depends on the `im_oauth_state` cookie surviving
+  the Keycloak redirect hop (common proxy/cookie loss cause of *invalid state*).
+- **Callback errors redirect to SPA** (`/?auth_retry=1`) instead of a plain-text
+  error page; bootstrap retries silent SSO.
+- **Sign in uses keycloak-js first** (cable-map `login()` to SPA root), with
+  server `/oauth/login` only as last resort.
+- **Return-from-login**: `processKcCallbackReturn()` handles `?code=&state=` on
+  the SPA URL after keycloak-js redirect.
+
 ## v0.0.66
 
 **v0.0.51 UX patch (no-dashboard-reset):**

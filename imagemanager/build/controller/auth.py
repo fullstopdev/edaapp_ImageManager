@@ -331,4 +331,17 @@ def verify_session(cookie):
 
 
 def new_state():
-    return secrets.token_urlsafe(24)
+    """Signed CSRF token for OIDC authorize/callback (cookie-independent)."""
+    nonce = secrets.token_urlsafe(24)
+    sig = _sign(nonce.encode("ascii"))
+    return f"{nonce}.{sig}"
+
+
+def verify_oauth_state(state):
+    """True if ``state`` is a valid signed OIDC CSRF token from ``new_state()``."""
+    if not state or "." not in state:
+        return False
+    nonce, sig = state.rsplit(".", 1)
+    if not nonce or not sig:
+        return False
+    return hmac.compare_digest(sig, _sign(nonce.encode("ascii")))

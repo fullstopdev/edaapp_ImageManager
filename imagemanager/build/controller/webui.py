@@ -981,7 +981,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!embedded){
       var signInBtn = el("authSignInBtn");
       if(signInBtn) signInBtn.addEventListener("click", function(){
-        window.location = apiBase + "/oauth/login";
+        setAuthBanner("info", "Signing in\u2026");
+        keycloakLoginRedirect().catch(function(){
+          window.location = apiBase + "/oauth/login";
+        });
       });
     }
   }
@@ -1187,7 +1190,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
       showSignInBanner("Sign-in failed. Try again" + (embedded ? "." : " or use Sign in."));
     }).catch(function(){
-      showSignInBanner("Sign-in failed. Try again" + (embedded ? "." : " or use Sign in."));
+      if(embedded){
+        showSignInBanner("Sign-in failed. Try again.");
+        return;
+      }
+      keycloakLoginRedirect().catch(function(){
+        window.location = apiBase + "/oauth/login";
+      });
     }).finally(function(){ signInRetryPending = false; setAuthBanner("", ""); });
   }
 
@@ -1252,6 +1261,58 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     return keycloakScriptPromise;
   }
+  function spaRedirectUri(){
+    return location.origin + apiBase + "/";
+  }
+  function stripAuthQueryParams(){
+    try{
+      var qs = new URLSearchParams(location.search);
+      var changed = false;
+      ["auth_retry","auth_error","code","state","session_state","iss"].forEach(function(k){
+        if(qs.has(k)){ qs.delete(k); changed = true; }
+      });
+      if(!changed) return;
+      var q = qs.toString();
+      history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
+    }catch(e){}
+  }
+  function hasKcCallback(){
+    try{
+      var qs = new URLSearchParams(location.search);
+      return !!(qs.get("code") && qs.get("state"));
+    }catch(e){ return false; }
+  }
+  function processKcCallbackReturn(){
+    if(!hasKcCallback()) return Promise.resolve(null);
+    setAuthBanner("info", "Signing in\u2026");
+    return loadKeycloakScript(false).then(function(){
+      var kc = getKeycloak();
+      return kc.init({
+        onLoad: "login-required",
+        silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
+        checkLoginIframe: false,
+        pkceMethod: "S256"
+      }).then(function(ok){
+        stripAuthQueryParams();
+        if(ok && kc.token) return exchangeToken(kc.token);
+        return null;
+      });
+    });
+  }
+  function keycloakLoginRedirect(){
+    return loadKeycloakScript(false).then(function(){
+      var kc = getKeycloak();
+      return kc.init({
+        onLoad: "check-sso",
+        silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
+        checkLoginIframe: false,
+        pkceMethod: "S256"
+      }).then(function(ok){
+        if(ok && kc.token) return exchangeToken(kc.token);
+        return kc.login({ redirectUri: spaRedirectUri() });
+      });
+    });
+  }
   function exchangeToken(token){
     return fetch(api("/oauth/session"), Object.assign({
       method: "POST",
@@ -1267,11 +1328,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!quiet) setAuthBanner("info", "Signing in\u2026");
     return withTimeout(
       loadKeycloakScript(forceScript).then(function(){
-        var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
+        var kc = getKeycloak();
         return kc.init({
           onLoad: "check-sso",
           silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-          checkLoginIframe: false
+          checkLoginIframe: false,
+          pkceMethod: "S256"
         }).then(function(ok){
           if(ok && kc.token) return exchangeToken(kc.token);
           return null;
@@ -1299,67 +1361,71 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function ensureAuth(){
     if(authReady) return Promise.resolve();
-    return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status === 200){
-        authReady = true;
+    function afterSessionExchange(ex){
+      if(!(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok)) return Promise.resolve(null);
+      authReady = true;
+      return fetch(api("/api/config"), FETCH_OPTS).then(function(r2){
+        if(r2.status !== 200) throw new Error("config after sso");
+        return r2.json();
+      }).then(function(c){
         bootDone();
         finishBootstrap();
+        setAuthBanner("", "");
         startSessionWatchers();
         scheduleSessionCheck();
-        return r.json();
+        return c;
+      });
+    }
+    function standaloneLoginFallback(ex){
+      if(ex && ex.status === 403){
+        finishBootstrap();
+        setAuthBanner("", "");
+        var err = new Error("forbidden");
+        err.exchange = ex;
+        throw err;
       }
-      if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
-      // Silent SSO (EDA iframe or View new tab): reuse the browser's EDA Keycloak
-      // session, exchange for im_session, then retry config. Standalone falls back
-      // to /oauth/login only after silent SSO truly fails.
-      setAuthBanner("info", "Signing in\u2026");
-      return silentSso({ quiet: true }).then(function(ex){
-        if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
+      if(uploadInFlight()){
+        deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+        throw new Error("deferred");
+      }
+      finishBootstrap();
+      setAuthBanner("", "");
+      if(embedded){
+        showSignInBanner("Sign-in required. Try again.");
+        throw new Error("sign-in required");
+      }
+      return keycloakLoginRedirect().then(function(kex){
+        return afterSessionExchange(kex).then(function(c){
+          if(c) return c;
+          window.location = apiBase + "/oauth/login";
+          throw new Error("redirect");
+        });
+      }).catch(function(){
+        window.location = apiBase + "/oauth/login";
+        throw new Error("redirect");
+      });
+    }
+    return processKcCallbackReturn().then(afterSessionExchange).then(function(c){
+      if(c) return c;
+      return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+        if(r.status === 200){
           authReady = true;
-          return fetch(api("/api/config"), FETCH_OPTS).then(function(r2){
-            if(r2.status !== 200) throw new Error("config after sso");
-            return r2.json();
-          }).then(function(c){
-            bootDone();
-            finishBootstrap();
-            setAuthBanner("", "");
-            startSessionWatchers();
-            scheduleSessionCheck();
-            return c;
-          });
-        }
-        if(ex && ex.status === 403){
+          bootDone();
           finishBootstrap();
-          setAuthBanner("", "");
-          var err = new Error("forbidden");
-          err.exchange = ex;
-          throw err;   // role denied — redirecting would just loop
+          startSessionWatchers();
+          scheduleSessionCheck();
+          return r.json();
         }
-        if(uploadInFlight()){
-          deferredSessionLoss = "Your EDA session has ended. Sign in again.";
-          throw new Error("deferred");
-        }
-        finishBootstrap();
-        setAuthBanner("", "");
-        if(embedded){
-          showSignInBanner("Sign-in required. Try again.");
-          throw new Error("sign-in required");
-        }
-        window.location = apiBase + "/oauth/login";
-        throw new Error("redirect");
-      }, function(e){
-        if(uploadInFlight()){
-          deferredSessionLoss = "Your EDA session has ended. Sign in again.";
-          throw new Error("deferred");
-        }
-        finishBootstrap();
-        setAuthBanner("", "");
-        if(embedded){
-          showSignInBanner("Sign-in required. Try again.");
-          throw new Error("sign-in required");
-        }
-        window.location = apiBase + "/oauth/login";
-        throw new Error("redirect");
+        if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
+        setAuthBanner("info", "Signing in\u2026");
+        return silentSso({ quiet: true }).then(function(ex){
+          return afterSessionExchange(ex).then(function(c){
+            if(c) return c;
+            return standaloneLoginFallback(ex);
+          });
+        }, function(){
+          return standaloneLoginFallback(null);
+        });
       });
     });
   }
@@ -1555,6 +1621,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---------- config + namespaces ----------
+  (function(){
+    try{
+      var qs = new URLSearchParams(location.search);
+      if(!qs.get("auth_retry")) return;
+      qs.delete("auth_retry");
+      var q = qs.toString();
+      history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
+    }catch(e){}
+  })();
   ensureAuth().then(function(c){
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";

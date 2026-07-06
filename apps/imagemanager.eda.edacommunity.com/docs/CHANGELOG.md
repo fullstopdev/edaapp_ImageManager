@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.67
+
+**Fix OAuth "invalid state" and sign-in failures:**
+
+- Signed OIDC state (no cookie dependency on callback).
+- Callback failures redirect to SPA for retry; Sign in uses keycloak-js first.
+
 ## v0.0.66
 
 **v0.0.51 UX patch (no-dashboard-reset):**
