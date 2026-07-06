@@ -899,6 +899,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var keycloakScriptFailed = false;
   var oauthCallbackFailed = false;
   var OIDC_GUARD_KEY = "im_kc_login_attempt";
+  var AUTH_SETTLED_KEY = "im_auth_settled";
   var KEYCLOAK_SCRIPT = "/core/proxy/v1/identity/js/keycloak.min.js";
   var el = function(id){ return document.getElementById(id); };
 
@@ -1029,13 +1030,28 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function silentCheckSsoUri(){
     return new URL("oauth/silent-sso.html", location.href).href;
   }
+  function hasOAuthCallback(){
+    try{
+      var qs = new URLSearchParams(location.search);
+      return !!(qs.get("code") && qs.get("state"));
+    }catch(e){ return false; }
+  }
+  function isAuthSettled(){
+    try{ return sessionStorage.getItem(AUTH_SETTLED_KEY) === "1"; }catch(e){ return false; }
+  }
+  function markAuthSettled(){
+    try{ sessionStorage.setItem(AUTH_SETTLED_KEY, "1"); }catch(e){}
+  }
+  function clearAuthSettled(){
+    try{ sessionStorage.removeItem(AUTH_SETTLED_KEY); }catch(e){}
+  }
   function initKeycloakCheck(forceRetry){
     if(forceRetry) kcInitPromise = null;
     var kc = getKeycloak();
     if(!kc) return Promise.reject(new Error("keycloak-js unavailable"));
     if(kcInitPromise) return kcInitPromise;
     kcInitPromise = kc.init({
-      onLoad: "check-sso",
+      onLoad: hasOAuthCallback() ? "login-required" : "check-sso",
       pkceMethod: "S256",
       silentCheckSsoRedirectUri: silentCheckSsoUri(),
       checkLoginIframe: !embedded,
@@ -1305,7 +1321,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
   }
   function canAutoKeycloakLogin(){
+    // Embedded EDA iframe: silent SSO + token exchange only — never auto keycloak.login().
+    if(embedded) return false;
     if(oauthCallbackFailed) return false;
+    if(isAuthSettled()) return false;
     try{
       var last = parseInt(sessionStorage.getItem(OIDC_GUARD_KEY) || "0", 10);
       if(Date.now() - last < 15000) return false;
@@ -1317,11 +1336,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function clearKeycloakLoginGuard(){
     try{ sessionStorage.removeItem(OIDC_GUARD_KEY); }catch(e){}
+    clearAuthSettled();
   }
   // Cable-map fallback: keycloak.login() when check-sso misses an active EDA session.
   // Avoids the server /oauth/login loop when code exchange fails (auth_error=callback).
   function fallBackKeycloakLogin(){
     if(!canAutoKeycloakLogin()) throw new Error("sign-in required");
+    markAuthSettled();
     markKeycloakLoginAttempt();
     kcInitPromise = null;
     return loadKeycloakScript(false).then(function(){
@@ -1349,6 +1370,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(canAutoKeycloakLogin()){
       return fallBackKeycloakLogin();
     }
+    markAuthSettled();
     bootDone();
     finishBootstrap();
     showSignInBanner(authErrorMessage(ex));
@@ -1420,6 +1442,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         }
         kcInitPromise = null;
         if(canAutoKeycloakLogin()) return fallBackKeycloakLogin();
+        markAuthSettled();
         bootDone();
         finishBootstrap();
         showSignInBanner("Sign-in required. Try again" +
@@ -1619,7 +1642,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
     }catch(e){}
   })();
-  bootDone();
   ensureAuth().then(function(c){
     oauthCallbackFailed = false;
     hideSignInBanner();

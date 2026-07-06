@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.0.57
+
+**Fix embedded View-link reload loop (v0.0.56 regression):**
+
+- **Root cause:** v0.0.56 auto-called `keycloak.login()` inside the EDA embedded
+  iframe when silent SSO failed. Cable-map uses the same fallback in a **new tab**,
+  not an iframe — in embedded mode each `keycloak.login()` redirect reloaded the
+  iframe (~1s cycle) with *Signing in…* on every pass. A premature `bootDone()`
+  before `ensureAuth()` also hid then re-showed the signing-in state each reload.
+- **Embedded:** Never auto `keycloak.login()` or server `/oauth/login` — silent SSO
+  + token exchange only; show recoverable **Try again** banner on failure.
+- **Standalone:** `keycloak.login()` at most once per session open via
+  `im_auth_settled` guard; OAuth callback URLs use `onLoad: login-required`.
+- **Boot shell:** *Signing in…* stays visible until auth completes (no early
+  `bootDone()`).
+
 ## v0.0.56
 
 **Fix auth redirect loop (v0.0.55 regression):**
