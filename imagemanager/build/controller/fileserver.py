@@ -290,7 +290,7 @@ class Handler(BaseHTTPRequestHandler):
             tok = auth.exchange_code(code, self.headers)
         except Exception as e:
             logger.error("OIDC code exchange failed: %s", e)
-            self._redirect(auth.APP_PROXY_PREFIX + "/?auth_error=exchange")
+            self._send_text("Sign-in failed: could not complete authentication.", 502)
             return
         user, roles = auth.token_identity(tok)
         if not user:

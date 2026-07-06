@@ -895,7 +895,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var signInRetryPending = false;
   var keycloakScriptPromise = null;
   var keycloakScriptFailed = false;
-  function keycloakScriptUrl(){ return api("/assets/keycloak.min.js"); }
+  var KEYCLOAK_SCRIPT = api("/assets/keycloak.min.js");
   var el = function(id){ return document.getElementById(id); };
 
   function showAuthUser(user){
@@ -980,23 +980,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(retryBtn) retryBtn.addEventListener("click", retrySilentSignIn);
     if(!embedded){
       var signInBtn = el("authSignInBtn");
-      if(signInBtn) signInBtn.addEventListener("click", function(){
-        if(signInRetryPending) return;
-        signInRetryPending = true;
-        setAuthBanner("info", "Signing in\u2026");
-        keycloakSignIn().then(function(ex){
-          if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-            return completeSignIn(ex);
-          }
-          showSignInBanner("Sign-in failed. Try again or use Sign in.");
-        }).catch(function(){
-          showSignInBanner("Sign-in failed. Try again or use Sign in.");
-        }).finally(function(){ signInRetryPending = false; setAuthBanner("", ""); });
-      });
+      if(signInBtn) signInBtn.addEventListener("click", keycloakSignIn);
     }
   }
   function handleSessionLoss(msg){
-    // Never navigate on background session loss — show banner; user clicks Sign in.
     if(!authBootstrapComplete) return;
     if(sessionInterruptBlocked()){
       deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
@@ -1009,7 +996,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
       syncLiveIndicator();
       hideAuthUser();
-      showSignInBanner(msg || "Your EDA session has ended. Sign in again.");
+      showSignInBanner("Sign-in required. Try again or use Sign in.");
     });
   }
   function handleAuthLoss(){
@@ -1090,6 +1077,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!authBootstrapComplete && !force) return Promise.resolve(true);
     if(!authReady && !force) return Promise.resolve(true);
     function afterConfigOk(){
+      if(authReady && authBootstrapComplete) return verifyKeycloakSession();
       return true;
     }
     return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
@@ -1098,7 +1086,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return silentSso({ quiet: true }).then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
-          return true;
+          return verifyKeycloakSession();
         }
         return false;
       }).catch(function(){ return false; });
@@ -1106,7 +1094,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function startSessionWatchers(){
     if(!authReady) return;
-    scheduleSessionCheck();
+    initKeycloakWatch().then(function(ok){
+      if(!ok && authBootstrapComplete){
+        handleSessionLoss("Your EDA session has ended.");
+      }
+    }).catch(function(){
+      sessionWatchReady = false;
+    });
   }
   function performSignOut(){
     if(signOutPending) return;
@@ -1162,7 +1156,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
     setAuthBanner("info", "Signing in\u2026");
     silentSso({ forceScript: true }).then(function(ex){
       if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-        return completeSignIn(ex);
+        authReady = true;
+        bootDone();
+        if(!authBootstrapComplete) finishBootstrap();
+        startSessionWatchers();
+        scheduleSessionCheck();
+        return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+          if(r.status !== 200) throw new Error("config after sso");
+          return r.json();
+        }).then(function(c){
+          hideSignInBanner();
+          if(c.user) showAuthUser(c.user);
+          refresh();
+          refreshImports();
+        });
       }
       if(ex && ex.status === 403){
         showFatal(authErrorMessage({ exchange: ex, status: 403, body: ex.body }));
@@ -1225,7 +1232,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(typeof Keycloak !== "undefined") return Promise.resolve();
     if(!forceRetry && keycloakScriptFailed) return Promise.reject(new Error("keycloak script unavailable"));
     if(!forceRetry && keycloakScriptPromise) return keycloakScriptPromise;
-    keycloakScriptPromise = loadScript(keycloakScriptUrl()).then(function(){
+    keycloakScriptPromise = loadScript(KEYCLOAK_SCRIPT).then(function(){
       if(typeof Keycloak === "undefined") throw new Error("keycloak-js unavailable");
       keycloakScriptFailed = false;
     }).catch(function(e){
@@ -1235,14 +1242,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     return keycloakScriptPromise;
   }
-  function spaRedirectUri(){
-    return location.origin + apiBase + "/";
-  }
-  function stripAuthQueryParams(){
+  function stripOAuthQueryParams(){
     try{
       var qs = new URLSearchParams(location.search);
       var changed = false;
-      ["auth_error","auth_retry","code","state","session_state","iss"].forEach(function(k){
+      ["code","state","session_state","iss"].forEach(function(k){
         if(qs.has(k)){ qs.delete(k); changed = true; }
       });
       if(!changed) return;
@@ -1250,59 +1254,37 @@ INDEX_HTML = r"""<!DOCTYPE html>
       history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
     }catch(e){}
   }
-  function hasKcCallback(){
-    try{
-      var qs = new URLSearchParams(location.search);
-      return !!(qs.get("code") && qs.get("state"));
-    }catch(e){ return false; }
-  }
-  function completeSignIn(ex){
-    if(!(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok)) return Promise.resolve();
-    authReady = true;
-    return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status !== 200) throw new Error("config after sign-in");
-      return r.json();
-    }).then(function(c){
-      bootDone();
-      if(!authBootstrapComplete) finishBootstrap();
-      hideSignInBanner();
-      startSessionWatchers();
-      scheduleSessionCheck();
-      if(c.user) showAuthUser(c.user);
-      refresh();
-      refreshImports();
-      return c;
+  function keycloakSignIn(){
+    setAuthBanner("info", "Signing in\u2026");
+    return loadKeycloakScript(true).then(function(){
+      var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
+      return kc.login({ redirectUri: location.origin + apiBase + "/" });
+    }).catch(function(){
+      setAuthBanner("", "");
+      showSignInBanner("Sign-in failed. Try again or use Sign in.");
     });
   }
   function processKcCallbackReturn(){
-    if(!hasKcCallback()) return Promise.resolve(null);
-    setAuthBanner("info", "Signing in\u2026");
+    try{
+      var qs = new URLSearchParams(location.search);
+      if(!qs.get("code") || !qs.get("state")) return Promise.resolve(null);
+    }catch(e){ return Promise.resolve(null); }
     return loadKeycloakScript(false).then(function(){
-      var kc = getKeycloak();
-      return kc.init({
-        onLoad: "login-required",
-        silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-        checkLoginIframe: false,
-        pkceMethod: "S256"
-      }).then(function(ok){
-        stripAuthQueryParams();
-        if(ok && kc.token) return exchangeToken(kc.token);
-        return null;
-      });
-    });
-  }
-  function keycloakSignIn(){
-    return loadKeycloakScript(false).then(function(){
-      var kc = getKeycloak();
+      var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
       return kc.init({
         onLoad: "check-sso",
         silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-        checkLoginIframe: false,
-        pkceMethod: "S256"
+        checkLoginIframe: false
       }).then(function(ok){
         if(ok && kc.token) return exchangeToken(kc.token);
-        return kc.login({ redirectUri: spaRedirectUri() });
+        return null;
       });
+    }).then(function(ex){
+      if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
+        stripOAuthQueryParams();
+        authReady = true;
+      }
+      return ex;
     });
   }
   function exchangeToken(token){
@@ -1320,14 +1302,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!quiet) setAuthBanner("info", "Signing in\u2026");
     return withTimeout(
       loadKeycloakScript(forceScript).then(function(){
-        kcInstance = null;
-        sessionWatchReady = false;
-        var kc = getKeycloak();
+        var kc = new Keycloak({ url: "/core/proxy/v1/identity", realm: "eda", clientId: "auth" });
         return kc.init({
           onLoad: "check-sso",
           silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
-          checkLoginIframe: !embedded,
-          pkceMethod: "S256"
+          checkLoginIframe: false
         }).then(function(ok){
           if(ok && kc.token) return exchangeToken(kc.token);
           return null;
@@ -1350,68 +1329,81 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function showFatal(msg){
     bootDone();
     setAuthBanner("err", msg);
-    if(rows) setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">'+esc(msg)+'</td></tr>');
+    if(rows) rows.innerHTML = '<tr><td colspan="6" class="empty">'+esc(msg)+'</td></tr>';
     snack("err", msg, true);
   }
   function ensureAuth(){
     if(authReady) return Promise.resolve();
-    function afterTokenExchange(ex){
-      if(!(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok)) return Promise.resolve(null);
-      authReady = true;
-      return fetch(api("/api/config"), FETCH_OPTS).then(function(r2){
-        if(r2.status !== 200) throw new Error("config after sso");
-        return r2.json();
-      }).then(function(c){
-        bootDone();
-        finishBootstrap();
-        setAuthBanner("", "");
-        startSessionWatchers();
-        scheduleSessionCheck();
-        return c;
-      });
-    }
-    function authFailed(ex){
-      if(ex && ex.status === 403){
-        finishBootstrap();
-        bootDone();
-        setAuthBanner("", "");
-        var err = new Error("forbidden");
-        err.exchange = ex;
-        throw err;
-      }
-      if(uploadInFlight()){
-        deferredSessionLoss = "Your EDA session has ended. Sign in again.";
-        bootDone();
-        throw new Error("deferred");
-      }
-      finishBootstrap();
-      bootDone();
-      setAuthBanner("", "");
-      showSignInBanner("Sign-in required. Try again" + (embedded ? "." : " or use Sign in."));
-      throw new Error("sign-in required");
-    }
-    return processKcCallbackReturn().then(afterTokenExchange).then(function(c){
-      if(c) return c;
-      return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-        if(r.status === 200){
-          authReady = true;
+    return processKcCallbackReturn().then(function(ex){
+      if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
+        return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+          if(r.status !== 200) throw new Error("config after sign-in");
           bootDone();
           finishBootstrap();
+          setAuthBanner("", "");
           startSessionWatchers();
           scheduleSessionCheck();
           return r.json();
-        }
-        if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
-        setAuthBanner("info", "Signing in\u2026");
-        return silentSso({ quiet: true }).then(function(ex){
-          return afterTokenExchange(ex).then(function(c){
-            if(c) return c;
-            return authFailed(ex);
-          });
-        }, function(){
-          return authFailed(null);
         });
+      }
+      return null;
+    }).then(function(c){
+      if(c) return c;
+      return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+      if(r.status === 200){
+        authReady = true;
+        bootDone();
+        finishBootstrap();
+        startSessionWatchers();
+        scheduleSessionCheck();
+        return r.json();
+      }
+      if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
+      // Silent SSO (EDA iframe or View new tab): reuse the browser's EDA Keycloak
+      // session, exchange for im_session, then retry config. Standalone falls back
+      // to /oauth/login only after silent SSO truly fails.
+      setAuthBanner("info", "Signing in\u2026");
+      return silentSso({ quiet: true }).then(function(ex){
+        if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
+          authReady = true;
+          return fetch(api("/api/config"), FETCH_OPTS).then(function(r2){
+            if(r2.status !== 200) throw new Error("config after sso");
+            return r2.json();
+          }).then(function(c){
+            bootDone();
+            finishBootstrap();
+            setAuthBanner("", "");
+            startSessionWatchers();
+            scheduleSessionCheck();
+            return c;
+          });
+        }
+        if(ex && ex.status === 403){
+          finishBootstrap();
+          setAuthBanner("", "");
+          var err = new Error("forbidden");
+          err.exchange = ex;
+          throw err;   // role denied — redirecting would just loop
+        }
+        if(uploadInFlight()){
+          deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+          throw new Error("deferred");
+        }
+        finishBootstrap();
+        setAuthBanner("", "");
+        showSignInBanner("Sign-in required. Try again or use Sign in.");
+        throw new Error("sign-in required");
+      }, function(e){
+        if(uploadInFlight()){
+          deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+          throw new Error("deferred");
+        }
+        finishBootstrap();
+        setAuthBanner("", "");
+        showSignInBanner("Sign-in required. Try again or use Sign in.");
+        throw new Error("sign-in required");
       });
+    });
     });
   }
 
@@ -1428,22 +1420,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return (t||"").split(/\r?\n/).some(function(l){ return RE.test(l); });
   }
   // ---------- tabs ----------
-  var ACTIVE_TAB_KEY = "im_active_tab";
-  function loadSavedTab(){
-    try{
-      var t = sessionStorage.getItem(ACTIVE_TAB_KEY);
-      if(t && document.getElementById("panel-" + t)) return t;
-    }catch(e){}
-    return "status";
-  }
-  function saveActiveTab(name){
-    try{ sessionStorage.setItem(ACTIVE_TAB_KEY, name); }catch(e){}
-  }
   var activeTab = "status";
   function showTab(name){
     if(name === activeTab) return;
     activeTab = name;
-    saveActiveTab(name);
     document.querySelectorAll(".tab").forEach(function(t){
       var on = t.getAttribute("data-tab") === name;
       t.classList.toggle("active", on);
@@ -1606,7 +1586,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---------- config + namespaces ----------
-  stripAuthQueryParams();
   ensureAuth().then(function(c){
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
@@ -1626,8 +1605,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     refresh();
     refreshImports();
     syncLiveIndicator();
-    var savedTab = loadSavedTab();
-    if(savedTab !== "status") showTab(savedTab);
   }).catch(function(err){
     if(err && (err.message === "deferred" || err.message === "sign-in required" || err.message === "redirect")) return;
     var msg = (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
@@ -1688,14 +1665,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     xhr.send(licStr);
   }
   function paintPendingCell(p){
-    var key=rowKeyPending(p);
-    var tr=artifactRowEls[key];
-    if(tr){
-      var html=pendStatusHtml(p);
-      var td=tr.children[4];
-      if(td.innerHTML!==html) td.innerHTML=html;
-      if(artifactRowSnap[key]) artifactRowSnap[key][4]=html;
-    } else render();
+    var c=document.getElementById("upstat-"+p.key);
+    if(c) c.innerHTML=pendStatusHtml(p); else render();
   }
 
   // Shared XHR uploader: streams `file` to `url`, driving the live pending row `p`.
@@ -1790,51 +1761,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   });
 
-  // ---------- artifacts table (incremental DOM; keyed by upload key or name+namespace) ----------
+  // ---------- artifacts table ----------
   var lastImports=[];   // in-flight browser->controller uploads tracked in pendingUploads
-  var artifactRowEls={}, artifactRowSnap={};
-  function resetArtifactRowState(){
-    artifactRowEls={}; artifactRowSnap={};
-  }
-  function setArtifactRowsMessage(html){
-    resetArtifactRowState();
-    rows.innerHTML=html;
-  }
-  function rowKeyPending(p){ return "p:"+p.key; }
-  function rowKeyServer(t){ return "s:"+(t.displayName||t.name)+"\0"+(t.namespace||""); }
-  function createPendingTr(p){
-    var tr=document.createElement("tr");
-    var td0=document.createElement("td"); td0.className="mono namecell";
-    var td1=document.createElement("td");
-    var td2=document.createElement("td");
-    var td3=document.createElement("td"); td3.className="num";
-    var td4=document.createElement("td"); td4.id="upstat-"+p.key;
-    var td5=document.createElement("td");
-    tr.appendChild(td0); tr.appendChild(td1); tr.appendChild(td2);
-    tr.appendChild(td3); tr.appendChild(td4); tr.appendChild(td5);
-    return tr;
-  }
-  function createServerTr(){
-    var tr=document.createElement("tr");
-    for(var i=0;i<6;i++){
-      var td=document.createElement("td");
-      if(i===0) td.className="mono namecell";
-      else if(i===3) td.className="num";
-      else if(i===5) td.style.whiteSpace="nowrap";
-      tr.appendChild(td);
-    }
-    return tr;
-  }
-  function patchRowCells(tr, htmls, snapKey){
-    var prev=artifactRowSnap[snapKey], cells=tr.children, changed=false;
-    for(var i=0;i<htmls.length;i++){
-      if(!prev || prev[i]!==htmls[i]){
-        cells[i].innerHTML=htmls[i];
-        changed=true;
-      }
-    }
-    if(changed || !prev) artifactRowSnap[snapKey]=htmls.slice();
-  }
   var NOS_LABELS={srl:"Nokia SR Linux",sros:"Nokia SR OS",srsim:"Nokia SR OS (SIM)"};
   function osLabel(t){
     var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
@@ -1930,17 +1858,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
            '<div class="uprog indet"><div></div></div>'+
            '<div class="upinfo">'+esc(sub)+'</div>';
   }
-  function pendingCellHtmls(p){
-    return [
-      esc(p.displayName),
-      '<span class="os-empty">&mdash;</span>',
-      esc(p.namespace),
-      fmtBytes(p.total),
-      pendStatusHtml(p),
-      ""
-    ];
+  function pendingRowHtml(p){
+    return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td><span class="os-empty">&mdash;</span></td><td>'+esc(p.namespace)+
+      '</td><td class="num">'+fmtBytes(p.total)+'</td><td id="upstat-'+p.key+'">'+pendStatusHtml(p)+
+      '</td><td></td></tr>';
   }
-  function serverCellHtmls(t){
+  function serverRowHtml(t){
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
@@ -1948,14 +1871,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
       ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'">Details</button> ')
       :'';
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
-    return [
-      esc(t.displayName||t.name)+fcount+lic,
-      osLabel(t),
-      esc(t.namespace),
-      fmtBytes(t.sizeBytes),
-      chip(t.downloadStatus)+reason,
-      view+del
-    ];
+    return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
+      '</td><td>'+esc(t.namespace)+
+      '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
+      '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
   }
 
   function imDelete(uid, nsv, name){
@@ -2127,62 +2046,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var pend=[];
     Object.keys(pendingUploads).forEach(function(k){
       var p=pendingUploads[k];
-      activePending[(p.displayName||"")+"|"+p.namespace]=true;
+      activePending[p.displayName+"|"+p.namespace]=true;
       pend.push(p);
     });
     var serverRows=sortData(currentData).filter(function(t){
       return !activePending[(t.displayName||t.name)+"|"+t.namespace];
     });
     updateKpis();
-
-    var desired=[];
-    pend.forEach(function(p){
-      desired.push({ kind:"pending", key:rowKeyPending(p), data:p });
-    });
-    serverRows.forEach(function(t){
-      desired.push({ kind:"server", key:rowKeyServer(t), data:t });
-    });
-
-    if(!desired.length){
-      if(!rows.querySelector("tr.im-empty")){
-        setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">No images yet.<br>'+
-          '<button class="btn contained ripple" data-goto="upload">Upload an image</button> '+
-          '<button class="btn text ripple" data-goto="url-import">Import from URL</button></td></tr>');
-      }
-      el("statusCount").style.display="none";
-      return;
+    if(!(pend.length+serverRows.length)){
+      rows.innerHTML='<tr><td colspan="6" class="empty">No images yet.<br>'+
+        '<button class="btn contained ripple" data-goto="upload">Upload an image</button> '+
+        '<button class="btn text ripple" data-goto="url-import">Import from URL</button></td></tr>';
+      el("statusCount").style.display="none"; return;
     }
-
-    var emptyRow=rows.querySelector("tr.im-empty");
-    if(emptyRow) emptyRow.remove();
-
-    var desiredKeys={};
-    desired.forEach(function(d){ desiredKeys[d.key]=true; });
-    Object.keys(artifactRowEls).forEach(function(k){
-      if(!desiredKeys[k]){
-        var tr=artifactRowEls[k];
-        if(tr && tr.parentNode) tr.parentNode.removeChild(tr);
-        delete artifactRowEls[k];
-        delete artifactRowSnap[k];
-      }
-    });
-
-    desired.forEach(function(item, idx){
-      var tr=artifactRowEls[item.key];
-      if(!tr){
-        tr=item.kind==="pending" ? createPendingTr(item.data) : createServerTr();
-        artifactRowEls[item.key]=tr;
-        artifactRowSnap[item.key]=null;
-      }
-      var htmls=item.kind==="pending" ? pendingCellHtmls(item.data) : serverCellHtmls(item.data);
-      patchRowCells(tr, htmls, item.key);
-      var at=rows.children[idx];
-      if(at!==tr) rows.insertBefore(tr, at||null);
-    });
-    while(rows.children.length>desired.length){
-      rows.removeChild(rows.lastChild);
-    }
-
+    rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
     updateStatusBadge();
   }
   rows.addEventListener("click", function(e){
@@ -2397,8 +2274,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
       if(!res.ok){
         if(!opts.silent){
-          setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">'+esc(
-            "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>');
+          rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
+            "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>';
           snack("err","Could not load artifacts (HTTP "+res.status+").", true);
         }
         return;
@@ -2413,8 +2290,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       tryPendingDetails();
     }).catch(function(e){
       if(!opts.silent){
-        setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">'+esc(
-          "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>');
+        rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
+          "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
       }
     });
   }
@@ -2483,7 +2360,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   window.addEventListener("storage", function(ev){
     if(!authBootstrapComplete || !authReady) return;
     if(ev.key === null || ev.key.indexOf("kc-") === 0){
-      probeSession(true).then(function(ok){
+      verifyKeycloakSession().then(function(ok){
         if(!ok) handleSessionLoss("Your EDA session has ended.");
       }).catch(function(){});
     }

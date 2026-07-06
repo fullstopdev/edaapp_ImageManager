@@ -212,13 +212,6 @@ def exchange_code(code, headers):
     try:
         return _post_form(url, fields)
     except urllib.error.HTTPError as e:
-        body = ""
-        try:
-            body = e.read().decode("utf-8", errors="replace")[:500]
-        except Exception:
-            pass
-        logger.error("OIDC token exchange HTTP %s redirect_uri=%s body=%s",
-                     e.code, fields.get("redirect_uri"), body)
         # Secret may have rotated; refetch once and retry.
         if e.code in (400, 401):
             fields["client_secret"] = _client_secret(force=True)

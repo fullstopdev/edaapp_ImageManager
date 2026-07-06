@@ -1,0 +1,36 @@
+# One-shot cleanup: delete all GHCR container packages for this repo.
+# Run manually from Actions → "Delete GHCR packages" → Run workflow.
+# Requires repo Settings → Actions → General → Workflow permissions: read and write.
+
+name: Delete GHCR packages
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: 'Type DELETE to confirm package removal'
+        required: true
+        type: string
+
+permissions:
+  packages: write
+
+jobs:
+  delete:
+    if: inputs.confirm == 'DELETE'
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        package:
+          - edaapp_imagemanager/imagemanager-controller
+          - edaapp_imagemanager/imagemanager-app
+    steps:
+      - name: Delete package ${{ matrix.package }}
+        run: |
+          HTTP=$(curl -sS -o /tmp/out -w "%{http_code}" -X DELETE \
+            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
+            -H "Accept: application/vnd.github+json" \
+            "https://api.github.com/orgs/fullstopdev/packages/container/${{ matrix.package }}")
+          echo "HTTP $HTTP"
+          cat /tmp/out
+          test "$HTTP" = "204" -o "$HTTP" = "404"

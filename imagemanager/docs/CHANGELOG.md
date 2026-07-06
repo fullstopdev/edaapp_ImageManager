@@ -288,6 +288,14 @@ updates (no poll flicker).
 
 ## v0.0.50
 
+**Regenerated images (cluster fix):** bundle keycloak-js in the controller image
+(`/assets/keycloak.min.js`) because `/core/proxy/v1/identity/js/keycloak.min.js`
+returns 404 on this EDA release. Sign-in uses keycloak-js + `POST /oauth/session`
+instead of the broken server `/oauth/login` code exchange (TLS verify failure to
+in-cluster Keycloak).
+
+## v0.0.50 (original)
+
 **App bar wordmark + N favicon:**
 The top bar shows the full **Nokia wordmark** (`nokia-logo.png`, 14px height);
 the browser tab favicon keeps the **N mark** only (`nokia-n.png`).
