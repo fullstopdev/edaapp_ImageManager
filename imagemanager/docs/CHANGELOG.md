@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.66
+
+**v0.0.51 UX patch (no-dashboard-reset):**
+
+- **Tab survives reloads:** `showTab()` persists the active tab in `sessionStorage`;
+  after a successful auth bootstrap the saved tab is restored instead of defaulting
+  to Dashboard.
+- **Background checks no longer navigate:** `handleSessionLoss()` only shows the
+  in-place sign-in banner — no `window.top.location.reload()` or redirect to
+  `/oauth/login`. Navigation happens only when the user clicks **Sign in**.
+- **Trust server session cookie:** `probeSession()` treats `GET /api/config` 200 as
+  sufficient; Keycloak/silent-SSO runs only on a genuine 401.
+
 ## v0.0.65
 
 **Full restore to v0.0.51 codebase:** Check out the entire

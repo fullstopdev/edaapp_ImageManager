@@ -986,6 +986,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
   }
   function handleSessionLoss(msg){
+    // Background/periodic checks land here. This must NEVER navigate the page
+    // or reload — that's what was wiping the user's current tab (Upload,
+    // URL Import, Settings) back to the Dashboard. Just reflect the lost
+    // session in the UI; the user (or a later explicit action) decides when
+    // to actually go sign in again.
     if(!authBootstrapComplete) return;
     if(sessionInterruptBlocked()){
       deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
@@ -998,11 +1003,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
       syncLiveIndicator();
       hideAuthUser();
-      if(embedded){
-        redirectToEdaLogin();
-      } else {
-        window.location = apiBase + "/oauth/login";
-      }
+      showSignInBanner(msg || "Your EDA session has ended. Sign in again.");
     });
   }
   function handleAuthLoss(){
@@ -1082,17 +1083,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(sessionInterruptBlocked()) return Promise.resolve(true);
     if(!authBootstrapComplete && !force) return Promise.resolve(true);
     if(!authReady && !force) return Promise.resolve(true);
-    function afterConfigOk(){
-      if(authReady && authBootstrapComplete) return verifyKeycloakSession();
-      return true;
-    }
+    // /api/config is answered by the server against the signed HttpOnly
+    // session cookie — that's the authoritative, reliable signal. A 200 here
+    // means the session is genuinely still good; don't let a separate,
+    // flakier check (nested Keycloak check-sso iframe, susceptible to
+    // third-party cookie partitioning / timing) veto that and declare a false
+    // "session lost". Only fall back to Keycloak/silent-SSO when the cookie
+    // itself is actually rejected (401).
     return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status === 200) return afterConfigOk();
+      if(r.status === 200) return true;
       if(r.status !== 401) return true;
       return silentSso({ quiet: true }).then(function(ex){
         if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
           authReady = true;
-          return verifyKeycloakSession();
+          return true;
         }
         return false;
       }).catch(function(){ return false; });
@@ -1373,10 +1377,22 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return (t||"").split(/\r?\n/).some(function(l){ return RE.test(l); });
   }
   // ---------- tabs ----------
-  var activeTab = "status";
+  var ACTIVE_TAB_KEY = "im_active_tab";
+  function loadSavedTab(){
+    try{
+      var t = sessionStorage.getItem(ACTIVE_TAB_KEY);
+      if(t && document.getElementById("panel-" + t)) return t;
+    }catch(e){}
+    return "status";
+  }
+  function saveActiveTab(name){
+    try{ sessionStorage.setItem(ACTIVE_TAB_KEY, name); }catch(e){}
+  }
+  var activeTab = "status"; // corrected to the saved tab during init, see bottom of file
   function showTab(name){
     if(name === activeTab) return;
     activeTab = name;
+    saveActiveTab(name);
     document.querySelectorAll(".tab").forEach(function(t){
       var on = t.getAttribute("data-tab") === name;
       t.classList.toggle("active", on);
@@ -1558,6 +1574,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     refresh();
     refreshImports();
     syncLiveIndicator();
+    var savedTab = loadSavedTab();
+    if(savedTab !== "status") showTab(savedTab);
   }).catch(function(err){
     if(err && (err.message === "deferred" || err.message === "sign-in required" || err.message === "redirect")) return;
     var msg = (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
