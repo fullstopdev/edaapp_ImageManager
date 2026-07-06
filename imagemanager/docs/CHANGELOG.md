@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.0.59
+
+**Fix standalone View-link sign-in failure (v0.0.57–58):**
+
+- **Root cause:** `oauthCallbackFailed` blocked bootstrap on stale `?auth_error=callback`
+  with a permanent *Sign-in could not be completed* banner; `im_auth_settled` was set
+  before `keycloak.login()` finished, so a single silent-SSO or callback failure
+  prevented all further auto-login attempts in the tab.
+- **Cable-map parity:** Process keycloak-js OAuth callback before `GET /api/config`,
+  retry silent SSO 3× with backoff, then at most one auto `keycloak.login()` in
+  standalone tabs only (embedded never auto-login).
+- **`redirectUri` fix:** Always uses registered proxy base
+  `/core/httpproxy/v1/imagemanager/` (strips OAuth noise, preserves deep links).
+- **No bootstrap failure banner** until silent SSO + optional auto-login are exhausted.
+
 ## v0.0.57
 
 **Fix embedded View-link reload loop (v0.0.56 regression):**

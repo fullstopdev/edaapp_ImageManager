@@ -897,9 +897,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var signInRetryPending = false;
   var keycloakScriptPromise = null;
   var keycloakScriptFailed = false;
-  var oauthCallbackFailed = false;
   var OIDC_GUARD_KEY = "im_kc_login_attempt";
-  var AUTH_SETTLED_KEY = "im_auth_settled";
+  var AUTO_LOGIN_KEY = "im_auto_kc_login";
+  var SSO_RETRY_ATTEMPTS = 3;
+  var SSO_RETRY_DELAY_MS = 500;
   var KEYCLOAK_SCRIPT = "/core/proxy/v1/identity/js/keycloak.min.js";
   var el = function(id){ return document.getElementById(id); };
 
@@ -977,9 +978,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var signInBtn = el("authSignInBtn");
       if(signInBtn) signInBtn.addEventListener("click", function(){
         clearKeycloakLoginGuard();
-        oauthCallbackFailed = false;
         fallBackKeycloakLogin().catch(function(){
-          redirectToOidcLogin();
+          showSignInBanner("Sign-in unavailable. Try again or use Sign in.");
         });
       });
     }
@@ -1036,14 +1036,42 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return !!(qs.get("code") && qs.get("state"));
     }catch(e){ return false; }
   }
-  function isAuthSettled(){
-    try{ return sessionStorage.getItem(AUTH_SETTLED_KEY) === "1"; }catch(e){ return false; }
+  function oauthNoiseParams(){
+    return ["auth_error","code","state","session_state","iss"];
   }
-  function markAuthSettled(){
-    try{ sessionStorage.setItem(AUTH_SETTLED_KEY, "1"); }catch(e){}
+  function stripStaleAuthError(){
+    try{
+      var qs = new URLSearchParams(location.search);
+      if(!qs.get("auth_error")) return;
+      qs.delete("auth_error");
+      var q = qs.toString();
+      history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
+    }catch(e){}
   }
-  function clearAuthSettled(){
-    try{ sessionStorage.removeItem(AUTH_SETTLED_KEY); }catch(e){}
+  function stripOAuthQueryParams(){
+    try{
+      var qs = new URLSearchParams(location.search);
+      var dirty = oauthNoiseParams().some(function(k){ return qs.has(k); });
+      if(!dirty) return;
+      oauthNoiseParams().forEach(function(k){ qs.delete(k); });
+      var q = qs.toString();
+      history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
+    }catch(e){}
+  function delay(ms){
+    return new Promise(function(resolve){ setTimeout(resolve, ms); });
+  }
+  function exchangeOk(ex){
+    return ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok;
+  }
+  function completeAuthBootstrap(c){
+    authReady = true;
+    clearKeycloakLoginGuard();
+    bootDone();
+    finishBootstrap();
+    hideSignInBanner();
+    startSessionWatchers();
+    scheduleSessionCheck();
+    return c;
   }
   function initKeycloakCheck(forceRetry){
     if(forceRetry) kcInitPromise = null;
@@ -1185,11 +1213,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(signInRetryPending) return;
     signInRetryPending = true;
     kcInitPromise = null;
+    clearKeycloakLoginGuard();
     setAuthBanner("info", "Signing in\u2026");
-    silentSso(true).then(function(ex){
-      if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
+    silentSsoWithRetries(true, SSO_RETRY_ATTEMPTS).then(function(ex){
+      if(exchangeOk(ex)){
         authReady = true;
-        clearKeycloakLoginGuard();
+        stripOAuthQueryParams();
         bootDone();
         if(!authBootstrapComplete) finishBootstrap();
         startSessionWatchers();
@@ -1205,8 +1234,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
         showSignInBanner(authErrorMessage({ exchange: ex, status: 403, body: ex.body }));
         return;
       }
+      if(canAutoKeycloakLogin()){
+        return fallBackKeycloakLogin().catch(function(){
+          showSignInBanner(authErrorMessage(null));
+        });
+      }
       showSignInBanner(authErrorMessage(null));
     }).catch(function(){
+      if(canAutoKeycloakLogin()){
+        return fallBackKeycloakLogin().catch(function(){
+          showSignInBanner(authErrorMessage(null));
+        });
+      }
       showSignInBanner(authErrorMessage(null));
     }).finally(function(){ signInRetryPending = false; setAuthBanner("", ""); });
   }
@@ -1293,11 +1332,39 @@ INDEX_HTML = r"""<!DOCTYPE html>
       "Sign-in timed out after " + (SSO_TIMEOUT_MS / 1000) + "s"
     ).finally(function(){ if(showUi) setAuthBanner("", ""); });
   }
+  function silentSsoWithRetries(showUi, maxAttempts){
+    maxAttempts = maxAttempts || SSO_RETRY_ATTEMPTS;
+    var attempt = 0;
+    function run(forceRetry){
+      attempt += 1;
+      return silentSsoAttempt(showUi && attempt === 1, forceRetry).then(function(ex){
+        if(exchangeOk(ex)) return ex;
+        kcInitPromise = null;
+        if(attempt >= maxAttempts) return ex || null;
+        return delay(SSO_RETRY_DELAY_MS * attempt).then(function(){ return run(true); });
+      });
+    }
+    return run(!!showUi);
+  }
   function silentSso(showUi){
-    return silentSsoAttempt(showUi, !!showUi).then(function(ex){
-      if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok) return ex;
+    return silentSsoWithRetries(showUi, 2);
+  }
+  function processOAuthCallback(){
+    if(!hasOAuthCallback()) return Promise.resolve(null);
+    clearKeycloakLoginGuard();
+    return loadKeycloakScript(false).then(function(){
+      return initKeycloakCheck(true);
+    }).then(function(ok){
+      if(ok && kcInstance && kcInstance.token) return exchangeToken(kcInstance.token);
+      return null;
+    }).then(function(ex){
+      if(!exchangeOk(ex)) return null;
+      stripOAuthQueryParams();
+      authReady = true;
+      return loadConfigAfterExchange(3).then(completeAuthBootstrap);
+    }).catch(function(){
       kcInitPromise = null;
-      return silentSsoAttempt(false, true);
+      return null;
     });
   }
   function authErrorMessage(ex){
@@ -1311,38 +1378,44 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return "Sign-in failed. Try again" + (embedded ? "." : " or use Sign in.");
   }
   function loginRedirectUri(){
+    var base = apiBase.replace(/\/+$/, "") + "/";
     try{
       var u = new URL(location.href);
-      u.searchParams.delete("auth_error");
-      u.hash = "";
-      return u.origin + u.pathname + u.search;
+      var qs = u.searchParams;
+      oauthNoiseParams().forEach(function(k){ qs.delete(k); });
+      var q = qs.toString();
+      return u.origin + base + (q ? "?" + q : "");
     }catch(e){
-      return location.origin + apiBase + "/";
+      return location.origin + base;
     }
   }
   function canAutoKeycloakLogin(){
-    // Embedded EDA iframe: silent SSO + token exchange only — never auto keycloak.login().
+    // Cable-map: standalone View tab may auto keycloak.login() once; embedded never.
     if(embedded) return false;
-    if(oauthCallbackFailed) return false;
-    if(isAuthSettled()) return false;
     try{
+      var autoCount = parseInt(sessionStorage.getItem(AUTO_LOGIN_KEY) || "0", 10);
+      if(autoCount >= 1) return false;
       var last = parseInt(sessionStorage.getItem(OIDC_GUARD_KEY) || "0", 10);
-      if(Date.now() - last < 15000) return false;
+      if(Date.now() - last < 5000) return false;
     }catch(e){}
     return true;
   }
   function markKeycloakLoginAttempt(){
-    try{ sessionStorage.setItem(OIDC_GUARD_KEY, String(Date.now())); }catch(e){}
+    try{
+      sessionStorage.setItem(OIDC_GUARD_KEY, String(Date.now()));
+      var n = parseInt(sessionStorage.getItem(AUTO_LOGIN_KEY) || "0", 10);
+      sessionStorage.setItem(AUTO_LOGIN_KEY, String(n + 1));
+    }catch(e){}
   }
   function clearKeycloakLoginGuard(){
-    try{ sessionStorage.removeItem(OIDC_GUARD_KEY); }catch(e){}
-    clearAuthSettled();
+    try{
+      sessionStorage.removeItem(OIDC_GUARD_KEY);
+      sessionStorage.removeItem(AUTO_LOGIN_KEY);
+    }catch(e){}
   }
   // Cable-map fallback: keycloak.login() when check-sso misses an active EDA session.
-  // Avoids the server /oauth/login loop when code exchange fails (auth_error=callback).
   function fallBackKeycloakLogin(){
     if(!canAutoKeycloakLogin()) throw new Error("sign-in required");
-    markAuthSettled();
     markKeycloakLoginAttempt();
     kcInitPromise = null;
     return loadKeycloakScript(false).then(function(){
@@ -1370,7 +1443,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(canAutoKeycloakLogin()){
       return fallBackKeycloakLogin();
     }
-    markAuthSettled();
     bootDone();
     finishBootstrap();
     showSignInBanner(authErrorMessage(ex));
@@ -1397,57 +1469,39 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(authReady) return Promise.resolve();
     authBootstrapping = true;
     setAuthBanner("info", "Signing in\u2026");
-    if(oauthCallbackFailed){
-      bootDone();
-      finishBootstrap();
-      showSignInBanner("Sign-in could not be completed. Try again" +
-        (embedded ? "." : " or use Sign in."));
-      authBootstrapping = false;
-      return Promise.reject(new Error("sign-in required"));
-    }
-    // Cable-map pattern: trust a valid im_session (200) without Keycloak on bootstrap.
-    return fetchConfig().then(function(r){
-      if(r.status === 200){
-        return r.json().then(function(c){
-          authReady = true;
-          clearKeycloakLoginGuard();
-          bootDone();
-          finishBootstrap();
-          hideSignInBanner();
-          startSessionWatchers();
-          scheduleSessionCheck();
-          return c;
-        });
-      }
-      if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
-      return silentSso(true).then(function(ex){
-        if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok){
-          authReady = true;
-          clearKeycloakLoginGuard();
-          return loadConfigAfterExchange(3).then(function(c){
-            bootDone();
-            finishBootstrap();
-            hideSignInBanner();
-            startSessionWatchers();
-            scheduleSessionCheck();
-            return c;
+    // Cable-map: finish keycloak-js OAuth callback before probing /api/config.
+    return processOAuthCallback().then(function(fromCallback){
+      if(fromCallback) return fromCallback;
+      return fetchConfig().then(function(r){
+        if(r.status === 200){
+          return r.json().then(function(c){
+            authReady = true;
+            clearKeycloakLoginGuard();
+            return completeAuthBootstrap(c);
           });
         }
-        return bootstrapAuthFailed(ex);
-      }, function(e){
-        if(e && (e.message === "sign-in required" || e.message === "redirect" || e.message === "deferred")) throw e;
-        if(uploadInFlight()){
-          deferredSessionLoss = "Your EDA session has ended. Sign in again.";
-          throw new Error("deferred");
-        }
-        kcInitPromise = null;
-        if(canAutoKeycloakLogin()) return fallBackKeycloakLogin();
-        markAuthSettled();
-        bootDone();
-        finishBootstrap();
-        showSignInBanner("Sign-in required. Try again" +
-          (embedded ? "." : " or use Sign in."));
-        throw new Error("sign-in required");
+        if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
+        return silentSsoWithRetries(true, SSO_RETRY_ATTEMPTS).then(function(ex){
+          if(exchangeOk(ex)){
+            authReady = true;
+            stripOAuthQueryParams();
+            return loadConfigAfterExchange(3).then(completeAuthBootstrap);
+          }
+          return bootstrapAuthFailed(ex);
+        }, function(e){
+          if(e && (e.message === "sign-in required" || e.message === "redirect" || e.message === "deferred")) throw e;
+          if(uploadInFlight()){
+            deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+            throw new Error("deferred");
+          }
+          kcInitPromise = null;
+          if(canAutoKeycloakLogin()) return fallBackKeycloakLogin();
+          bootDone();
+          finishBootstrap();
+          showSignInBanner("Sign-in required. Try again" +
+            (embedded ? "." : " or use Sign in."));
+          throw new Error("sign-in required");
+        });
       });
     }).finally(function(){ authBootstrapping = false; });
   }
@@ -1632,18 +1686,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   // ---------- config + namespaces ----------
-  (function(){
-    try{
-      var qs = new URLSearchParams(location.search);
-      if(!qs.get("auth_error")) return;
-      oauthCallbackFailed = true;
-      qs.delete("auth_error");
-      var q = qs.toString();
-      history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
-    }catch(e){}
-  })();
+  // Drop stale ?auth_error=callback — bootstrap uses keycloak-js only (cable-map pattern).
+  stripStaleAuthError();
   ensureAuth().then(function(c){
-    oauthCallbackFailed = false;
     hideSignInBanner();
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
@@ -1669,10 +1714,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var msg = (err && err.exchange) ? authErrorMessage(err.exchange)
             : (err && err.message && err.message.indexOf("timed out") >= 0) ? err.message
             : (err && err.message && err.message.indexOf("config unavailable")===0) ? err.message
-            : oauthCallbackFailed
-              ? ("Sign-in could not be completed. Try again" + (embedded ? "." : " or use Sign in."))
-              : authErrorMessage(null);
-    oauthCallbackFailed = false;
+            : authErrorMessage(null);
     showAuthFailure(msg);
   });
 
