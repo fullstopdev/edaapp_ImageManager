@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.0.65
+
+**Full restore to v0.0.51 codebase:** Check out the entire
+`imagemanager/build/controller/` tree and manifest image refs from commit
+`037f8cb` (v0.0.51 — last working sign-in). Replaces the partial v0.0.64 revert
+that left version/manifest drift and did not fully reset deployable artifacts.
+
 ## v0.0.64
 
 **Revert auth to v0.0.51 baseline (working sign-in):** Restore `webui.py`,
