@@ -931,6 +931,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function sessionInterruptBlocked(){
     return uploadInFlight();
   }
+  function deferSessionLossQuietly(msg){
+    deferredSessionLoss = deferredSessionLoss || msg || "Your EDA session has ended. Sign in again.";
+  }
   function bootDone(){
     var b = document.getElementById("boot-shell");
     if(b) b.classList.add("hide");
@@ -946,8 +949,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function handleAuthLoss(){
     if(!authBootstrapComplete) return Promise.resolve();
     if(sessionInterruptBlocked()){
-      deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
-      snack("err", "Session ended. Finish your upload, then reload.", true);
+      deferSessionLossQuietly();
       return Promise.resolve();
     }
     return probeSession(true).then(function(ok){
@@ -976,7 +978,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   }
   function probeSession(force){
-    if(sessionInterruptBlocked() && !force) return Promise.resolve(true);
+    if(sessionInterruptBlocked()) return Promise.resolve(true);
     if(!authBootstrapComplete && !force) return Promise.resolve(true);
     return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
       if(r.status === 401) return false;
@@ -1022,7 +1024,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!deferredSessionLoss || sessionInterruptBlocked()) return;
     var msg = deferredSessionLoss;
     deferredSessionLoss = null;
-    handleSessionLoss(msg);
+    probeSession(true).then(function(ok){
+      if(!ok) handleSessionLoss(msg);
+    }).catch(function(){});
   }
   var signout=el("signoutLink");
   if(signout){
@@ -1182,6 +1186,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var qs=new URLSearchParams({ namespace:namespace, name:name });
     return fetchJson(api("/api/check-conflict")+"?"+qs.toString()).then(function(res){
       if(res.status===401){
+        if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return Promise.reject(new Error("session check deferred")); }
         return handleAuthLoss().then(function(){
           return checkConflict(namespace, name);
         });
@@ -1298,6 +1303,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function sendUpload(url, file, p, handlers){
     var xhr=new XMLHttpRequest();
     xhr.open("POST", url);
+    xhr.withCredentials = true;
     var startT=Date.now();
     xhr.upload.onprogress=function(e){
       if(!e.lengthComputable) return;
@@ -1717,7 +1723,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   function refreshImports(){
     fetchJson(api("/api/imports")).then(function(res){
-      if(res.status===401){ return handleAuthLoss().then(function(){ refreshImports(); }); }
+      if(res.status===401){
+        if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return; }
+        return handleAuthLoss().then(function(){ refreshImports(); });
+      }
       if(!res.ok){
         importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
           "Could not load URL imports (HTTP "+res.status+").")+'</td></tr>';
@@ -1889,6 +1898,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     opts = opts || {};
     return fetchJson(api("/api/artifacts")).then(function(res){
       if(res.status===401){
+        if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return; }
         return handleAuthLoss().then(function(){ return refreshArtifacts(opts); });
       }
       if(!res.ok){

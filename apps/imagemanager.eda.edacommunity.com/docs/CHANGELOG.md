@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.6
+
+**Fix false session loss during active uploads.**
+
+- **Root cause:** v0.1.4 session watchers plus 4s status polling called
+  `handleAuthLoss()` on transient `/api/artifacts` 401s while an upload XHR
+  was in flight, showing "Session ended. Finish your upload, then reload." and
+  hammering the API in a retry loop even though the EDA session was still valid.
+- **Upload guard:** While `pendingUploads` is non-empty, session probes always
+  trust the server cookie, API 401s are deferred silently (no snack, no
+  `clearServerSession`), and polling does not re-enter auth recovery.
+- **After upload:** `flushDeferredSessionLoss()` re-probes before showing the
+  sign-in banner so false alarms from mid-upload noise are dropped.
+
 ## v0.1.5
 
 **Hide in-flight upload work-dir operator alert.**
