@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.0
+
+**Fresh start — stability baseline.**
+
+- Reset semver to **v0.1.0** after clearing all prior releases, catalog tags, and
+  GHCR packages (clean slate).
+- **Bundled keycloak-js** (`/assets/keycloak.min.js`): the EDA identity proxy no
+  longer serves `keycloak.min.js` (HTTP 404); bundling matches cable-map and
+  keeps silent SSO working.
+- **Stability baseline:** retain the v0.0.51-era auth bootstrap (keycloak-js
+  silent SSO + explicit Sign in / Try again) without the v0.0.52–v0.0.72 auth
+  experiment churn; adopt kkayhan-style discipline — fewer moving parts, one
+  version bump per intentional release.
+
 ## v0.0.72
 
 **Fix sign-in: vendor keycloak-js (identity proxy no longer serves it).**
