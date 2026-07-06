@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.58
+
+**Fix permanent sign-in failure after stale server OAuth callback (v0.0.56–57):**
+
+- **Root cause:** Prior versions auto-routed through server `/oauth/login` →
+  `/oauth/callback` (confidential client `eda`). When `exchange_code` failed, the
+  server redirected to `/?auth_error=callback`, which set `oauthCallbackFailed=true`
+  and **blocked bootstrap entirely** — silent SSO and `keycloak.login()` never ran,
+  leaving a permanent *Sign-in could not be completed* banner with empty KPIs.
+- **Cable-map parity:** Bootstrap uses **keycloak-js public client `auth` only**:
+  trust `GET /api/config` 200 → silent SSO → `POST /oauth/session` bearer exchange →
+  `keycloak.login()` at most once (`im_auth_settled`). Stale `?auth_error=callback`
+  is stripped from the URL without poisoning bootstrap.
+- **No auto server OAuth:** `/oauth/login` is never triggered on the automatic path;
+  embedded and standalone both use keycloak-js only until the user explicitly clicks
+  **Sign in** (standalone).
+
 ## v0.0.57
 
 **Fix embedded View-link reload loop (v0.0.56 regression):**
