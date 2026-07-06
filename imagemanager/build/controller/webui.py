@@ -885,7 +885,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var authBootstrapping = false;
   var deferredSessionLoss = null;
   var pendingUploads = {}, uploadSeq = 0;
-  var SSO_TIMEOUT_MS = 15000;
+  var SSO_TIMEOUT_MS = 8000;
+  var BOOTSTRAP_TIMEOUT_MS = 20000;
   var SESSION_CHECK_MS = 15000;
   var REVALIDATE_DEBOUNCE_MS = 2000;
   var sessionCheckTimer = null;
@@ -899,7 +900,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var keycloakScriptFailed = false;
   var OIDC_GUARD_KEY = "im_kc_login_attempt";
   var AUTO_LOGIN_KEY = "im_auto_kc_login";
-  var SSO_RETRY_ATTEMPTS = 3;
+  var SSO_RETRY_ATTEMPTS = 2;
   var SSO_RETRY_DELAY_MS = 500;
   var KEYCLOAK_SCRIPT = "/core/proxy/v1/identity/js/keycloak.min.js";
   var el = function(id){ return document.getElementById(id); };
@@ -1057,6 +1058,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var q = qs.toString();
       history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
     }catch(e){}
+  }
   function delay(ms){
     return new Promise(function(resolve){ setTimeout(resolve, ms); });
   }
@@ -1352,19 +1354,59 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function processOAuthCallback(){
     if(!hasOAuthCallback()) return Promise.resolve(null);
     clearKeycloakLoginGuard();
-    return loadKeycloakScript(false).then(function(){
-      return initKeycloakCheck(true);
-    }).then(function(ok){
-      if(ok && kcInstance && kcInstance.token) return exchangeToken(kcInstance.token);
-      return null;
-    }).then(function(ex){
-      if(!exchangeOk(ex)) return null;
-      stripOAuthQueryParams();
-      authReady = true;
-      return loadConfigAfterExchange(3).then(completeAuthBootstrap);
-    }).catch(function(){
+    return withTimeout(
+      loadKeycloakScript(false).then(function(){
+        return initKeycloakCheck(true);
+      }).then(function(ok){
+        if(ok && kcInstance && kcInstance.token) return exchangeToken(kcInstance.token);
+        return null;
+      }).then(function(ex){
+        if(!exchangeOk(ex)) return null;
+        stripOAuthQueryParams();
+        authReady = true;
+        return loadConfigAfterExchange(3).then(completeAuthBootstrap);
+      }),
+      SSO_TIMEOUT_MS,
+      "OAuth callback timed out"
+    ).catch(function(){
       kcInitPromise = null;
       return null;
+    });
+  }
+  function runAuthBootstrap(){
+    return processOAuthCallback().then(function(fromCallback){
+      if(fromCallback) return fromCallback;
+      return fetchConfig().then(function(r){
+        if(r.status === 200){
+          return r.json().then(function(c){
+            authReady = true;
+            clearKeycloakLoginGuard();
+            return completeAuthBootstrap(c);
+          });
+        }
+        if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
+        return silentSsoWithRetries(true, SSO_RETRY_ATTEMPTS).then(function(ex){
+          if(exchangeOk(ex)){
+            authReady = true;
+            stripOAuthQueryParams();
+            return loadConfigAfterExchange(3).then(completeAuthBootstrap);
+          }
+          return bootstrapAuthFailed(ex);
+        }, function(e){
+          if(e && (e.message === "sign-in required" || e.message === "redirect" || e.message === "deferred")) throw e;
+          if(uploadInFlight()){
+            deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+            throw new Error("deferred");
+          }
+          kcInitPromise = null;
+          if(canAutoKeycloakLogin()) return fallBackKeycloakLogin();
+          bootDone();
+          finishBootstrap();
+          showSignInBanner("Sign-in required. Try again" +
+            (embedded ? "." : " or use Sign in."));
+          throw new Error("sign-in required");
+        });
+      });
     });
   }
   function authErrorMessage(ex){
@@ -1469,41 +1511,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(authReady) return Promise.resolve();
     authBootstrapping = true;
     setAuthBanner("info", "Signing in\u2026");
-    // Cable-map: finish keycloak-js OAuth callback before probing /api/config.
-    return processOAuthCallback().then(function(fromCallback){
-      if(fromCallback) return fromCallback;
-      return fetchConfig().then(function(r){
-        if(r.status === 200){
-          return r.json().then(function(c){
-            authReady = true;
-            clearKeycloakLoginGuard();
-            return completeAuthBootstrap(c);
-          });
-        }
-        if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
-        return silentSsoWithRetries(true, SSO_RETRY_ATTEMPTS).then(function(ex){
-          if(exchangeOk(ex)){
-            authReady = true;
-            stripOAuthQueryParams();
-            return loadConfigAfterExchange(3).then(completeAuthBootstrap);
-          }
-          return bootstrapAuthFailed(ex);
-        }, function(e){
-          if(e && (e.message === "sign-in required" || e.message === "redirect" || e.message === "deferred")) throw e;
-          if(uploadInFlight()){
-            deferredSessionLoss = "Your EDA session has ended. Sign in again.";
-            throw new Error("deferred");
-          }
-          kcInitPromise = null;
-          if(canAutoKeycloakLogin()) return fallBackKeycloakLogin();
-          bootDone();
-          finishBootstrap();
-          showSignInBanner("Sign-in required. Try again" +
-            (embedded ? "." : " or use Sign in."));
-          throw new Error("sign-in required");
-        });
-      });
-    }).finally(function(){ authBootstrapping = false; });
+    return withTimeout(
+      runAuthBootstrap(),
+      BOOTSTRAP_TIMEOUT_MS,
+      "Sign-in timed out after " + (BOOTSTRAP_TIMEOUT_MS / 1000) + "s"
+    ).catch(function(e){
+      if(e && (e.message === "sign-in required" || e.message === "redirect" || e.message === "deferred")) throw e;
+      if(e && e.exchange) throw e;
+      if(e && e.message && e.message.indexOf("config unavailable") === 0) throw e;
+      kcInitPromise = null;
+      return bootstrapAuthFailed(null);
+    }).finally(function(){
+      authBootstrapping = false;
+      bootDone();
+    });
   }
 
   var binFile=el("binFile"), ns=el("namespace"), urlNs=el("urlNamespace"),

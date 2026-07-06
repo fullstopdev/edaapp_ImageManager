@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.0.60
+
+**Fix infinite "Signing in…" bootstrap hang (v0.0.59 regression):**
+
+- **Root cause:** `stripOAuthQueryParams()` was missing a closing `}`, producing a
+  JavaScript syntax error that prevented the entire auth IIFE from running —
+  `ensureAuth()` never executed, `bootDone()` never called, KPIs stayed "—".
+- **Bootstrap safety:** 20s cap on the full auth bootstrap; per-attempt SSO timeout
+  reduced to 8s (2 retries). `ensureAuth()` always calls `bootDone()` in `finally`.
+- **On timeout/failure:** embedded shows **Try again** banner; standalone auto
+  `keycloak.login()` redirect or recoverable error — never hangs indefinitely.
+
 ## v0.0.59
 
 **Fix standalone View-link sign-in failure (v0.0.57–58):**
