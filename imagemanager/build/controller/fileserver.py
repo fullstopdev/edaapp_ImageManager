@@ -226,7 +226,16 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", "0")
         self.end_headers()
 
-    def _redirect_to_login(self):
+    def _sanitize_return_path(self, raw):
+        """Post-login redirect must stay under our HttpProxy prefix."""
+        path = (raw or "").strip()
+        if not path.startswith(auth.APP_PROXY_PREFIX):
+            return auth.APP_PROXY_PREFIX + "/"
+        if path.startswith("//") or "://" in path:
+            return auth.APP_PROXY_PREFIX + "/"
+        return path
+
+    def _redirect_to_login(self, q=None):
         state = auth.new_state()
         try:
             url = auth.authorize_url(self.headers, state)
@@ -234,7 +243,11 @@ class Handler(BaseHTTPRequestHandler):
             logger.error("Cannot build authorize URL: %s", e)
             self._send_text("Sign-in is unavailable: cannot reach EDA Keycloak.", 503)
             return
-        self._redirect(url, cookies=[(auth.STATE_COOKIE, state, 600)])
+        cookies = [(auth.STATE_COOKIE, state, 600)]
+        ret = self._sanitize_return_path((q.get("return") or [""])[0] if q else "")
+        if ret != auth.APP_PROXY_PREFIX + "/":
+            cookies.append((auth.RETURN_COOKIE, ret, 600))
+        self._redirect(url, cookies=cookies)
 
     def _handle_oauth_session(self):
         """Exchange a keycloak-js access token for an HTTP-only session cookie."""
@@ -303,11 +316,13 @@ class Handler(BaseHTTPRequestHandler):
         logger.info("Sign-in OK: %s", user)
         access = tok.get("access_token", "")
         tok_exp = auth.jwt_exp(access)
-        self._redirect(auth.APP_PROXY_PREFIX + "/", cookies=[
+        landing = self._sanitize_return_path(self._cookie(auth.RETURN_COOKIE))
+        self._redirect(landing, cookies=[
             (auth.SESSION_COOKIE,
              auth.make_session(user, token_exp=tok_exp),
              auth.session_cookie_max_age(tok_exp)),
             (auth.STATE_COOKIE, "", 0),
+            (auth.RETURN_COOKIE, "", 0),
         ])
 
     def _handle_logout(self):
@@ -361,7 +376,7 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_logout()
                 return
             if path == "/oauth/login":
-                self._redirect_to_login()
+                self._redirect_to_login(q)
                 return
             if path == "/oauth/silent-sso.html":
                 self._send_text(webui.SILENT_SSO_HTML, ctype="text/html; charset=utf-8")

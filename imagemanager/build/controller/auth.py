@@ -58,6 +58,7 @@ CALLBACK_SUBPATH = "/oauth/callback"
 
 SESSION_COOKIE = "im_session"
 STATE_COOKIE = "im_oauth_state"
+RETURN_COOKIE = "im_oauth_return"
 SESSION_TTL = 8 * 3600  # 8 hours
 _HTTP_TIMEOUT = 20
 

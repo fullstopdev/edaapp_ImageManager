@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.55
+
+**Fix View-link sign-in UX — match cable-map OIDC fallback (v0.0.54 gap):**
+
+- **Root cause (v0.0.54):** When keycloak-js `check-sso` returned false (common even
+  with a valid EDA GUI session), bootstrap called `requireSignIn()` and showed
+  *Sign-in failed. Try again or use Sign in.* instead of falling through to OIDC.
+  Cable-map calls `keycloak.login()` on the same path, which completes instantly
+  when the user is already signed into EDA.
+- **Cable-map parity:** Bootstrap shows **Signing in…** immediately; silent SSO
+  retries once; standalone View links fall back to `/oauth/login` (OIDC redirect)
+  before any error banner. Embedded iframe still shows **Try again** only.
+- **Keycloak init:** `pkceMethod: S256` and same-origin `silentCheckSsoRedirectUri`
+  via `new URL("oauth/silent-sso.html", location.href)` (cable-map pattern).
+- **Deep links:** `?return=` on `/oauth/login` preserves `?details=` (and other
+  query params) through the OIDC callback redirect.
+
 ## v0.0.54
 
 **Fix sign-in failure — restore cable-map auth bootstrap (v0.0.39 pattern):**

@@ -566,7 +566,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 </header>
 
 <main class="app-shell">
-  <div id="boot-shell" role="status">Loading Image Manager&hellip;</div>
+  <div id="boot-shell" role="status">Signing in&hellip;</div>
   <div id="authBanner" class="auth-banner" role="status" aria-live="polite"></div>
 
   <nav class="tabs" role="tablist" aria-label="Image Manager sections">
@@ -1021,6 +1021,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
     return kcInstance;
   }
+  function silentCheckSsoUri(){
+    return new URL("oauth/silent-sso.html", location.href).href;
+  }
   function initKeycloakCheck(forceRetry){
     if(forceRetry) kcInitPromise = null;
     var kc = getKeycloak();
@@ -1028,7 +1031,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(kcInitPromise) return kcInitPromise;
     kcInitPromise = kc.init({
       onLoad: "check-sso",
-      silentCheckSsoRedirectUri: location.origin + apiBase + "/oauth/silent-sso.html",
+      pkceMethod: "S256",
+      silentCheckSsoRedirectUri: silentCheckSsoUri(),
       checkLoginIframe: !embedded,
       messageReceiveTimeout: 10000
     }).then(function(ok){
@@ -1254,11 +1258,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return r.json().then(function(j){ return {status:r.status, body:j}; });
     });
   }
-  function silentSso(showUi){
+  function silentSsoAttempt(showUi, forceRetry){
     if(showUi) setAuthBanner("info", "Signing in\u2026");
     return withTimeout(
-      loadKeycloakScript(!!showUi).then(function(){
-        return initKeycloakCheck(!!showUi).then(function(ok){
+      loadKeycloakScript(forceRetry).then(function(){
+        return initKeycloakCheck(forceRetry).then(function(ok){
           if(ok && kcInstance && kcInstance.token) return exchangeToken(kcInstance.token);
           return null;
         });
@@ -1266,6 +1270,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
       SSO_TIMEOUT_MS,
       "Sign-in timed out after " + (SSO_TIMEOUT_MS / 1000) + "s"
     ).finally(function(){ if(showUi) setAuthBanner("", ""); });
+  }
+  function silentSso(showUi){
+    return silentSsoAttempt(showUi, !!showUi).then(function(ex){
+      if(ex && ex.status >= 200 && ex.status < 300 && ex.body && ex.body.ok) return ex;
+      kcInitPromise = null;
+      return silentSsoAttempt(false, true);
+    });
   }
   function authErrorMessage(ex){
     if(ex && ex.status === 403 && ex.body){
@@ -1276,6 +1287,31 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(ex && ex.body && ex.body.error === "not authenticated")
       return "Sign-in required. Try again" + (embedded ? "." : " or use Sign in.");
     return "Sign-in failed. Try again" + (embedded ? "." : " or use Sign in.");
+  }
+  function redirectToOidcLogin(){
+    var ret = location.pathname + location.search + location.hash;
+    window.location = apiBase + "/oauth/login?return=" + encodeURIComponent(ret);
+    throw new Error("redirect");
+  }
+  function bootstrapAuthFailed(ex){
+    if(ex && ex.status === 403){
+      finishBootstrap();
+      var err = new Error("forbidden");
+      err.exchange = ex;
+      throw err;
+    }
+    if(uploadInFlight()){
+      deferredSessionLoss = "Your EDA session has ended. Sign in again.";
+      throw new Error("deferred");
+    }
+    kcInitPromise = null;
+    if(embedded){
+      bootDone();
+      finishBootstrap();
+      showSignInBanner("Sign-in required. Try again.");
+      throw new Error("sign-in required");
+    }
+    redirectToOidcLogin();
   }
   function showAuthFailure(msg){
     bootDone();
@@ -1297,6 +1333,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function ensureAuth(){
     if(authReady) return Promise.resolve();
     authBootstrapping = true;
+    setAuthBanner("info", "Signing in\u2026");
     // Cable-map pattern: trust a valid im_session (200) without Keycloak on bootstrap.
     return fetchConfig().then(function(r){
       if(r.status === 200){
@@ -1304,6 +1341,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
           authReady = true;
           bootDone();
           finishBootstrap();
+          hideSignInBanner();
           startSessionWatchers();
           scheduleSessionCheck();
           return c;
@@ -1316,31 +1354,27 @@ INDEX_HTML = r"""<!DOCTYPE html>
           return loadConfigAfterExchange(3).then(function(c){
             bootDone();
             finishBootstrap();
+            hideSignInBanner();
             startSessionWatchers();
             scheduleSessionCheck();
             return c;
           });
         }
-        if(ex && ex.status === 403){
-          finishBootstrap();
-          var err = new Error("forbidden");
-          err.exchange = ex;
-          throw err;   // role denied — redirecting would just loop
-        }
-        if(uploadInFlight()){
-          deferredSessionLoss = "Your EDA session has ended. Sign in again.";
-          throw new Error("deferred");
-        }
-        kcInitPromise = null;
-        requireSignIn();
+        bootstrapAuthFailed(ex);
       }, function(e){
+        if(e && (e.message === "sign-in required" || e.message === "redirect" || e.message === "deferred")) throw e;
         if(uploadInFlight()){
           deferredSessionLoss = "Your EDA session has ended. Sign in again.";
           throw new Error("deferred");
         }
         kcInitPromise = null;
-        if(e && e.message === "sign-in required") throw e;
-        requireSignIn();
+        if(embedded){
+          bootDone();
+          finishBootstrap();
+          showSignInBanner("Sign-in required. Try again.");
+          throw new Error("sign-in required");
+        }
+        redirectToOidcLogin();
       });
     }).finally(function(){ authBootstrapping = false; });
   }
@@ -1535,8 +1569,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
       history.replaceState(null, "", location.pathname + (q ? "?" + q : "") + location.hash);
     }catch(e){}
   })();
+  bootDone();
   ensureAuth().then(function(c){
     oauthCallbackFailed = false;
+    hideSignInBanner();
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
     if(c.user) showAuthUser(c.user);
