@@ -2,8 +2,16 @@
 
 ## v0.0.69
 
-**Permanent auth fix:** stop Keycloak watchers from clearing valid sessions; Sign in
-uses server OAuth; cookie retry after login.
+**Permanent auth fix — trust controller session cookie, reliable Sign in:**
+
+- **Root cause:** `startSessionWatchers()` ran Keycloak `check-sso` after every
+  successful login; false-negatives immediately called `handleSessionLoss()` and
+  cleared a valid `im_session` — sign-in appeared to work then instantly failed.
+- **Session lifecycle:** watchers now use cookie-only `probeSession()` (no Keycloak
+  iframe veto). `onAuthLogout` and cross-tab storage events confirm via probe first.
+- **Sign in:** uses server `/oauth/login` (confidential `eda` client + signed
+  state from v0.0.67) — the reliable path; keycloak-js is silent-SSO / Try again only.
+- **Cookie race:** `loadConfigWithRetry()` after OAuth callback / token exchange.
 
 ## v0.0.68
 
