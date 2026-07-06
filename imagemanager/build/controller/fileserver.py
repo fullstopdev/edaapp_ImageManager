@@ -282,17 +282,14 @@ class Handler(BaseHTTPRequestHandler):
         code = (q.get("code") or [None])[0]
         state = (q.get("state") or [None])[0]
         expected = self._cookie(auth.STATE_COOKIE)
-        state_ok = auth.verify_oauth_state(state) or (expected and state == expected)
-        if not code or not state or not state_ok:
-            logger.warning("OAuth callback state mismatch (cookie=%s url_state=%s)",
-                           "present" if expected else "missing", "present" if state else "missing")
-            self._redirect(auth.APP_PROXY_PREFIX + "/?auth_retry=1")
+        if not code or not state or not expected or state != expected:
+            self._send_text("Sign-in failed (invalid state). Please retry.", 400)
             return
         try:
             tok = auth.exchange_code(code, self.headers)
         except Exception as e:
             logger.error("OIDC code exchange failed: %s", e)
-            self._redirect(auth.APP_PROXY_PREFIX + "/?auth_retry=1")
+            self._send_text("Sign-in failed: could not complete authentication.", 502)
             return
         user, roles = auth.token_identity(tok)
         if not user:

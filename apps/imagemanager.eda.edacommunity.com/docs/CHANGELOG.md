@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.0.70
+
+**Full rollback to v0.0.51 controller code** — reverts v0.0.52–v0.0.69 auth changes.
+
 ## v0.0.69
 
 **Permanent auth fix — trust controller session cookie, reliable Sign in:**
