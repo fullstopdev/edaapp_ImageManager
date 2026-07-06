@@ -1834,7 +1834,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function updateSystem(sys){
     if(!sys) return;
     var rec=sys.reconcile||{};
-    var workDirsActive=Math.max(rec.workDirsActive||0, sys.workDirsActive||0);
     var sm=el("opsStorageMode");
     if(sm) sm.textContent=(sys.storageBackend||"pvc").toUpperCase();
     var ss=el("opsStorageSub");
@@ -1848,7 +1847,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
     var rv=el("opsReconcile");
     if(rv){
-      var issues=(rec.incompleteDirs||[]).length+workDirsActive;
+      var issues=(rec.incompleteDirs||[]).length+(rec.repushFailed||[]).length;
       if(issues) rv.textContent=issues+" attention";
       else if((rec.repushed||[]).length) rv.textContent="Self-healed";
       else rv.textContent="Up to date";
@@ -1864,7 +1863,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var alert=el("opsAlert");
     if(alert){
       var msgs=[];
-      if(workDirsActive) msgs.push(workDirsActive+" in-flight upload/import dir(s) on disk");
       if((rec.incompleteDirs||[]).length)
         msgs.push((rec.incompleteDirs||[]).length+" incomplete upload dir(s) without metadata — may need manual cleanup");
       if((rec.repushFailed||[]).length)

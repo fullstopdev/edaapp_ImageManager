@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.5
+
+**Hide in-flight upload work-dir operator alert.**
+
+- **Reconcile ops strip:** No longer surfaces "in-flight upload/import dir(s) on disk"
+  during normal uploads — that count is expected scratch state on the PVC, not an
+  operator issue.
+- **Attention count:** Reconcile card "attention" now reflects only incomplete upload
+  dirs and automatic republish failures.
+
 ## v0.1.4
 
 **Fix live indicator, upload status polling, and EDA session sync.**
