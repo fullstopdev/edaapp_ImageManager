@@ -98,6 +98,7 @@ APP_VERSION = [""]
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 APP_LOGO_PNG = (_ASSETS_DIR / "nokia-logo.png").read_bytes()
 APP_N_LOGO_PNG = (_ASSETS_DIR / "nokia-n.png").read_bytes()
+KEYCLOAK_MIN_JS = (_ASSETS_DIR / "keycloak.min.js").read_bytes()
 
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
@@ -371,6 +372,9 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/assets/nokia-n.png":
                 self._send_text(APP_N_LOGO_PNG, ctype="image/png")
+                return
+            if path == "/assets/keycloak.min.js":
+                self._send_text(KEYCLOAK_MIN_JS, ctype="application/javascript; charset=utf-8")
                 return
             # UI shell loads without a session so keycloak-js can perform silent SSO
             # inside the EDA iframe (cable-map.eda.labs pattern). Data APIs stay gated.

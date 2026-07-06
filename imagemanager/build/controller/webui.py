@@ -895,7 +895,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var signInRetryPending = false;
   var keycloakScriptPromise = null;
   var keycloakScriptFailed = false;
-  var KEYCLOAK_SCRIPT = "/core/proxy/v1/identity/js/keycloak.min.js";
+  function keycloakScriptUrl(){ return api("/assets/keycloak.min.js"); }
   var el = function(id){ return document.getElementById(id); };
 
   function showAuthUser(user){
@@ -1225,7 +1225,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(typeof Keycloak !== "undefined") return Promise.resolve();
     if(!forceRetry && keycloakScriptFailed) return Promise.reject(new Error("keycloak script unavailable"));
     if(!forceRetry && keycloakScriptPromise) return keycloakScriptPromise;
-    keycloakScriptPromise = loadScript(KEYCLOAK_SCRIPT).then(function(){
+    keycloakScriptPromise = loadScript(keycloakScriptUrl()).then(function(){
       if(typeof Keycloak === "undefined") throw new Error("keycloak-js unavailable");
       keycloakScriptFailed = false;
     }).catch(function(e){
