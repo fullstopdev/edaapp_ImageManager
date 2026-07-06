@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.0.56
+
+**Fix auth redirect loop (v0.0.55 regression):**
+
+- **Root cause:** v0.0.55 auto-fell back to server `/oauth/login` when silent SSO
+  failed. If the OIDC code exchange failed, the app redirected to
+  `/?auth_error=callback` and immediately retried `/oauth/login`, causing a
+  ~1s full-page reload loop with *Signing in…* on every cycle.
+- **Cable-map parity:** Auto-fallback now uses `keycloak.login({ redirectUri })`
+  (public `auth` client) instead of the server confidential-client redirect.
+- **Loop guard:** `sessionStorage` debounce + stop auto-redirect after
+  `auth_error=callback`; show recoverable **Try again** / **Sign in** banner
+  instead.
+- **Embedded + standalone:** Same keycloak-js login fallback (cable-map shows
+  *Signing in…* briefly, then opens — no reload loop).
+
 ## v0.0.55
 
 **Fix View-link sign-in UX — match cable-map OIDC fallback (v0.0.54 gap):**
