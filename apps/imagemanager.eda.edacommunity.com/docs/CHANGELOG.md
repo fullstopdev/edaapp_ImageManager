@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.0.54
+
+**Fix sign-in failure — restore cable-map auth bootstrap (v0.0.39 pattern):**
+
+- **Root cause:** v0.0.40+ auto-redirected to `/oauth/login` when silent SSO failed;
+  a broken OIDC callback surfaced the plain-text error *Sign-in failed: could not
+  complete authentication.* instead of a recoverable in-app state. `silentSso()`
+  also created a throwaway Keycloak instance (cannot re-init reliably).
+- **Cable-map parity restored:** trust `GET /api/config` 200 on bootstrap without
+  Keycloak; deduped singleton `initKeycloakCheck()` with retry after iframe
+  false-negatives; `loadConfigAfterExchange()` cookie-commit retries; all auth
+  failures show **Try again** / **Sign in** banner (no auto redirect, no reload).
+- **v0.0.52 retained:** embedded session probes trust server `im_session`; live
+  indicator on all tabs; `checkLoginIframe` disabled in iframe.
+- **OAuth callback:** code-exchange failure redirects back to the SPA with
+  `?auth_error=callback` instead of a 502 plain-text page.
+
 ## v0.0.53
 
 **Deep-linkable image details URLs:**
