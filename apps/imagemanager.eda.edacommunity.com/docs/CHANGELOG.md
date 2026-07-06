@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.0.72
+
+**Fix sign-in: vendor keycloak-js (identity proxy no longer serves it).**
+
+- **Root cause:** `loadKeycloakScript()` fetched
+  `/core/proxy/v1/identity/js/keycloak.min.js`, which returns HTTP 404 on this
+  cluster (`Unable to find matching target resource method`). Silent SSO and
+  Sign in never started — bootstrap failed with *Sign-in failed* / *could not
+  complete authentication*. Cable-map works because it bundles keycloak-js in its
+  SPA bundle, not from the identity proxy.
+- **Fix:** Ship `keycloak-js` 26.2.4 as `/assets/keycloak.min.js` from the
+  controller; UI loads it from `apiBase + "/assets/keycloak.min.js"`.
+
 ## v0.0.71
 
 **Fix sign-in: stop using broken server `/oauth/login` flow.**
