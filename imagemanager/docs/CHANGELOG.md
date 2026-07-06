@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.2
+
+**Fix sign-out and EDA SSO session persistence.**
+
+- Sign out clears `im_session` and redirects through Keycloak RP-initiated
+  logout to the EDA login page (`/` on the cluster host), not a dead-end HTML
+  page or `/oauth/login` loop.
+- Restore ungated UI shell (`GET /`) so the SPA bootstraps via `GET /api/config`
+  and redirects to `/oauth/login` only when needed — embedded EDA SSO works
+  when the user already has an EDA Keycloak session.
+- Sign-out and auth-loss navigation use `window.top` in the EDA iframe.
+- Session cookies are again bound to Keycloak access-token expiry.
+
 ## v0.1.1
 
 **Restore server-side OIDC auth (drop keycloak-js).**

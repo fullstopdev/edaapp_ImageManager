@@ -258,26 +258,24 @@ class Handler(BaseHTTPRequestHandler):
             self._deny_page(user)
             return
         logger.info("Sign-in OK: %s", user)
+        access = tok.get("access_token", "")
+        tok_exp = auth.jwt_exp(access)
         self._redirect(auth.APP_PROXY_PREFIX + "/", cookies=[
-            (auth.SESSION_COOKIE, auth.make_session(user), auth.SESSION_TTL),
+            (auth.SESSION_COOKIE,
+             auth.make_session(user, token_exp=tok_exp),
+             auth.session_cookie_max_age(tok_exp)),
             (auth.STATE_COOKIE, "", 0),
         ])
 
     def _handle_logout(self):
-        # Local logout: clear our session only; the EDA Keycloak session stays.
-        link = auth.APP_PROXY_PREFIX + "/oauth/login"
-        body = _MSG_PAGE.format(
-            title="Signed out",
-            heading="Signed out of Image Manager",
-            body="<p>You're still logged into EDA.</p>",
-            action=f"<a class='imbtn' href='{link}'>Sign in again</a>",
-        ).encode("utf-8")
-        self.send_response(200)
-        self._set_cookie(auth.SESSION_COOKIE, "", 0)
-        self.send_header("Content-Type", "text/html; charset=utf-8")
-        self.send_header("Content-Length", str(len(body)))
-        self.end_headers()
-        self.wfile.write(body)
+        """Clear local session and end the EDA Keycloak session (RP-initiated logout)."""
+        post = auth.eda_login_url(self.headers)
+        try:
+            url = auth.end_session_url(self.headers, post)
+        except Exception as e:
+            logger.warning("Cannot build end_session URL: %s", e)
+            url = post
+        self._redirect(url, cookies=[(auth.SESSION_COOKIE, "", 0)])
 
     def _deny_page(self, user):
         roles = ", ".join(auth.allowed_roles())
@@ -328,13 +326,8 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/assets/nokia-n.png":
                 self._send_text(APP_N_LOGO_PNG, ctype="image/png")
                 return
-            # Everything else requires a valid EDA session.
-            if auth.enabled() and not self._authed_user():
-                if path.startswith("/api/"):
-                    self._send_json({"ok": False, "error": "not authenticated"}, 401)
-                else:
-                    self._redirect_to_login()
-                return
+            # UI shell loads without a session so the SPA can bootstrap via
+            # GET /api/config and redirect to /oauth/login for silent SSO.
             if path == "/":
                 self.send_response(200)
                 self.send_header("Content-Type", "text/html; charset=utf-8")
@@ -343,7 +336,15 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
-            elif path == "/api/config":
+                return
+            # Everything else requires a valid EDA session.
+            if auth.enabled() and not self._authed_user():
+                if path.startswith("/api/"):
+                    self._send_json({"ok": False, "error": "not authenticated"}, 401)
+                else:
+                    self._redirect_to_login()
+                return
+            if path == "/api/config":
                 self._serve_config()
             elif path == "/api/settings":
                 self._serve_settings()

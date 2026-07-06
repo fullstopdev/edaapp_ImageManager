@@ -7,7 +7,7 @@ adaptive live polling (4s while work is in flight, 12s at rest, paused when
 the tab is hidden). Sign-in is server-side OIDC (Authorization Code flow via
 EDA's identity proxy); unauthenticated requests redirect to Keycloak. Role
 gating via ALLOWED_ROLES (EDA ClusterRole). Sign out clears the local session
-only (EDA Keycloak session stays).
+and ends the EDA Keycloak session, redirecting to the EDA login page.
 """
 
 INDEX_HTML = r"""<!DOCTYPE html>
@@ -545,7 +545,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></svg>
     </button>
     <span id="userInfo" class="user-chip" style="display:none"><span class="avatar" id="avatar"></span><span class="uname" id="uname"></span></span>
-    <a id="signoutLink" class="btn text subtle ripple" title="Sign out of Image Manager">Sign out</a>
+    <a id="signoutLink" class="btn text subtle ripple" href="#" title="Sign out of Image Manager">Sign out</a>
   </div>
 </header>
 
@@ -851,6 +851,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var maxBytes = 4096*1024*1024;
   var pendingUploads = {}, uploadSeq = 0;
   var el = function(id){ return document.getElementById(id); };
+  var embedded = window.self !== window.top;
+  var deferredSessionLoss = null;
+
+  function navigateTo(url){
+    try {
+      if(embedded && window.top && window.top !== window.self){
+        window.top.location = url;
+        return;
+      }
+    } catch(e){}
+    window.location = url;
+  }
 
   function showAuthUser(user){
     if(!user) return;
@@ -891,13 +903,25 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function handleAuthLoss(){
     if(uploadInFlight() || uploadFormActive()){
+      deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
       snack("err", "Session ended. Finish your upload, then reload.", true);
       return Promise.resolve();
     }
-    window.location = apiBase + "/oauth/login";
+    navigateTo(apiBase + "/oauth/login");
     return Promise.resolve();
   }
-  var signout=el("signoutLink"); if(signout) signout.href=apiBase+"/oauth/logout";
+  function flushDeferredSessionLoss(){
+    if(!deferredSessionLoss || uploadInFlight() || uploadFormActive()) return;
+    deferredSessionLoss = null;
+    handleAuthLoss();
+  }
+  var signout=el("signoutLink");
+  if(signout){
+    signout.addEventListener("click", function(e){
+      if(e && e.preventDefault) e.preventDefault();
+      navigateTo(apiBase + "/oauth/logout");
+    });
+  }
 
   var binFile=el("binFile"), ns=el("namespace"), urlNs=el("urlNamespace"),
       imageName=el("imageName"), btn=el("uploadBtn"), binHint=el("binHint"),
@@ -1078,7 +1102,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // ---------- config + namespaces ----------
   fetchJson(api("/api/config")).then(function(res){
-    if(res.status === 401){ window.location = apiBase + "/oauth/login"; return; }
+    if(res.status === 401){ navigateTo(apiBase + "/oauth/login"); return; }
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
     var c = res.body || {};
     bootDone();

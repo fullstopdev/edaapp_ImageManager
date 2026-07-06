@@ -46,6 +46,8 @@ logger = logging.getLogger("auth")
 POD_NAMESPACE = os.environ.get("POD_NAMESPACE", "eda-system")
 REALM = "eda"
 CLIENT_ID = "eda"
+# Public browser client for RP-initiated logout (same as EDA GUI / cable-map).
+BROWSER_CLIENT_ID = "auth"
 # Browser-facing authorize URL goes through EDA's identity proxy — the SAME
 # Keycloak base the EDA GUI logs in through — so an already-logged-in EDA user
 # is 302'd back with a code and never sees a login form (seamless SSO in the
@@ -179,6 +181,11 @@ def redirect_uri(headers):
     return external_base(headers) + APP_PROXY_PREFIX + CALLBACK_SUBPATH
 
 
+def identity_base(headers):
+    """Browser-facing Keycloak base URL (EDA identity proxy)."""
+    return external_base(headers) + IDENTITY_PROXY_PATH
+
+
 def authorize_url(headers, state):
     base = external_base(headers)
     q = urllib.parse.urlencode({
@@ -242,6 +249,38 @@ def is_allowed(roles):
     return False
 
 
+def jwt_exp(access_token):
+    """Access-token expiry (unix seconds) from a bearer token, or None."""
+    p = _decode_jwt(access_token or "")
+    exp = int(p.get("exp", 0) or 0)
+    return exp if exp else None
+
+
+def session_cookie_max_age(token_exp=None):
+    """HttpOnly session cookie Max-Age: min(app TTL, remaining access-token life)."""
+    if token_exp:
+        remaining = int(token_exp) - int(time.time())
+        if remaining > 0:
+            return min(SESSION_TTL, remaining)
+    return SESSION_TTL
+
+
+def end_session_url(headers, post_logout_redirect=None):
+    """Browser-facing Keycloak RP-initiated logout."""
+    redirect = post_logout_redirect or (external_base(headers) + "/")
+    q = urllib.parse.urlencode({
+        "client_id": BROWSER_CLIENT_ID,
+        "post_logout_redirect_uri": redirect,
+    })
+    return (identity_base(headers)
+            + f"/realms/{REALM}/protocol/openid-connect/logout?{q}")
+
+
+def eda_login_url(headers):
+    """EDA GUI root — the login page after a full sign-out."""
+    return external_base(headers) + "/"
+
+
 # --------------------------- signed cookies ---------------------------
 
 def _b64u(b):
@@ -256,8 +295,10 @@ def _sign(body_bytes):
     return _b64u(hmac.new(_SIGNING_KEY, body_bytes, hashlib.sha256).digest())
 
 
-def make_session(username):
+def make_session(username, token_exp=None):
     payload = {"u": username, "exp": int(time.time()) + SESSION_TTL}
+    if token_exp:
+        payload["te"] = int(token_exp)
     body = _b64u(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     return f"{body}.{_sign(body.encode('ascii'))}"
 
@@ -273,7 +314,10 @@ def verify_session(cookie):
         payload = json.loads(_b64u_dec(body).decode("utf-8"))
     except Exception:
         return None
-    if int(payload.get("exp", 0)) < time.time():
+    now = time.time()
+    if int(payload.get("exp", 0)) < now:
+        return None
+    if int(payload.get("te", 0)) and int(payload["te"]) < now:
         return None
     return payload.get("u")
 
