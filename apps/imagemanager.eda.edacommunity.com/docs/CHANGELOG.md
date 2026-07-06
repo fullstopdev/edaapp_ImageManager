@@ -2,7 +2,10 @@
 
 ## v0.0.70
 
-**Full rollback to v0.0.51 controller code** — reverts v0.0.52–v0.0.69 auth changes.
+**Full rollback to v0.0.51 controller code** (`037f8cb`): reverts all auth
+experiments from v0.0.52 through v0.0.69 (cable-map fallbacks, signed state,
+keycloak.login loops, no-dashboard-reset patch, etc.). Ships as a new image tag
+so clusters can upgrade off the broken releases.
 
 ## v0.0.69
 
