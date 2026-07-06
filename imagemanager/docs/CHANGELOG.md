@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.4
+
+**Fix live indicator, upload status polling, and EDA session sync.**
+
+- **Live indicator:** Header pill now reflects auth + controller health + tab
+  visibility only — no longer greyed on non-Dashboard tabs or while composing an
+  upload. Polling continues in the background during uploads.
+- **Upload status:** Pending rows clear immediately when the upload XHR
+  completes; background polling no longer pauses during in-flight uploads, so
+  Dashboard status updates without a manual refresh.
+- **EDA logout sync:** Restore session watchers — periodic `probeSession()`,
+  `kc-*` storage events, focus/visibility handlers, and
+  `POST /oauth/session/logout` to clear `im_session` when the parent EDA
+  Keycloak session ends. Shows a recoverable sign-in banner instead of leaving
+  a stale logged-in iframe.
+
 ## v0.1.3
 
 **Fix artifact TLS pulls after internal-CA rotation.**

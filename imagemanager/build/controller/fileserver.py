@@ -277,6 +277,14 @@ class Handler(BaseHTTPRequestHandler):
             url = post
         self._redirect(url, cookies=[(auth.SESSION_COOKIE, "", 0)])
 
+    def _handle_oauth_session_logout(self):
+        """Clear the local session cookie (browser-initiated SSO loss)."""
+        self.send_response(200)
+        self._set_cookie(auth.SESSION_COOKIE, "", 0)
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
+
     def _deny_page(self, user):
         roles = ", ".join(auth.allowed_roles())
         link = auth.APP_PROXY_PREFIX + "/oauth/logout"
@@ -756,7 +764,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         path, q = self._route()
         try:
-            # All POSTs are user actions — require a valid EDA session.
+            if path == "/oauth/session/logout":
+                self._handle_oauth_session_logout()
+                return
+            # All other POSTs are user actions — require a valid EDA session.
             if auth.enabled() and not self._authed_user():
                 self._send_json({"ok": False, "error": "not authenticated"}, 401)
                 return

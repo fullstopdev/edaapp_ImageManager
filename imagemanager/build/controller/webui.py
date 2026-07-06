@@ -416,6 +416,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
   html.eda-embedded .app-shell { max-width:none; padding:16px 18px 40px; min-height:60vh; }
   #boot-shell { padding:12px 4px 8px; color:var(--muted); font-size:13px; }
   #boot-shell.hide { display:none; }
+  .auth-banner {
+    display:none; margin:0 0 14px; padding:10px 14px; border-radius:var(--radius-md);
+    background:var(--info-bg); color:var(--info-fg); border:1px solid var(--info-bd);
+    font-size:13px; line-height:1.45;
+  }
+  .auth-banner.show { display:block; }
+  .auth-banner.err { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
+  .auth-banner .auth-actions { display:inline-flex; gap:8px; margin-left:12px; vertical-align:middle; flex-wrap:wrap; }
 
   /* Tabs — EDA-style segmented bar */
   .tabs {
@@ -536,7 +544,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     <span id="verBadge" class="ver-badge" style="display:none" title="App version"></span>
   </div>
   <div class="appbar-actions">
-    <span id="liveIndicator" class="live-pill" title="Status polling active on the Dashboard tab">
+    <span id="liveIndicator" class="live-pill" title="Connected — live status updates active">
       <span class="live-dot" aria-hidden="true"></span><span class="live-label">Live</span>
     </span>
     <span class="toolbar-sep" aria-hidden="true"></span>
@@ -551,6 +559,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
 <main class="app-shell">
   <div id="boot-shell" role="status">Loading Image Manager&hellip;</div>
+  <div id="authBanner" class="auth-banner" role="status" aria-live="polite"></div>
 
   <nav class="tabs" role="tablist" aria-label="Image Manager sections">
     <button type="button" class="tab active ripple" id="tab-status" data-tab="status" role="tab" aria-selected="true" aria-controls="panel-status">Dashboard <span class="count" id="statusCount" style="display:none"></span></button>
@@ -853,6 +862,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var el = function(id){ return document.getElementById(id); };
   var embedded = window.self !== window.top;
   var deferredSessionLoss = null;
+  var authBootstrapComplete = false;
+  var authReady = false;
+  var controllerHealthy = true;
+  var sessionCheckTimer = null;
+  var revalidateTimer = null;
+  var SESSION_CHECK_MS = 30000;
+  var REVALIDATE_DEBOUNCE_MS = 400;
 
   function navigateTo(url){
     try {
@@ -870,6 +886,51 @@ INDEX_HTML = r"""<!DOCTYPE html>
     el("uname").textContent=user;
     el("avatar").textContent=(user||"?").slice(0,1);
   }
+  function hideAuthUser(){
+    var ui=el("userInfo"); if(ui) ui.style.display="none";
+  }
+  function setAuthBanner(kind, text){
+    var b=el("authBanner");
+    if(!b) return;
+    if(!text){ b.className="auth-banner"; b.textContent=""; return; }
+    b.className="auth-banner show"+(kind==="err"?" err":"");
+    b.textContent=text;
+  }
+  function showSignInBanner(msg){
+    var b=el("authBanner");
+    if(!b) return;
+    b.className="auth-banner show err";
+    var html=esc(msg||"Sign in required.");
+    html+='<span class="auth-actions">'+
+      '<button type="button" class="btn text subtle ripple" id="authRetryBtn">Try again</button>';
+    if(!embedded){
+      html+='<button type="button" class="btn contained ripple" id="authSignInBtn">Sign in</button>';
+    }
+    html+='</span>';
+    b.innerHTML=html;
+    var retryBtn=el("authRetryBtn");
+    if(retryBtn) retryBtn.addEventListener("click", retrySignIn);
+    if(!embedded){
+      var signInBtn=el("authSignInBtn");
+      if(signInBtn) signInBtn.addEventListener("click", function(){ navigateTo(apiBase + "/oauth/login"); });
+    }
+  }
+  function clearServerSession(){
+    return fetch(api("/oauth/session/logout"), Object.assign({ method:"POST" }, FETCH_OPTS))
+      .catch(function(){ return null; });
+  }
+  function keycloakStoragePresent(){
+    try {
+      for(var i=0; i<localStorage.length; i++){
+        var k=localStorage.key(i);
+        if(k && k.indexOf("kc-")===0) return true;
+      }
+    } catch(e){}
+    return false;
+  }
+  function sessionInterruptBlocked(){
+    return uploadInFlight();
+  }
   function bootDone(){
     var b = document.getElementById("boot-shell");
     if(b) b.classList.add("hide");
@@ -882,38 +943,86 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function uploadInFlight(){
     return Object.keys(pendingUploads).length > 0;
   }
-  function uploadFormActive(){
-    if(uploadInFlight()) return true;
-    var tab = typeof activeTab !== "undefined" ? activeTab : "";
-    if(tab === "upload"){
-      var bf = el("binFile");
-      if(bf && bf.files && bf.files.length) return true;
-      if((el("imageName") && (el("imageName").value || "").trim())) return true;
-      if((el("licText") && (el("licText").value || "").trim())) return true;
-      if(el("namespace") && el("namespace").value) return true;
-    }
-    if(tab === "url-import"){
-      if((el("urlSource") && (el("urlSource").value || "").trim())) return true;
-      if((el("urlName") && (el("urlName").value || "").trim())) return true;
-      if((el("urlLicText") && (el("urlLicText").value || "").trim())) return true;
-      if(el("urlNamespace") && el("urlNamespace").value) return true;
-      if(el("urlInsecure") && el("urlInsecure").checked) return true;
-    }
-    return false;
-  }
   function handleAuthLoss(){
-    if(uploadInFlight() || uploadFormActive()){
+    if(!authBootstrapComplete) return Promise.resolve();
+    if(sessionInterruptBlocked()){
       deferredSessionLoss = deferredSessionLoss || "Your EDA session has ended. Sign in again.";
       snack("err", "Session ended. Finish your upload, then reload.", true);
       return Promise.resolve();
     }
+    return probeSession(true).then(function(ok){
+      if(ok){
+        authReady = true;
+        syncLiveIndicator();
+        return;
+      }
+      handleSessionLoss("Your EDA session has ended. Sign in again.");
+    }).catch(function(){
+      handleSessionLoss("Your EDA session has ended. Sign in again.");
+    });
+  }
+  function handleSessionLoss(msg){
+    if(!authBootstrapComplete) return;
+    if(sessionInterruptBlocked()){
+      deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
+      return;
+    }
+    clearServerSession().then(function(){
+      authReady = false;
+      if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
+      syncLiveIndicator();
+      hideAuthUser();
+      showSignInBanner(msg || "Your EDA session has ended. Sign in again.");
+    });
+  }
+  function probeSession(force){
+    if(sessionInterruptBlocked() && !force) return Promise.resolve(true);
+    if(!authBootstrapComplete && !force) return Promise.resolve(true);
+    return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+      if(r.status === 401) return false;
+      if(r.status === 200){
+        if(embedded && !keycloakStoragePresent()) return false;
+        return true;
+      }
+      return true;
+    }).catch(function(){ return true; });
+  }
+  function scheduleRevalidate(){
+    if(revalidateTimer) clearTimeout(revalidateTimer);
+    revalidateTimer = setTimeout(function(){
+      revalidateTimer = null;
+      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
+      probeSession().then(function(ok){
+        if(!ok) handleSessionLoss("Your EDA session has ended.");
+      }).catch(function(){});
+    }, REVALIDATE_DEBOUNCE_MS);
+  }
+  function scheduleSessionCheck(){
+    if(sessionCheckTimer) clearInterval(sessionCheckTimer);
+    sessionCheckTimer = setInterval(function(){
+      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
+      probeSession().then(function(ok){
+        if(!ok) handleSessionLoss("Your EDA session has ended.");
+      }).catch(function(){});
+    }, SESSION_CHECK_MS);
+  }
+  function startSessionWatchers(){
+    scheduleSessionCheck();
+  }
+  function retrySignIn(){
+    setAuthBanner("info", "Signing in\u2026");
+    if(embedded){
+      try {
+        if(window.top && window.top !== window.self){ window.top.location.reload(); return; }
+      } catch(e){}
+    }
     navigateTo(apiBase + "/oauth/login");
-    return Promise.resolve();
   }
   function flushDeferredSessionLoss(){
-    if(!deferredSessionLoss || uploadInFlight() || uploadFormActive()) return;
+    if(!deferredSessionLoss || sessionInterruptBlocked()) return;
+    var msg = deferredSessionLoss;
     deferredSessionLoss = null;
-    handleAuthLoss();
+    handleSessionLoss(msg);
   }
   var signout=el("signoutLink");
   if(signout){
@@ -952,7 +1061,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     if(name === "status"){ refreshArtifacts(); refreshImports(); }
     if(name === "settings"){ loadSettings(); }
-    syncLiveIndicator();
   }
   document.querySelectorAll(".tab").forEach(function(t){
     t.addEventListener("click", function(){ showTab(t.getAttribute("data-tab")); });
@@ -1112,6 +1220,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(c.version){
       var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
+    authReady = true;
+    authBootstrapComplete = true;
+    startSessionWatchers();
     var defaultNs=(c.defaultArtifactNamespace||"").trim();
     fetchJson(api("/api/namespaces")).then(function(nsRes){
       if(nsRes.status===401) return;
@@ -1123,6 +1234,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     refresh();
     refreshImports();
+    fetchJson(api("/api/settings")).then(function(sRes){
+      if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
+    });
     syncLiveIndicator();
   }).catch(function(err){
     var msg = (err && err.message && err.message.indexOf("config unavailable")===0)
@@ -1136,23 +1250,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!f) return;
     imageName.value = deriveName(f.name);
     binHint.textContent=f.name+"  ·  "+fmtBytes(f.size);
-    syncLiveIndicator();
   });
   // Names are lowercased everywhere; keep the field lowercase as the user edits.
   imageName.addEventListener("input", function(ev){
     if(ev && ev.isComposing) return;   // don't disturb a mid-IME composition
     var s=imageName.selectionStart, e=imageName.selectionEnd, lo=imageName.value.toLowerCase();
     if(lo!==imageName.value){ imageName.value=lo; try{ imageName.setSelectionRange(s,e); }catch(_){} }
-    syncLiveIndicator();
   });
-  ns.addEventListener("change", syncLiveIndicator);
-  licText.addEventListener("input", syncLiveIndicator);
 
   // ---------- upload (closes dialog; progress shown as a live table row) ----------
   function resetUploadForm(){
     binFile.value=""; imageName.value=""; ns.selectedIndex=0; licText.value="";
     binHint.textContent="Maximum upload size: "+Math.round(maxBytes/1048576)+" MiB.";
-    syncLiveIndicator();
   }
 
   // Attach a license to a freshly-uploaded image: POST the raw key file to
@@ -1234,6 +1343,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         if(status>=200 && status<300 && r.ok){
           // The authoritative row now exists server-side; clear the pending row.
           delete pendingUploads[key];
+          render();
           var what=(r.displayName||name), msg;
           if(r.nos==="srsim") msg="Uploaded "+what+" — SR-SIM image ready. Open Details for the sim NodeProfile and one-time setup."+(r.yangCreated?" YANG profile attached.":"");
           else if(r.nos==="sros") msg="Uploaded "+what+" — "+(r.fileCount||0)+" image files. "+(r.note||"");
@@ -1673,7 +1783,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(res.ok && res.body && res.body.ok){
         snack("ok","URL import started: "+res.body.namespace+"/"+res.body.name);
         el("urlSource").value=""; el("urlName").value=""; el("urlLicText").value="";
-        syncLiveIndicator();
         showTab("status");
         refreshImports();
       } else if(isConflictResponse(res.status, res.body) && !replace){
@@ -1684,12 +1793,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
     });
   }
-
-  el("urlSource").addEventListener("input", syncLiveIndicator);
-  el("urlName").addEventListener("input", syncLiveIndicator);
-  el("urlLicText").addEventListener("input", syncLiveIndicator);
-  if(urlNs) urlNs.addEventListener("change", syncLiveIndicator);
-  el("urlInsecure").addEventListener("change", syncLiveIndicator);
 
   el("urlImportBtn").addEventListener("click", function(){
     var url=(el("urlSource").value||"").trim();
@@ -1777,9 +1880,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var h=el("opsHealth"), m=el("opsHealthMsg");
     if(!h) return;
     var ok=(health||"ok").toLowerCase()==="ok";
+    controllerHealthy = ok;
     h.textContent=ok?"Ready":"Degraded";
     h.style.color=ok?"var(--ok-fg)":"var(--warn-fg)";
     if(m) m.textContent=message||"Single-replica · Recreate strategy";
+    syncLiveIndicator();
   }
 
   function refreshArtifacts(opts){
@@ -1811,6 +1916,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
     });
   }
+
   function refresh(){
     return refreshArtifacts();
   }
@@ -1819,13 +1925,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function syncLiveIndicator(){
     var pill=el("liveIndicator");
     if(!pill) return;
-    var live = !document.hidden && activeTab === "status" && !uploadFormActive();
+    var live = authReady && controllerHealthy && !document.hidden;
     pill.classList.toggle("active", live);
     pill.title = live
-      ? "Status polling active on the Dashboard tab"
-      : (uploadFormActive()
-        ? "Live polling paused while you compose an upload"
-        : "Live polling runs on the Dashboard tab");
+      ? "Connected — live status updates active"
+      : (!authReady
+        ? "Sign in required"
+        : (!controllerHealthy
+          ? "Controller health degraded"
+          : "Updates paused while tab is hidden"));
   }
   (function(){
     var btn=el("themeBtn");
@@ -1850,12 +1958,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function schedulePoll(){
     if(pollTimer) clearTimeout(pollTimer);
     pollTimer=setTimeout(function(){
-      if(!document.hidden){
+      if(!document.hidden && authReady){
         if(activeTab === "status"){
           refreshArtifacts();
           refreshImports();
-        } else if(!uploadFormActive()){
+        } else {
           refreshArtifacts({ silent: true });
+          if(activeStatusCount() > 0) refreshImports();
         }
       }
       syncLiveIndicator();
@@ -1863,11 +1972,26 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }, pollInterval());
   }
   document.addEventListener("visibilitychange", function(){
-    if(!document.hidden && activeTab === "status" && !uploadFormActive()){
-      refreshArtifacts();
-      refreshImports();
+    if(!document.hidden && authReady && authBootstrapComplete){
+      scheduleRevalidate();
+      if(activeTab === "status"){
+        refreshArtifacts();
+        refreshImports();
+      }
     }
     syncLiveIndicator();
+  });
+  window.addEventListener("focus", function(){
+    if(authBootstrapComplete && authReady) scheduleRevalidate();
+  });
+  window.addEventListener("storage", function(ev){
+    if(!authBootstrapComplete || !authReady) return;
+    if(ev.key === null || (ev.key && ev.key.indexOf("kc-") === 0)){
+      scheduleRevalidate();
+    }
+  });
+  window.addEventListener("pageshow", function(ev){
+    if(ev.persisted && authBootstrapComplete && authReady) scheduleRevalidate();
   });
   var refreshBtn=el("refreshBtn");
   if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });
