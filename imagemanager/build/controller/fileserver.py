@@ -205,11 +205,8 @@ class Handler(BaseHTTPRequestHandler):
         return m.value if m else ""
 
     def _authed_user(self):
-        """Username if the request carries a valid session, else None.
-        With auth disabled (local dev), returns a placeholder user."""
-        if not auth.enabled():
-            return "local"
-        return auth.verify_session(self._cookie(auth.SESSION_COOKIE))
+        """Username if the request carries a valid session or bearer token."""
+        return auth.user_from_bearer(self.headers, self._cookie(auth.SESSION_COOKIE))
 
     def _set_cookie(self, name, value, max_age):
         parts = [f"{name}={value}", f"Path={auth.APP_PROXY_PREFIX}",

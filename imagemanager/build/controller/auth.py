@@ -331,5 +331,21 @@ def verify_session(cookie):
     return payload.get("u")
 
 
+def user_from_bearer(headers, session_cookie=""):
+    """Username if the request carries a valid session or Keycloak bearer token."""
+    if not enabled():
+        return "local"
+    user = verify_session(session_cookie)
+    if user:
+        return user
+    auth_hdr = headers.get("Authorization", "")
+    if auth_hdr.lower().startswith("bearer "):
+        token = auth_hdr[7:].strip()
+        user, roles = jwt_identity(token)
+        if user and is_allowed(roles):
+            return user
+    return None
+
+
 def new_state():
     return secrets.token_urlsafe(24)

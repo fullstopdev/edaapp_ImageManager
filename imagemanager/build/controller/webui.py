@@ -870,10 +870,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   var apiBase = resolveApiBase();
   function api(p){ return apiBase + p; }
-  function fetchJson(url, opts){
+  function apiBaseUrl(){
+    return apiBase.replace(/\/+$/, "");
+  }
+  function getBearerToken(){
+    return (kcInstance && kcInstance.token) ? kcInstance.token : null;
+  }
+  function withAuthHeaders(opts){
     opts = opts || {};
-    if(!opts.credentials) opts.credentials = "same-origin";
-    return fetch(url, opts).then(function(r){
+    var headers = Object.assign({}, opts.headers || {});
+    var tok = getBearerToken();
+    if(tok) headers.Authorization = "Bearer " + tok;
+    var out = Object.assign({}, FETCH_OPTS, opts);
+    if(Object.keys(headers).length) out.headers = headers;
+    return out;
+  }
+  function fetchJson(url, opts){
+    return fetch(url, withAuthHeaders(opts)).then(function(r){
       return r.json().then(function(j){ return {ok:r.ok, status:r.status, body:j}; })
         .catch(function(){ return {ok:r.ok, status:r.status, body:null}; });
     });
@@ -1029,7 +1042,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return kcInstance;
   }
   function silentCheckSsoUri(){
-    return new URL("oauth/silent-sso.html", location.href).href;
+    // Must use apiBase — new URL("oauth/...", location.href) breaks when the
+    // page URL has no trailing slash (resolves to .../v1/oauth/... not .../imagemanager/oauth/...).
+    return location.origin + apiBaseUrl() + "/oauth/silent-sso.html";
   }
   function hasOAuthCallback(){
     try{
@@ -1122,7 +1137,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
   }
   function fetchConfig(){
-    return fetch(api("/api/config"), FETCH_OPTS);
+    return fetch(api("/api/config"), withAuthHeaders());
   }
   function loadConfigAfterExchange(retriesLeft){
     return fetchConfig().then(function(r){
@@ -1314,10 +1329,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return keycloakScriptPromise;
   }
   function exchangeToken(token){
-    return fetch(api("/oauth/session"), Object.assign({
+    return fetch(api("/oauth/session"), withAuthHeaders({
       method: "POST",
       headers: { "Authorization": "Bearer "+token, "Content-Type": "application/json" }
-    }, FETCH_OPTS)).then(function(r){
+    })).then(function(r){
       return r.json().then(function(j){ return {status:r.status, body:j}; });
     });
   }
@@ -1376,29 +1391,32 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function runAuthBootstrap(){
     return processOAuthCallback().then(function(fromCallback){
       if(fromCallback) return fromCallback;
-      // Cable-map: keycloak-js init before API calls; exchange token when check-sso succeeds.
-      return loadKeycloakScript(false).then(function(){
-        return initKeycloakCheck(false);
-      }).then(function(ok){
-        if(ok && kcInstance && kcInstance.token){
-          return exchangeToken(kcInstance.token).then(function(ex){
-            if(exchangeOk(ex)){
-              stripOAuthQueryParams();
-              return loadConfigAfterExchange(3).then(completeAuthBootstrap);
-            }
-            return bootstrapAuthFailed(ex);
-          });
-        }
-        // check-sso false with an active EDA session — cable-map: immediate login in standalone.
-        if(!embedded && canAutoKeycloakLogin()){
-          return fallBackKeycloakLogin();
-        }
-        // Embedded (or standalone after auto-login already attempted): trust im_session / retry SSO.
-        return fetchConfig().then(function(r){
-          if(r.status === 200){
-            return r.json().then(function(c){ return completeAuthBootstrap(c); });
+      // Fast path: existing im_session cookie (no keycloak-js round-trip).
+      return fetchConfig().then(function(r){
+        if(r.status === 200) return r.json().then(completeAuthBootstrap);
+        if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
+        // Cable-map: keycloak.init (check-sso) then exchange or login redirect.
+        return loadKeycloakScript(false).then(function(){
+          return initKeycloakCheck(false);
+        }).then(function(ok){
+          if(ok && kcInstance && kcInstance.token){
+            return exchangeToken(kcInstance.token).then(function(ex){
+              if(exchangeOk(ex)){
+                stripOAuthQueryParams();
+                return loadConfigAfterExchange(3).then(completeAuthBootstrap);
+              }
+              // Cookie exchange failed — bearer may still satisfy /api/* (cable-map).
+              return fetchConfig().then(function(r2){
+                if(r2.status === 200) return r2.json().then(completeAuthBootstrap);
+                return bootstrapAuthFailed(ex);
+              });
+            });
           }
-          if(r.status !== 401) throw new Error("config unavailable (HTTP "+r.status+")");
+          // check-sso false with active EDA session — standalone: immediate login.
+          if(!embedded){
+            return fallBackKeycloakLogin(true);
+          }
+          // Embedded: silent SSO retries only (never keycloak.login in iframe).
           return silentSsoWithRetries(true, SSO_RETRY_ATTEMPTS).then(function(ex){
             if(exchangeOk(ex)){
               stripOAuthQueryParams();
@@ -1421,14 +1439,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return "Sign-in failed. Try again" + (embedded ? "." : " or use Sign in.");
   }
   function loginRedirectUri(){
-    // Cable-map: full current URL (preserves ?details= deep links); strip OIDC noise only.
+    // Registered proxy base + deep-link query (strip OIDC noise only).
     try{
-      var u = new URL(location.href);
-      oauthNoiseParams().forEach(function(k){ u.searchParams.delete(k); });
-      u.hash = "";
-      return u.href;
+      var u = new URL(apiBaseUrl() + "/", location.origin);
+      var qs = new URLSearchParams(location.search);
+      oauthNoiseParams().forEach(function(k){ qs.delete(k); });
+      var q = qs.toString();
+      return u.href + (q ? "?" + q : "");
     }catch(e){
-      return location.href;
+      return location.origin + apiBaseUrl() + "/";
     }
   }
   function canAutoKeycloakLogin(){
@@ -1456,8 +1475,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }catch(e){}
   }
   // Cable-map fallback: keycloak.login() when check-sso misses an active EDA session.
-  function fallBackKeycloakLogin(){
-    if(!canAutoKeycloakLogin()) throw new Error("sign-in required");
+  function fallBackKeycloakLogin(force){
+    if(embedded && !force) throw new Error("sign-in required");
+    if(!force && !canAutoKeycloakLogin()) throw new Error("sign-in required");
     markKeycloakLoginAttempt();
     kcInitPromise = null;
     return loadKeycloakScript(false).then(function(){
@@ -1476,6 +1496,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       bootDone();
       finishBootstrap();
       showSignInBanner(authErrorMessage(ex));
+      setUnauthenticatedTables(authErrorMessage(ex));
       var err = new Error("forbidden");
       err.exchange = ex;
       throw err;
@@ -1491,12 +1512,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
     bootDone();
     finishBootstrap();
     showSignInBanner(authErrorMessage(ex));
+    setUnauthenticatedTables(authErrorMessage(ex));
     throw new Error("sign-in required");
   }
   function showAuthFailure(msg){
     bootDone();
     finishBootstrap();
     showSignInBanner(msg);
+    setUnauthenticatedTables(msg);
+  }
+  function setUnauthenticatedTables(msg){
+    var m = esc(msg || "Sign in required to load data.");
+    if(rows) setArtifactRowsMessage('<tr class="im-empty"><td colspan="6" class="empty">'+m+'</td></tr>');
+    if(importRows) importRows.innerHTML='<tr><td colspan="5" class="empty">'+m+'</td></tr>';
   }
   function requireSignIn(msg){
     bootDone();

@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.0.62
+
+**Fix sign-in failure — silent-sso URL + bootstrap (v0.0.55–61 regression):**
+
+- **Root cause:** `silentCheckSsoRedirectUri` used
+  `new URL("oauth/silent-sso.html", location.href)`. When the page URL has no
+  trailing slash (common after Keycloak redirect or EDA View navigation), the
+  browser resolves this to `/core/httpproxy/v1/oauth/silent-sso.html` instead of
+  `/core/httpproxy/v1/imagemanager/oauth/silent-sso.html`. Keycloak's check-sso
+  iframe loads a 404, `init()` returns false, and bootstrap fails with *Sign in
+  failed* even though the user is logged into EDA.
+- **Fix:** Build silent-sso URI from `apiBase` (`location.origin + apiBase +
+  "/oauth/silent-sso.html"`). Same for `loginRedirectUri` (registered proxy base).
+- **Bootstrap:** Trust `im_session` via fast `GET /api/config` first; then
+  keycloak-js check-sso; standalone tabs call `keycloak.login()` immediately on
+  false (no sessionStorage guard on first bootstrap); embedded retries silent SSO
+  only.
+- **Bearer fallback:** Server accepts Keycloak bearer tokens on all `/api/*`
+  routes (cable-map pattern); UI attaches bearer when cookie exchange fails.
+- **UX:** Auth failure clears table *Loading…* placeholders with a sign-in message.
+
 ## v0.0.61
 
 **Fix standalone View-link sign-in failure (v0.0.60 regression):**
