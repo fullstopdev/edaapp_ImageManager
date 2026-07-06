@@ -13,6 +13,8 @@
 - **Loop guard:** `sessionStorage` debounce + stop auto-redirect after
   `auth_error=callback`; show recoverable **Try again** / **Sign in** banner
   instead.
+- **Embedded + standalone:** Same keycloak-js login fallback (cable-map shows
+  *Signing in…* briefly, then opens — no reload loop).
 
 ## v0.0.55
 
