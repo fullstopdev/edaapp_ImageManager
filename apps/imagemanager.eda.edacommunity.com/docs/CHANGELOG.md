@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.18
+
+**EDA nav: cable-map external-launcher pattern (no iframe embed).**
+
+- **Dashboard JSON:** full EDA dashboard with `flexRow` + `dashletDataView` launcher
+  cards; `navigationTarget.edaRoute = "external"` opens
+  `/core/httpproxy/v1/imagemanager/` in a new tab (`useNewTab: true`). Removed
+  top-level `type: iframe` / `url` / `sameOrigin`. Fresh dashboard UUIDs;
+  EQL on `.cluster.apps.imagemanager.app` (service row) and
+  `.cluster.apps.imagemanager.status` (per-image rows).
+- **Session watchers:** standalone tab is the normal case after external launch;
+  `/api/config` every 60s remains the primary logout detector (v0.1.15 trust
+  model unchanged). Keycloak `kc-*` storage watchers are retained for iframe edge
+  cases only — gated behind `embedded`, no longer load-bearing in new-tab mode.
+- **Access:** `imagemanager-viewer` ClusterRole already grants `urlRules` for
+  `/core/httpproxy/v1/imagemanager/**` and `tableRules` for
+  `.cluster.apps.imagemanager.**`; view component remains last under
+  **Node Onboarding**.
+
 ## v0.1.17
 
 **Embedded EDA logout sync — detect parent sign-out without full page refresh.**

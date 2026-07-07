@@ -1,29 +1,29 @@
 {
-  "uuid": "1fc6d9e9-d2ab-425a-9c9e-f8dbbacdf793",
+  "uuid": "c25e5490-741a-4a1c-bcb9-dee8ad964ab8",
   "name": "Image Manager",
-  "version": "0.0.15",
+  "version": "0.1.18",
   "displayName": "Image Manager",
-  "description": "Image Manager status and upload entry point.",
+  "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-02T11:45:00Z",
+  "lastChanged": "2026-07-07T19:50:00Z",
   "screens": [
     {
       "name": "Image Manager",
-      "uuid": "184b4d5e-134d-4736-aeb6-290fe2ccd7f7",
+      "uuid": "79a1e3aa-fa93-469b-9fac-c9059363583a",
       "screenType": "dashboard",
       "partOfNav": true,
       "startScreen": true,
       "type": "screen",
       "components": [
         {
-          "uuid": "658f6e57-9d70-4e50-85b6-4543160ecc3a",
+          "uuid": "9c427ae9-68f3-487b-869e-8fd6eff1ba00",
           "type": "flexRow",
           "flexDirection": "row",
           "horizontalAlignment": "start",
           "verticalAlignment": "start",
           "components": [
             {
-              "uuid": "9c41b7a4-33e6-4b5c-8a19-5b0d2c7f61e0",
+              "uuid": "87919695-84e1-467f-bfeb-dcd7c62069be",
               "type": "dashletDataView",
               "title": "Image Manager Service",
               "subtitle": "Controller health and UI reachability — click View to open the app",
@@ -155,14 +155,14 @@
           ]
         },
         {
-          "uuid": "7d0f92cb-8f2e-4b6a-a3c4-e19f5d8b0a21",
+          "uuid": "41c596a5-1010-4d5d-b47b-d55a639db00a",
           "type": "flexRow",
           "flexDirection": "row",
           "horizontalAlignment": "start",
           "verticalAlignment": "start",
           "components": [
             {
-              "uuid": "5fafee68-f3e0-4c59-8778-f74ffbf2992f",
+              "uuid": "a3f8d2e1-6b4c-4a9f-9e2d-1c7b5a8d3f60",
               "type": "dashletDataView",
               "title": "Images",
               "subtitle": "Artifact download status — click a row for the NodeProfile YAML, View to open its details in the app",
