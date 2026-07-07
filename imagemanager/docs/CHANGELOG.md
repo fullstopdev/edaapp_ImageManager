@@ -1,5 +1,18 @@
 # Changelog
 
+## v0.1.20
+
+**Dashboard and form UI polish (self-contained webui).**
+
+- **Information hierarchy:** KPI row spacing and a new “Inventory & imports” section divider separate overview cards from detail tables; the Failed KPI card gains a persistent err border and a `kpi-hot` highlight when failures are non-zero.
+- **Tables:** Sticky headers, horizontal scroll at `min-width: 720px`, ellipsis + `title` tooltips on long names/namespaces/URLs; status chips use a unified semantic palette (`--ok-*` / `--warn-*` / `--err-*` / `--info-*`) with dot indicators and human-readable labels (“In progress”, “Needs republish”, etc.).
+- **Empty & loading states:** Illustrated empty-state blocks for zero artifacts/imports (with Upload / URL Import actions) and structured error rows instead of bare `<tbody>` text.
+- **Tabs & badges:** `focus-visible` rings on tabs and sortable headers; Dashboard active-work count badge uses alert styling when in-flight work exists.
+- **Forms:** URL Import helper text; primary import button shows `aria-busy` spinner while the request is in flight.
+- **Notifications:** Snackbar and auth-banner loading states align with the same semantic color tokens as KPI cards and status chips.
+- **Responsive & a11y:** KPI grid wraps at 900px / 480px; `prefers-reduced-motion` respected; light-theme shadow overrides retained.
+- **Unchanged:** OAuth/session-watcher JS, upload/polling logic, and CSS variable names used by JS (`imagemanager-theme`, etc.).
+
 ## v0.1.19
 
 **Fix standalone-tab logout sync when EDA signs out (v0.1.18 regression).**

@@ -43,6 +43,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --chrome-top-bg:#0a0a0a; --chrome-top-fg:#f3f5f8; --chrome-top-muted:#9aa3b2;
     --chrome-line:#2a2a2a;
     --transition:180ms cubic-bezier(.4,0,.2,1);
+    --focus-ring:0 0 0 3px var(--accent-soft);
+    --table-min:720px;
     color-scheme:dark;
   }
   html[data-theme="light"] {
@@ -62,7 +64,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     --chrome-top-bg:#f7f9fd; --chrome-top-fg:#0b1119; --chrome-top-muted:#4a5563;
     --chrome-line:#e4e8ee;
     --transition:180ms cubic-bezier(.4,0,.2,1);
+    --focus-ring:0 0 0 3px var(--accent-soft);
+    --table-min:720px;
+    --shadow-sm:0 1px 2px rgba(16,24,36,.06);
+    --shadow-md:0 4px 14px rgba(16,24,36,.08);
+    --shadow-lg:0 12px 28px rgba(16,24,36,.12);
     color-scheme:light;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation-duration:.01ms !important; animation-iteration-count:1 !important;
+      transition-duration:.01ms !important;
+    }
   }
   * { box-sizing:border-box; }
   html, body { min-height:100%; }
@@ -247,15 +260,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .storage-fill.crit { background:linear-gradient(90deg,var(--eda-red-500),var(--danger-strong)); }
 
   /* Tables */
-  .table-wrap { overflow-x:auto; }
-  table.mtable { width:100%; border-collapse:collapse; font-size:13px; }
-  .mtable th, .mtable td { text-align:left; padding:11px 16px; border-bottom:1px solid var(--line); vertical-align:top; }
+  .table-wrap {
+    overflow-x:auto; -webkit-overflow-scrolling:touch;
+    border-radius:0 0 var(--radius-lg) var(--radius-lg);
+  }
+  table.mtable { width:100%; min-width:var(--table-min); border-collapse:collapse; font-size:13px; }
+  .mtable th, .mtable td { text-align:left; padding:10px 16px; border-bottom:1px solid var(--line); vertical-align:middle; }
   .mtable thead th {
+    position:sticky; top:0; z-index:2;
     color:var(--muted); font-weight:600; font-size:11px; text-transform:uppercase;
     letter-spacing:.06em; white-space:nowrap; background:var(--panel2);
+    box-shadow:0 1px 0 var(--line);
   }
   .mtable th.sortable { cursor:pointer; user-select:none; transition:color var(--transition); }
-  .mtable th.sortable:hover { color:var(--fg); }
+  .mtable th.sortable:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
   .mtable th.sortable .arr { opacity:0; margin-left:5px; font-size:10px; transition:opacity var(--transition); }
   .mtable th.sortable:hover .arr { opacity:.45; }
   .mtable th.sorted { color:var(--accent); }
@@ -266,7 +284,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .mtable tbody tr:hover { background:var(--row-hover); }
   .mtable tbody tr:last-child td { border-bottom:0; }
   td.mono, .mono { font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace; font-size:12px; }
-  .namecell { font-weight:600; }
+  .namecell {
+    font-weight:600; max-width:220px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap;
+  }
+  .mtable td:nth-child(3) { max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .mtable .url-cell { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
   /* Status chips */
   .chip {
@@ -296,7 +318,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .uprog.indet > div { width:40%; animation:indet 1.15s ease-in-out infinite; }
   .upload-status-cell { min-width:200px; }
   .reason { color:var(--err-fg); font-size:12px; margin-top:5px; }
-  .empty { color:var(--muted); padding:32px 16px; text-align:center; font-size:13px; }
+  .empty {
+    color:var(--muted); padding:36px 20px; text-align:center; font-size:13px; line-height:1.55;
+  }
+  .empty-state { display:flex; flex-direction:column; align-items:center; gap:10px; padding:40px 24px; }
+  .empty-state-icon {
+    width:44px; height:44px; border-radius:12px; display:flex; align-items:center; justify-content:center;
+    background:var(--neutral-bg); color:var(--muted); border:1px solid var(--neutral-bd);
+  }
+  .empty-state-icon svg { width:22px; height:22px; display:block; }
+  .empty-state-title { margin:0; font-size:14px; font-weight:600; color:var(--fg); }
+  .empty-state-hint { margin:0; max-width:360px; color:var(--muted); font-size:13px; line-height:1.5; }
+  .empty-state-actions { display:flex; flex-wrap:wrap; gap:8px; justify-content:center; margin-top:4px; }
   .os-tag {
     display:inline-block; padding:2px 8px; border-radius:999px; font-size:11px; font-weight:600;
     color:var(--muted); background:var(--panel2); border:1px solid var(--line); white-space:nowrap;
@@ -315,6 +348,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     cursor:pointer; transition:background var(--transition),border-color var(--transition),color var(--transition),transform .08s;
   }
   .iconbtn:hover { border-color:var(--accent); color:var(--accent); }
+  .iconbtn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   .iconbtn.primary { background:var(--accent); border-color:var(--accent); color:#fff; }
   .iconbtn.primary:hover { background:var(--accent2); border-color:var(--accent2); color:#fff; }
   .iconbtn.del { background:var(--danger); border-color:var(--danger); color:var(--on-danger); }
@@ -388,6 +422,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
     transform:rotate(45deg); pointer-events:none;
   }
   .helper { margin:6px 4px 0; font-size:11.5px; color:var(--muted); line-height:1.45; }
+  .helper.ok { color:var(--ok-fg); }
+  .helper.err { color:var(--err-fg); }
+  .tf.invalid input, .tf.invalid textarea { border-color:var(--err-bd); }
+  .tf.invalid input:focus, .tf.invalid textarea:focus { box-shadow:0 0 0 3px color-mix(in srgb, var(--err-bd) 35%, transparent); }
+  .btn.contained[aria-busy="true"] { position:relative; color:transparent; pointer-events:none; }
+  .btn.contained[aria-busy="true"]::after {
+    content:""; position:absolute; inset:0; margin:auto; width:16px; height:16px;
+    border:2px solid rgba(255,255,255,.35); border-top-color:#fff; border-radius:50%;
+    animation:spin .7s linear infinite;
+  }
 
   .filefield { margin-top:4px; }
   .filefield > .lbl { font-size:12px; color:var(--muted); font-weight:600; }
@@ -417,12 +461,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
     transition:transform .3s cubic-bezier(.2,.7,.3,1), opacity .3s, box-shadow .3s;
   }
   .snackbar.show { transform:translate(-50%,0); opacity:1; visibility:visible; }
-  .snackbar.ok { border-left-color:var(--eda-green-500); }
-  .snackbar.err { border-left-color:var(--eda-red-500); }
+  .snackbar.ok { border-left-color:var(--ok-bd); background:color-mix(in srgb, var(--snack-bg) 78%, var(--ok-bg)); }
+  .snackbar.err { border-left-color:var(--err-bd); background:color-mix(in srgb, var(--snack-bg) 78%, var(--err-bg)); }
+  .snackbar.loading, .snackbar.info { border-left-color:var(--info-bd); background:color-mix(in srgb, var(--snack-bg) 78%, var(--info-bg)); }
   .snackbar .stext { flex:1; font-size:13px; line-height:1.45; word-break:break-word; }
-  .snackbar .sdot { width:8px; height:8px; border-radius:50%; flex:none; }
-  .snackbar.ok .sdot { background:var(--eda-green-500); }
-  .snackbar.err .sdot { background:var(--eda-red-500); }
+  .snackbar .sdot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--muted); }
+  .snackbar.ok .sdot { background:var(--ok-fg); }
+  .snackbar.err .sdot { background:var(--err-fg); }
+  .snackbar.loading .sdot, .snackbar.info .sdot { background:var(--info-fg); animation:pulse 1.2s ease-in-out infinite; }
   .snackbar .saction {
     background:transparent; border:0; color:var(--snack-action);
     font:600 12px inherit; letter-spacing:.04em; text-transform:uppercase; cursor:pointer;
@@ -460,8 +506,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   .auth-banner.err .auth-banner-inner { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
   .auth-banner.loading .auth-banner-inner {
-    background:color-mix(in srgb, var(--panel) 88%, var(--accent) 12%);
-    color:var(--fg); border-color:color-mix(in srgb, var(--line) 70%, var(--accent));
+    background:var(--info-bg); color:var(--info-fg); border-color:var(--info-bd);
   }
   .auth-banner-body { flex:1; min-width:0; }
   .auth-banner-title { margin:0 0 3px; font-size:13px; font-weight:600; letter-spacing:.01em; }
@@ -484,11 +529,23 @@ INDEX_HTML = r"""<!DOCTYPE html>
     flex:1 1 auto; text-align:center; min-width:max-content;
   }
   .tab:hover { color:var(--fg); background:var(--state); }
+  .tab:focus { outline:none; }
+  .tab:focus-visible { box-shadow:var(--focus-ring); outline:none; z-index:1; position:relative; }
   .tab.active {
     color:#fff; background:var(--accent);
     box-shadow:0 2px 10px color-mix(in srgb, var(--accent) 38%, transparent);
     border:1px solid transparent;
   }
+  html[data-theme="light"] .tab.active { color:#fff; }
+  .tab .count {
+    display:inline-flex; align-items:center; justify-content:center; min-width:18px; height:18px;
+    padding:0 6px; margin-left:6px; border-radius:999px; font-size:10px; font-weight:700;
+    background:var(--neutral-bg); color:var(--muted); border:1px solid var(--neutral-bd);
+    vertical-align:middle; line-height:1;
+  }
+  .tab.active .count { background:rgba(255,255,255,.2); color:#fff; border-color:rgba(255,255,255,.35); }
+  .tab .count.count-alert { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
+  .tab.active .count.count-alert { background:#fff; color:var(--err-fg); border-color:#fff; }
   .tab-panel {
     display:none;
   }
@@ -504,15 +561,24 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   /* KPI overview cards (dashboard-first, cable-map style) */
   .kpi-grid {
-    display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:12px; margin-bottom:16px;
+    display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin-bottom:20px;
   }
-  @media (max-width:760px){ .kpi-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:900px){ .kpi-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
+  @media (max-width:480px){ .kpi-grid { grid-template-columns:1fr; } }
   .kpi-card {
     display:flex; align-items:center; gap:12px; padding:14px 16px;
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg);
-    box-shadow:var(--shadow-sm); transition:border-color var(--transition), transform var(--transition);
+    box-shadow:var(--shadow-sm); transition:border-color var(--transition), transform var(--transition), box-shadow var(--transition);
   }
   .kpi-card:hover { border-color:color-mix(in srgb,var(--line) 60%, var(--accent)); transform:translateY(-1px); }
+  .kpi-card.kpi-failed { border-color:color-mix(in srgb, var(--err-bd) 55%, var(--line)); }
+  .kpi-card.kpi-failed.kpi-hot {
+    border-color:var(--err-bd);
+    background:linear-gradient(135deg, var(--panel) 0%, color-mix(in srgb, var(--err-bg) 65%, var(--panel)) 100%);
+    box-shadow:var(--shadow-sm), inset 0 0 0 1px color-mix(in srgb, var(--err-bd) 40%, transparent);
+  }
+  .kpi-card.kpi-failed.kpi-hot .kpi-icon.err { box-shadow:0 0 0 1px var(--err-bd); }
+  .kpi-card.kpi-failed.kpi-hot .kpi-val { color:var(--err-fg); }
   .kpi-icon {
     width:38px; height:38px; flex:none; border-radius:10px;
     display:flex; align-items:center; justify-content:center;
@@ -526,6 +592,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     font-variant-numeric:tabular-nums; transition:color var(--transition); }
   .kpi-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
   .kpi-val.bump { animation:badgePop .35s ease; }
+  .detail-head { margin:6px 0 14px; padding-top:18px; border-top:1px solid var(--line); }
+  .detail-label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
 
   /* Platform ops strip (controller / storage / reconcile) */
   .ops-grid {
@@ -664,6 +732,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="tf">
         <input type="url" id="urlSource" placeholder=" " autocomplete="off">
         <label for="urlSource">Source URL (http or https)</label>
+        <div class="helper">Direct link to a vendor <span class="mono">.zip</span> the controller can download.</div>
       </div>
       <div class="tf select">
         <select id="urlNamespace" required>
@@ -678,6 +747,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <div class="tf">
         <textarea id="urlLicText" placeholder=" " rows="3" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
         <label for="urlLicText">License key (optional)</label>
+        <div class="helper">Paste an SR OS / SR Linux simulator license if the image requires one.</div>
       </div>
       <label class="chk-row"><input type="checkbox" id="urlInsecure"> Skip TLS certificate verification on source URL (lab only)</label>
       <div class="form-actions">
@@ -748,7 +818,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         </span>
         <div><div class="kpi-val" id="kpiActive">&mdash;</div><div class="kpi-label">In progress</div></div>
       </div>
-      <div class="kpi-card">
+      <div class="kpi-card kpi-failed" id="kpiFailedCard">
         <span class="kpi-icon err" aria-hidden="true">
           <svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5m0 3.4v.1M10.3 4l-8 14a2 2 0 001.7 3h16a2 2 0 001.7-3l-8-14a2 2 0 00-3.4 0z" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
@@ -782,6 +852,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       </div>
     </div>
     <div id="opsAlert" class="ops-alert" style="display:none" role="status" aria-live="polite"></div>
+    <div class="detail-head"><span class="detail-label">Inventory &amp; imports</span></div>
     <div class="status-grid">
     <div class="card storage-card">
       <div class="storage-row">
@@ -1274,6 +1345,24 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function isZip(name){ return /\.zip$/i.test(name||""); }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(m){
     return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]; }); }
+  var EMPTY_ICONS={
+    images:'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l8 4.4-8 4.4-8-4.4L12 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4.4 12.6L12 16.8l7.6-4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    link:'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 13a5 5 0 007.1 0l2-2a5 5 0 00-7.1-7.1l-1 1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 11a5 5 0 00-7.1 0l-2 2a5 5 0 007.1 7.1l1-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    warn:'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 8v5m0 3h.01M10.3 4h3.4L22 20H2L10.3 4z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+  };
+  function emptyStateHtml(cols, icon, title, hint, actions){
+    return '<tr><td colspan="'+cols+'" class="empty"><div class="empty-state" role="status">'+
+      '<div class="empty-state-icon">'+(EMPTY_ICONS[icon]||EMPTY_ICONS.images)+'</div>'+
+      '<p class="empty-state-title">'+esc(title)+'</p>'+
+      (hint?'<p class="empty-state-hint">'+hint+'</p>':'')+
+      (actions?'<div class="empty-state-actions">'+actions+'</div>':'')+
+      '</div></td></tr>';
+  }
+  function loadingRowHtml(cols, label){
+    return '<tr><td colspan="'+cols+'" class="empty"><div class="empty-state" role="status" aria-busy="true">'+
+      '<span class="auth-spinner" aria-hidden="true"></span>'+
+      '<p class="empty-state-title">'+esc(label||"Loading\u2026")+'</p></div></td></tr>';
+  }
   // Suggest a name from the filename; the NOS is detected server-side from the
   // zip contents, so this is just a friendly default the user may edit.
   // Names are always lowercase (Artifact + served path + NodeProfile name), so
@@ -1297,7 +1386,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   // ---------- snackbar ----------
   var snackbar=el("snackbar"), snackText=el("snackText"), snackTimer=null;
   function snack(kind, text, sticky){
-    snackbar.className = "snackbar show " + (kind==="ok"?"ok":"err");
+    var k = kind==="ok" ? "ok" : (kind==="loading" || kind==="info" ? "loading" : "err");
+    snackbar.className = "snackbar show " + k;
     snackText.textContent = text;
     if(snackTimer){ clearTimeout(snackTimer); snackTimer=null; }
     if(!sticky){ snackTimer=setTimeout(hideSnack, kind==="ok"?6000:9000); }
@@ -1686,6 +1776,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(s === "NoArtifact" && withinUploadGrace(row && row.storedAt)) return "InProgress";
     return s || "NoArtifact";
   }
+  function chipLabel(c){
+    var labels={
+      Available:"Available", Ready:"Ready", InProgress:"In progress",
+      Failed:"Failed", Error:"Failed", NoArtifact:"Needs republish",
+      AsvrOnly:"Asvr only", NoLocalCopy:"No local copy",
+      Uploading:"Uploading", Unzipping:"Un-zipping", Processing:"Finalizing", Pending:"Pending"
+    };
+    return labels[c] || c || "Unknown";
+  }
   function chip(s, rowKey){
     var c=s||"NoArtifact";
     var bump = "";
@@ -1694,10 +1793,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(prev && prev !== c) bump = ' bump';
       lastRowStatus[rowKey] = c;
     }
-    if(c==="NoArtifact") return '<span class="chip c-NoArtifact'+bump+'" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">Needs republish</span>';
-    if(c==="AsvrOnly") return '<span class="chip c-AsvrOnly'+bump+'" title="eda-asvr still hosts this image but Image Manager PVC has no durable copy — re-upload to restore">Asvr only</span>';
-    if(c==="NoLocalCopy") return '<span class="chip c-NoLocalCopy'+bump+'" title="meta.json or image files missing from Image Manager PVC — re-upload to restore">No local copy</span>';
-    return '<span class="chip c-'+c+bump+'">'+esc(c)+'</span>';
+    if(c==="NoArtifact") return '<span class="chip c-NoArtifact'+bump+'" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">'+chipLabel(c)+'</span>';
+    if(c==="AsvrOnly") return '<span class="chip c-AsvrOnly'+bump+'" title="eda-asvr still hosts this image but Image Manager PVC has no durable copy — re-upload to restore">'+chipLabel(c)+'</span>';
+    if(c==="NoLocalCopy") return '<span class="chip c-NoLocalCopy'+bump+'" title="meta.json or image files missing from Image Manager PVC — re-upload to restore">'+chipLabel(c)+'</span>';
+    return '<span class="chip c-'+c+bump+'">'+esc(chipLabel(c))+'</span>';
   }
   function fmtElapsed(sec){ sec=Math.max(0,Math.floor(sec)); var m=Math.floor(sec/60), s=sec%60;
     return m+":"+(s<10?"0":"")+s; }
@@ -1733,13 +1832,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!badge) return;
     if(active > 0){
       badge.style.display="inline-flex";
+      badge.classList.add("count-alert");
       if(badge.textContent !== String(active)){
         badge.textContent=active;
         badge.classList.remove("pop");
         void badge.offsetWidth;
         badge.classList.add("pop");
       }
-    } else { badge.style.display="none"; badge.classList.remove("pop"); }
+    } else { badge.style.display="none"; badge.classList.remove("pop","count-alert"); }
   }
 
   // ---------- KPI overview (dashboard cards) ----------
@@ -1765,6 +1865,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     setKpi("kpiReady", ready);
     setKpi("kpiActive", act);
     setKpi("kpiFailed", failed);
+    var fc = el("kpiFailedCard");
+    if(fc) fc.classList.toggle("kpi-hot", failed > 0);
   }
 
   function pendStatusHtml(p){
@@ -1797,8 +1899,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'" data-name="'+esc(t.name||"")+'">Details</button> ')
       :'';
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
-    return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
-      '</td><td>'+esc(t.namespace)+
+    return '<tr><td class="mono namecell" title="'+esc(t.displayName||t.name)+'">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
+      '</td><td title="'+esc(t.namespace)+'">'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(displayStatus, rowKey)+reason+
       '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
   }
@@ -1997,9 +2099,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     });
     updateKpis();
     if(!(pend.length+serverRows.length)){
-      rows.innerHTML='<tr><td colspan="6" class="empty">No images yet.<br>'+
-        '<button class="btn contained ripple" data-goto="upload">Upload an image</button> '+
-        '<button class="btn text ripple" data-goto="url-import">Import from URL</button></td></tr>';
+      rows.innerHTML=emptyStateHtml(6, "images", "No images yet",
+        "Upload a vendor <span class=\"mono\">.zip</span> or import from a URL to create your first Artifact.",
+        '<button class="btn contained ripple" data-goto="upload">Upload image</button>'+
+        '<button class="btn text ripple" data-goto="url-import">Import from URL</button>');
       el("statusCount").style.display="none"; return;
     }
     rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
@@ -2016,7 +2119,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function renderImports(list){
     lastImports = list || [];
     if(!list || !list.length){
-      importRows.innerHTML='<tr><td colspan="5" class="empty">No URL imports yet.</td></tr>';
+      importRows.innerHTML=emptyStateHtml(5, "link", "No URL imports yet",
+        "Remote imports appear here while the controller downloads and registers the image.",
+        '<button class="btn text ripple" data-goto="url-import">Start a URL import</button>');
       if(activeTab === "status" && Object.keys(pendingUploads).length) render();
       return;
     }
@@ -2025,8 +2130,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         ? (' <button class="btn text ripple" data-act="retry-import" data-url="'+esc(i.sourceUrl)+'"'+
            ' data-ns="'+esc(i.namespace)+'" data-name="'+esc(i.specName||"")+'">Replace</button>')
         : "";
-      return '<tr><td class="mono">'+esc(i.name)+'</td><td>'+esc(i.namespace)+'</td>'+
-        '<td class="mono">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase, i.name+"|"+i.namespace)+'</td>'+
+      return '<tr><td class="mono namecell">'+esc(i.name)+'</td><td>'+esc(i.namespace)+'</td>'+
+        '<td class="mono url-cell" title="'+esc(i.sourceUrl)+'">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase, i.name+"|"+i.namespace)+'</td>'+
         '<td>'+esc(i.message||"")+retry+'</td></tr>';
     }).join("");
     if(activeTab === "status") render();
@@ -2039,14 +2144,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
         return handleAuthLoss().then(function(expired){ if(!expired) refreshImports(); });
       }
       if(!res.ok){
-        importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
-          "Could not load URL imports (HTTP "+res.status+").")+'</td></tr>';
+        importRows.innerHTML=emptyStateHtml(5, "warn", "Could not load URL imports",
+          esc("HTTP "+res.status+" from the controller."), "");
         return;
       }
       renderImports((res.body||{}).imports||[]);
     }).catch(function(e){
-      importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
-        "Failed to load URL imports: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
+      importRows.innerHTML=emptyStateHtml(5, "warn", "Could not reach imports API",
+        esc((e&&e.message?e.message:"network error")+"."), "");
     });
   }
 
@@ -2095,6 +2200,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function startUrlImport(payload, replace){
     var body=Object.assign({}, payload);
     if(replace) body.replace=true;
+    var importBtn=el("urlImportBtn");
+    if(importBtn){ importBtn.setAttribute("aria-busy","true"); importBtn.disabled=true; }
     return fetchJson(api("/api/url-import"), {
       method:"POST",
       headers:{"Content-Type":"application/json"},
@@ -2111,6 +2218,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       } else {
         snack("err",(res.body&&res.body.error)||("Import failed (HTTP "+res.status+")"), true);
       }
+    }).finally(function(){
+      if(importBtn){ importBtn.removeAttribute("aria-busy"); importBtn.disabled=false; }
     });
   }
 
@@ -2214,8 +2323,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
       if(!res.ok){
         if(!opts.silent){
-          rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
-            "Could not load artifacts (HTTP "+res.status+").")+'</td></tr>';
+          rows.innerHTML=emptyStateHtml(6, "warn", "Could not load artifacts",
+            esc("HTTP "+res.status+" from the controller. Try Refresh or sign in again."), "");
           snack("err","Could not load artifacts (HTTP "+res.status+").", true);
         }
         return;
@@ -2233,8 +2342,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       tryPendingDetails();
     }).catch(function(e){
       if(!opts.silent){
-        rows.innerHTML='<tr><td colspan="6" class="empty">'+esc(
-          "Failed to load artifacts: "+(e&&e.message?e.message:"network error"))+'</td></tr>';
+        rows.innerHTML=emptyStateHtml(6, "warn", "Could not reach artifacts API",
+          esc((e&&e.message?e.message:"network error")+". Check your connection and try Refresh."), "");
       }
     });
   }
