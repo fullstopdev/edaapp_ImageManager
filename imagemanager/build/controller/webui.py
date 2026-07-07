@@ -79,21 +79,30 @@ INDEX_HTML = r"""<!DOCTYPE html>
     transform:scale(0); pointer-events:none; animation:ink .55s cubic-bezier(.4,0,.2,1); }
   @keyframes ink { to { transform:scale(1); opacity:0; } }
   @keyframes fadeIn { from { opacity:0; transform:translateY(6px); } to { opacity:1; transform:none; } }
-  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+  @keyframes fadeOut { from { opacity:1; } to { opacity:0; transform:translateY(-4px); } }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.35} }
+  @keyframes liveGlow { 0%,100%{box-shadow:0 0 0 0 transparent} 50%{box-shadow:0 0 0 3px color-mix(in srgb,var(--eda-green-500) 22%,transparent)} }
   @keyframes badgePop { 0%{transform:scale(1)} 50%{transform:scale(1.15)} 100%{transform:scale(1)} }
   @keyframes indet { 0%{margin-left:-42%} 100%{margin-left:102%} }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  @keyframes shimmer { 0%{background-position:100% 0} 100%{background-position:-100% 0} }
+  @keyframes tabIn { from { opacity:.88; } to { opacity:1; } }
+  @keyframes chipPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
 
   /* AppBar — single EDA / cable-map style top bar */
   .appbar {
-    position:sticky; top:0; z-index:30; height:48px; padding:0 20px;
-    background:var(--chrome-top-bg); color:var(--chrome-top-fg);
+    position:sticky; top:0; z-index:30; height:52px; padding:0 20px;
+    background:color-mix(in srgb, var(--chrome-top-bg) 92%, transparent);
+  backdrop-filter:saturate(1.2) blur(10px); -webkit-backdrop-filter:saturate(1.2) blur(10px);
+    color:var(--chrome-top-fg);
     border-bottom:1px solid var(--chrome-line);
     display:flex; align-items:center; gap:16px; flex-shrink:0;
+    box-shadow:0 1px 0 color-mix(in srgb, var(--chrome-line) 55%, transparent);
   }
   .appbar-brand { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 auto; }
   .nokia-logo { height:14px; width:auto; display:block; flex:none; object-fit:contain; }
   .appbar-title {
-    font-size:15px; font-weight:400; letter-spacing:.01em; line-height:1.2;
+    font-size:15px; font-weight:500; letter-spacing:.015em; line-height:1.2;
     color:var(--chrome-top-fg); white-space:nowrap;
   }
   @media (max-width:640px){ .appbar { padding:0 14px; } .appbar-title { font-size:13px; } }
@@ -146,14 +155,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
     transition:background var(--transition);
   }
   .live-pill.active .live-dot { background:var(--eda-green-500); animation:pulse 1.4s ease-in-out infinite; }
+  .live-pill.active { animation:liveGlow 2.4s ease-in-out infinite; }
   @media (max-width:640px){ .live-pill .live-label { display:none; } }
   .user-chip {
     display:inline-flex; align-items:center; gap:8px;
     padding:3px 12px 3px 4px; margin-left:2px;
     border-radius:999px; background:var(--panel); border:1px solid var(--line);
     color:var(--fg); font-size:12px; font-weight:500;
-    transition:border-color var(--transition), background var(--transition);
+    transition:border-color var(--transition), background var(--transition), opacity .28s ease, transform .28s ease;
   }
+  .user-chip.appear { animation:fadeIn .38s cubic-bezier(.2,.7,.3,1); }
+  .user-chip.leaving { opacity:0; transform:translateY(-2px); }
   .user-chip:hover { border-color:color-mix(in srgb, var(--line) 55%, var(--accent)); }
   .user-chip .avatar {
     width:26px; height:26px; border-radius:50%;
@@ -261,7 +273,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
     display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px;
     font-size:11px; font-weight:600; border:1px solid transparent; white-space:nowrap;
     letter-spacing:.02em;
+    transition:background var(--transition), color var(--transition), border-color var(--transition), transform .22s ease;
   }
+  .chip.bump { animation:chipPulse .42s ease; }
   .chip::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
   .c-Available, .c-Ready { background:var(--ok-bg); color:var(--ok-fg); border-color:var(--ok-bd); }
   .c-InProgress { background:var(--info-bg); color:var(--info-fg); border-color:var(--info-bd); }
@@ -275,11 +289,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     animation:pulse 1.1s ease-in-out infinite;
   }
   .upinfo { margin-top:6px; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
-  .uprog { margin-top:6px; height:4px; width:180px; max-width:100%; background:var(--panel2);
+  .uprog { margin-top:8px; height:5px; width:200px; max-width:100%; background:var(--panel2);
     border-radius:999px; overflow:hidden; border:1px solid var(--line); }
   .uprog > div { height:100%; background:linear-gradient(90deg,var(--accent),var(--eda-teal-400));
-    border-radius:999px; transition:width .15s; }
+    border-radius:999px; transition:width .22s cubic-bezier(.4,0,.2,1); }
   .uprog.indet > div { width:40%; animation:indet 1.15s ease-in-out infinite; }
+  .upload-status-cell { min-width:200px; }
   .reason { color:var(--err-fg); font-size:12px; margin-top:5px; }
   .empty { color:var(--muted); padding:32px 16px; text-align:center; font-size:13px; }
   .os-tag {
@@ -394,12 +409,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .snackbar {
     position:fixed; left:50%; bottom:24px; transform:translate(-50%,140%);
     z-index:60; min-width:300px; max-width:min(560px,calc(100vw - 32px));
-    background:var(--snack-bg); color:var(--snack-fg); border:1px solid var(--line);
+    background:var(--snack-bg); color:var(--snack-fg);
+    border:1px solid var(--line); border-left:3px solid var(--accent);
     border-radius:var(--radius-md); box-shadow:var(--shadow-lg);
-    padding:12px 12px 12px 16px; display:flex; align-items:center; gap:12px;
-    opacity:0; visibility:hidden; transition:transform .26s cubic-bezier(.2,.7,.3,1), opacity .26s;
+    padding:13px 12px 13px 16px; display:flex; align-items:center; gap:12px;
+    opacity:0; visibility:hidden;
+    transition:transform .3s cubic-bezier(.2,.7,.3,1), opacity .3s, box-shadow .3s;
   }
   .snackbar.show { transform:translate(-50%,0); opacity:1; visibility:visible; }
+  .snackbar.ok { border-left-color:var(--eda-green-500); }
+  .snackbar.err { border-left-color:var(--eda-red-500); }
   .snackbar .stext { flex:1; font-size:13px; line-height:1.45; word-break:break-word; }
   .snackbar .sdot { width:8px; height:8px; border-radius:50%; flex:none; }
   .snackbar.ok .sdot { background:var(--eda-green-500); }
@@ -414,40 +433,69 @@ INDEX_HTML = r"""<!DOCTYPE html>
   /* Embedded mode — EDA shell already provides platform chrome */
   html.eda-embedded .appbar { display:none; }
   html.eda-embedded .app-shell { max-width:none; padding:16px 18px 40px; min-height:60vh; }
-  #boot-shell { padding:12px 4px 8px; color:var(--muted); font-size:13px; }
-  #boot-shell.hide { display:none; }
-  .auth-banner {
-    display:none; margin:0 0 14px; padding:10px 14px; border-radius:var(--radius-md);
-    background:var(--info-bg); color:var(--info-fg); border:1px solid var(--info-bd);
-    font-size:13px; line-height:1.45;
+  #boot-shell {
+    display:flex; align-items:center; gap:12px;
+    padding:14px 16px; margin:0 0 16px;
+    border:1px solid var(--line); border-radius:var(--radius-lg);
+    background:var(--panel); color:var(--muted); font-size:13px;
+    transition:opacity .32s ease, transform .32s ease, max-height .32s ease, margin .32s ease, padding .32s ease, border-width .32s ease;
+    max-height:80px; overflow:hidden;
   }
-  .auth-banner.show { display:block; }
-  .auth-banner.err { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
-  .auth-banner .auth-actions { display:inline-flex; gap:8px; margin-left:12px; vertical-align:middle; flex-wrap:wrap; }
+  #boot-shell.hide { opacity:0; transform:translateY(-6px); max-height:0; margin:0; padding:0; border-width:0; pointer-events:none; }
+  .auth-spinner {
+    width:18px; height:18px; border:2px solid var(--line);
+    border-top-color:var(--accent); border-radius:50%;
+    animation:spin .72s linear infinite; flex:none;
+  }
+  .auth-banner {
+    display:grid; grid-template-rows:0fr; opacity:0; margin:0;
+    transition:grid-template-rows .3s ease, opacity .3s ease, margin .3s ease;
+  }
+  .auth-banner.show { grid-template-rows:1fr; opacity:1; margin:0 0 16px; }
+  .auth-banner-inner {
+    overflow:hidden; display:flex; align-items:flex-start; gap:12px;
+    padding:12px 16px; border-radius:var(--radius-md);
+    border:1px solid var(--info-bd); background:var(--info-bg); color:var(--info-fg);
+    font-size:13px; line-height:1.5; animation:fadeIn .32s ease;
+  }
+  .auth-banner.err .auth-banner-inner { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
+  .auth-banner.loading .auth-banner-inner {
+    background:color-mix(in srgb, var(--panel) 88%, var(--accent) 12%);
+    color:var(--fg); border-color:color-mix(in srgb, var(--line) 70%, var(--accent));
+  }
+  .auth-banner-body { flex:1; min-width:0; }
+  .auth-banner-title { margin:0 0 3px; font-size:13px; font-weight:600; letter-spacing:.01em; }
+  .auth-banner-msg { margin:0; }
+  .auth-banner .auth-actions { display:inline-flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
 
   /* Tabs — EDA-style segmented bar */
   .tabs {
     display:flex; gap:2px; margin:0 0 16px; padding:4px;
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-md);
     overflow-x:auto; scrollbar-width:none;
+    box-shadow:inset 0 1px 0 color-mix(in srgb, var(--fg) 4%, transparent);
   }
   .tabs::-webkit-scrollbar { display:none; }
   .tab {
     background:transparent; border:0; border-radius:var(--radius-sm);
     color:var(--muted); cursor:pointer; font:600 13px inherit; padding:9px 16px;
-    white-space:nowrap; transition:background var(--transition), color var(--transition), box-shadow var(--transition);
+    white-space:nowrap;
+    transition:background var(--transition), color var(--transition), box-shadow var(--transition), transform .12s;
     flex:1 1 auto; text-align:center; min-width:max-content;
   }
   .tab:hover { color:var(--fg); background:var(--state); }
   .tab.active {
     color:#fff; background:var(--accent);
-    box-shadow:0 2px 8px rgba(0,90,255,.35); border:1px solid transparent;
+    box-shadow:0 2px 10px color-mix(in srgb, var(--accent) 38%, transparent);
+    border:1px solid transparent;
   }
   .tab-panel {
-    display:none; opacity:0; transform:translateY(4px);
-    transition:opacity .22s ease, transform .22s ease;
+    display:none;
   }
-  .tab-panel.active { display:block; opacity:1; transform:none; animation:fadeIn .28s ease; }
+  .tab-panel.active {
+    display:block;
+    animation:tabIn .24s ease;
+  }
   .form-actions { display:flex; justify-content:flex-end; gap:8px; margin-top:18px; padding-top:4px; }
   .status-meta { font-size:12.5px; color:var(--muted); margin:0 0 14px; line-height:1.5; }
   .status-meta .mono { color:var(--fg); }
@@ -487,9 +535,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   .ops-card {
     padding:14px 16px; background:var(--panel); border:1px solid var(--line);
     border-radius:var(--radius-lg); box-shadow:var(--shadow-sm);
-    transition:border-color var(--transition), transform var(--transition);
+    transition:border-color var(--transition), transform var(--transition), box-shadow var(--transition);
   }
-  .ops-card:hover { border-color:color-mix(in srgb,var(--line) 55%, var(--accent)); }
+  .ops-card:hover { border-color:color-mix(in srgb,var(--line) 55%, var(--accent)); box-shadow:var(--shadow-md); transform:translateY(-1px); }
   .ops-head { display:flex; align-items:center; gap:8px; font-size:11px; font-weight:700;
     color:var(--muted); text-transform:uppercase; letter-spacing:.08em; margin-bottom:8px; }
   .ops-icon { width:28px; height:28px; border-radius:8px; display:flex; align-items:center;
@@ -553,12 +601,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
       <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></svg>
     </button>
     <span id="userInfo" class="user-chip" style="display:none"><span class="avatar" id="avatar"></span><span class="uname" id="uname"></span></span>
-    <a id="signoutLink" class="btn text subtle ripple" href="#" title="Sign out of Image Manager">Sign out</a>
+    <a id="signoutLink" class="btn text subtle ripple" href="#" title="Sign out of Image Manager" style="display:none">Sign out</a>
   </div>
 </header>
 
 <main class="app-shell">
-  <div id="boot-shell" role="status">Loading Image Manager&hellip;</div>
+  <div id="boot-shell" role="status" aria-busy="true">
+    <span class="auth-spinner" aria-hidden="true"></span>
+    <span>Loading Image Manager&hellip;</span>
+  </div>
   <div id="authBanner" class="auth-banner" role="status" aria-live="polite"></div>
 
   <nav class="tabs" role="tablist" aria-label="Image Manager sections">
@@ -880,6 +931,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var authLoss401Streak = 0;
   var AUTH_LOSS_MIN_STREAK = 2;
   var AUTH_LOSS_UPLOAD_STREAK = 3;
+  var authBannerHideTimer = null;
+  var lastRowStatus = {};
 
   function navigateTo(url){
     try {
@@ -893,38 +946,91 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   function showAuthUser(user){
     if(!user) return;
-    var ui=el("userInfo"); if(ui) ui.style.display="inline-flex";
+    var ui=el("userInfo"), so=el("signoutLink");
+    if(ui){
+      ui.style.display="inline-flex";
+      ui.classList.remove("leaving");
+      ui.classList.add("appear");
+      setTimeout(function(){ ui.classList.remove("appear"); }, 420);
+    }
+    if(so) so.style.display="inline-flex";
     el("uname").textContent=user;
     el("avatar").textContent=(user||"?").slice(0,1);
   }
   function hideAuthUser(){
-    var ui=el("userInfo"); if(ui) ui.style.display="none";
-  }
-  function setAuthBanner(kind, text){
-    var b=el("authBanner");
-    if(!b) return;
-    if(!text){ b.className="auth-banner"; b.textContent=""; return; }
-    b.className="auth-banner show"+(kind==="err"?" err":"");
-    b.textContent=text;
-  }
-  function showSignInBanner(msg){
-    var b=el("authBanner");
-    if(!b) return;
-    b.className="auth-banner show err";
-    var html=esc(msg||"Sign in required.");
-    html+='<span class="auth-actions">'+
-      '<button type="button" class="btn text subtle ripple" id="authRetryBtn">Try again</button>';
-    if(!embedded){
-      html+='<button type="button" class="btn contained ripple" id="authSignInBtn">Sign in</button>';
+    var ui=el("userInfo"), so=el("signoutLink");
+    if(ui){
+      ui.classList.add("leaving");
+      setTimeout(function(){
+        ui.style.display="none";
+        ui.classList.remove("leaving");
+      }, 220);
     }
-    html+='</span>';
-    b.innerHTML=html;
+    if(so) so.style.display="none";
+  }
+  function authBannerInner(kind, title, msg, actionsHtml){
+    var lead = kind==="loading"
+      ? '<span class="auth-spinner" aria-hidden="true"></span>'
+      : "";
+    return '<div class="auth-banner-inner">'+lead+
+      '<div class="auth-banner-body">'+
+      (title?'<p class="auth-banner-title">'+esc(title)+'</p>':"")+
+      '<p class="auth-banner-msg">'+esc(msg)+'</p>'+
+      (actionsHtml||"")+
+      '</div></div>';
+  }
+  function bindAuthBannerActions(){
     var retryBtn=el("authRetryBtn");
     if(retryBtn) retryBtn.addEventListener("click", retrySignIn);
     if(!embedded){
       var signInBtn=el("authSignInBtn");
       if(signInBtn) signInBtn.addEventListener("click", function(){ navigateTo(apiBase + "/oauth/login"); });
     }
+  }
+  function setAuthBanner(kind, text, opts){
+    opts = opts || {};
+    var b=el("authBanner");
+    if(!b) return;
+    if(authBannerHideTimer){ clearTimeout(authBannerHideTimer); authBannerHideTimer=null; }
+    if(!text){
+      if(b.classList.contains("show") && !opts.immediate){
+        b.classList.remove("show");
+        authBannerHideTimer=setTimeout(function(){
+          b.className="auth-banner";
+          b.innerHTML="";
+        }, 300);
+        return;
+      }
+      b.className="auth-banner";
+      b.innerHTML="";
+      return;
+    }
+    var cls="auth-banner show";
+    if(kind==="err") cls+=" err";
+    else if(kind==="loading") cls+=" loading";
+    b.className=cls;
+    b.innerHTML=authBannerInner(kind, opts.title||null, text, opts.actionsHtml||"");
+    if(opts.actionsHtml) bindAuthBannerActions();
+  }
+  function showSignInBanner(msg){
+    var actions='<span class="auth-actions">'+
+      '<button type="button" class="btn text subtle ripple" id="authRetryBtn">Try again</button>';
+    if(!embedded){
+      actions+='<button type="button" class="btn contained ripple" id="authSignInBtn">Sign in</button>';
+    }
+    actions+='</span>';
+    setAuthBanner("err", msg||"Your EDA session has ended. Sign in again to continue.", {
+      title: "Sign-in required",
+      actionsHtml: actions
+    });
+  }
+  function onAuthReady(user){
+    setAuthBanner(null);
+    if(user) showAuthUser(user);
+    authReady = true;
+    authBootstrapComplete = true;
+    syncLiveIndicator();
+    startSessionWatchers();
   }
   function clearServerSession(){
     return fetch(api("/oauth/session/logout"), Object.assign({ method:"POST" }, FETCH_OPTS))
@@ -947,7 +1053,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function bootDone(){
     var b = document.getElementById("boot-shell");
-    if(b) b.classList.add("hide");
+    if(b){
+      b.setAttribute("aria-busy", "false");
+      b.classList.add("hide");
+    }
   }
   function showFatal(msg){
     bootDone();
@@ -1103,13 +1212,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
     scheduleSessionCheck();
   }
   function retrySignIn(){
-    setAuthBanner("info", "Signing in\u2026");
+    setAuthBanner("loading", "Signing in\u2026");
     if(embedded){
       try {
         if(window.top && window.top !== window.self){ window.top.location.reload(); return; }
       } catch(e){}
     }
-    navigateTo(apiBase + "/oauth/login");
+    setTimeout(function(){ navigateTo(apiBase + "/oauth/login"); }, 160);
   }
   function flushDeferredSessionLoss(){
     if(!deferredSessionLoss || sessionInterruptBlocked()) return;
@@ -1123,7 +1232,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   if(signout){
     signout.addEventListener("click", function(e){
       if(e && e.preventDefault) e.preventDefault();
-      navigateTo(apiBase + "/oauth/logout");
+      authReady = false;
+      syncLiveIndicator();
+      hideAuthUser();
+      setAuthBanner("loading", "Signing out\u2026");
+      setTimeout(function(){ navigateTo(apiBase + "/oauth/logout"); }, 180);
     });
   }
 
@@ -1150,9 +1263,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       t.setAttribute("aria-selected", on ? "true" : "false");
     });
     document.querySelectorAll(".tab-panel").forEach(function(p){
-      var on = p.id === "panel-" + name;
-      p.classList.toggle("active", on);
-      if(on){ p.style.animation = "none"; void p.offsetWidth; p.style.animation = ""; }
+      p.classList.toggle("active", p.id === "panel-" + name);
     });
     if(name === "status"){ refreshArtifacts(); refreshImports(); }
     if(name === "settings"){ loadSettings(); }
@@ -1314,13 +1425,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     bootDone();
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
-    if(c.user) showAuthUser(c.user);
     if(c.version){
       var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
-    authReady = true;
-    authBootstrapComplete = true;
-    startSessionWatchers();
+    onAuthReady(c.user || null);
     var defaultNs=(c.defaultArtifactNamespace||"").trim();
     fetchJson(api("/api/namespaces")).then(function(nsRes){
       if(nsRes.status===401) return;
@@ -1573,12 +1681,18 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
     return l?('<span class="os-tag">'+esc(l)+'</span>'):('<span class="os-empty">&mdash;</span>');
   }
-  function chip(s){
+  function chip(s, rowKey){
     var c=s||"NoArtifact";
-    if(c==="NoArtifact") return '<span class="chip c-NoArtifact" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">Needs republish</span>';
-    if(c==="AsvrOnly") return '<span class="chip c-AsvrOnly" title="eda-asvr still hosts this image but Image Manager PVC has no durable copy — re-upload to restore">Asvr only</span>';
-    if(c==="NoLocalCopy") return '<span class="chip c-NoLocalCopy" title="meta.json or image files missing from Image Manager PVC — re-upload to restore">No local copy</span>';
-    return '<span class="chip c-'+c+'">'+esc(c)+'</span>';
+    var bump = "";
+    if(rowKey){
+      var prev = lastRowStatus[rowKey];
+      if(prev && prev !== c) bump = ' bump';
+      lastRowStatus[rowKey] = c;
+    }
+    if(c==="NoArtifact") return '<span class="chip c-NoArtifact'+bump+'" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">Needs republish</span>';
+    if(c==="AsvrOnly") return '<span class="chip c-AsvrOnly'+bump+'" title="eda-asvr still hosts this image but Image Manager PVC has no durable copy — re-upload to restore">Asvr only</span>';
+    if(c==="NoLocalCopy") return '<span class="chip c-NoLocalCopy'+bump+'" title="meta.json or image files missing from Image Manager PVC — re-upload to restore">No local copy</span>';
+    return '<span class="chip c-'+c+bump+'">'+esc(c)+'</span>';
   }
   function fmtElapsed(sec){ sec=Math.max(0,Math.floor(sec)); var m=Math.floor(sec/60), s=sec%60;
     return m+":"+(s<10?"0":"")+s; }
@@ -1665,10 +1779,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function pendingRowHtml(p){
     return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td><span class="os-empty">&mdash;</span></td><td>'+esc(p.namespace)+
-      '</td><td class="num">'+fmtBytes(p.total)+'</td><td id="upstat-'+p.key+'">'+pendStatusHtml(p)+
+      '</td><td class="num">'+fmtBytes(p.total)+'</td><td class="upload-status-cell" id="upstat-'+p.key+'">'+pendStatusHtml(p)+
       '</td><td></td></tr>';
   }
   function serverRowHtml(t){
+    var rowKey=(t.uploadId||t.name||t.displayName||"")+"|"+(t.namespace||"");
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
@@ -1678,7 +1793,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
     return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
       '</td><td>'+esc(t.namespace)+
-      '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus)+reason+
+      '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus, rowKey)+reason+
       '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
   }
 
@@ -1905,7 +2020,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
            ' data-ns="'+esc(i.namespace)+'" data-name="'+esc(i.specName||"")+'">Replace</button>')
         : "";
       return '<tr><td class="mono">'+esc(i.name)+'</td><td>'+esc(i.namespace)+'</td>'+
-        '<td class="mono">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase)+'</td>'+
+        '<td class="mono">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase, i.name+"|"+i.namespace)+'</td>'+
         '<td>'+esc(i.message||"")+retry+'</td></tr>';
     }).join("");
     if(activeTab === "status") render();

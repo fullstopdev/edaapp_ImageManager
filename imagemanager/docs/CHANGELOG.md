@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.11
+
+**UI polish and smoother auth/session UX.**
+
+- **Design refresh:** Refined app bar (backdrop blur, taller chrome), live indicator glow pulse, KPI/ops card hover depth, cleaner tab transitions, accent snackbar toasts, and upload progress bars with smoother width transitions.
+- **Auth banner component:** Consolidated sign-in, signing-in, signing-out, and error states into one animated banner with spinner, title, and action buttons.
+- **Session transitions:** Authenticated bootstrap fades out the loading shell and reveals the user chip without flash; sign-out shows a brief "Signing out…" state; auth banner dismisses with a smooth collapse animation.
+- **Reactive status:** Status chips pulse briefly when a row's status changes during live polling.
+
 ## v0.1.10
 
 **Fix recurring false auth interruptions during upload/reconcile.**
