@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.10
+
+**Fix recurring false auth interruptions during upload/reconcile.**
+
+- **Root cause:** a single transient `401` from polling/status endpoints could still trigger the auth-loss path while upload finalization/reconcile was in progress, even when the EDA session remained valid and the Artifact soon became `Available`.
+- **Confirmed-expiry gate:** UI auth-loss handling now requires a multi-hit `401` streak plus dual endpoint confirmation (`/api/config` and `/api/settings`) before showing sign-in-required state.
+- **Upload/reconcile separation:** active upload and pending-reconcile states now suppress hard auth transitions unless expiry is confirmed; successful probes reset auth-loss suspicion automatically.
+- **Status UX consistency:** when a pending upload resolves to `Available/Ready`, auth-loss suspicion is cleared so users do not see contradictory expiry behavior after a successful finalize.
+
 ## v0.1.9
 
 **Fix artifact API hard-fail regression during status aggregation.**

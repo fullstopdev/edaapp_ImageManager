@@ -876,6 +876,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var uploadSessionLost = false;
   var uploadAuthProbeInFlight = false;
   var uploadAuth401Streak = 0;
+  var authConfirmInFlight = false;
+  var authLoss401Streak = 0;
+  var AUTH_LOSS_MIN_STREAK = 2;
+  var AUTH_LOSS_UPLOAD_STREAK = 3;
 
   function navigateTo(url){
     try {
@@ -961,28 +965,42 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function resetUploadAuthSignals(){
     uploadAuth401Streak = 0;
+    authLoss401Streak = 0;
+  }
+  function authLossThreshold(){
+    return uploadInFlight() ? AUTH_LOSS_UPLOAD_STREAK : AUTH_LOSS_MIN_STREAK;
+  }
+  function confirmAuthExpiryFrom401(){
+    if(authConfirmInFlight) return Promise.resolve(false);
+    authLoss401Streak += 1;
+    if(authLoss401Streak < authLossThreshold()) return Promise.resolve(false);
+    authConfirmInFlight = true;
+    var probe = Object.assign({ cache: "no-store" }, FETCH_OPTS);
+    return Promise.all([
+      fetch(api("/api/config"), probe).then(function(r){ return r.status; }).catch(function(){ return 0; }),
+      fetch(api("/api/settings"), probe).then(function(r){ return r.status; }).catch(function(){ return 0; })
+    ]).then(function(statuses){
+      var denied = statuses.filter(function(st){ return st === 401; }).length;
+      var recovered = statuses.some(function(st){ return st === 200 || st === 204; });
+      if(denied >= 2 && !recovered) return true;
+      if(recovered) {
+        uploadSessionLost = false;
+        authReady = true;
+        syncLiveIndicator();
+      }
+      resetUploadAuthSignals();
+      return false;
+    }).finally(function(){
+      authConfirmInFlight = false;
+    });
   }
   function verifyUploadSessionLoss(){
     if(uploadSessionLost || uploadAuthProbeInFlight) return;
     uploadAuthProbeInFlight = true;
-    fetch(api("/api/config"), Object.assign({ cache: "no-store" }, FETCH_OPTS)).then(function(r){
-      if(r.status !== 401){
-        resetUploadAuthSignals();
-        if(r.status === 200){ uploadSessionLost = false; authReady = true; syncLiveIndicator(); }
-        return;
-      }
+    confirmAuthExpiryFrom401().then(function(expired){
+      if(!expired) return;
       uploadAuth401Streak += 1;
-      if(uploadAuth401Streak < 2) return;
-      fetch(api("/api/config"), Object.assign({ cache: "no-store" }, FETCH_OPTS)).then(function(confirm){
-        if(confirm.status === 401){
-          markUploadSessionLoss();
-          return;
-        }
-        resetUploadAuthSignals();
-        if(confirm.status === 200){ uploadSessionLost = false; authReady = true; syncLiveIndicator(); }
-      }).catch(function(){
-        resetUploadAuthSignals();
-      });
+      if(uploadAuth401Streak >= authLossThreshold()) markUploadSessionLoss();
     }).catch(function(){
       resetUploadAuthSignals();
     }).finally(function(){
@@ -1016,20 +1034,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
     resetUploadAuthSignals();
   }
   function handleAuthLoss(){
-    if(!authBootstrapComplete) return Promise.resolve();
+    if(!authBootstrapComplete) return Promise.resolve(false);
     if(sessionInterruptBlocked()){
       deferSessionLossQuietly();
-      return Promise.resolve();
+      return Promise.resolve(false);
     }
-    return probeSession(true).then(function(ok){
-      if(ok){
+    return confirmAuthExpiryFrom401().then(function(expired){
+      if(!expired){
         authReady = true;
         syncLiveIndicator();
-        return;
+        return false;
       }
       handleSessionLoss("Your EDA session has ended. Sign in again.");
+      return true;
     }).catch(function(){
-      handleSessionLoss("Your EDA session has ended. Sign in again.");
+      return false;
     });
   }
   function handleSessionLoss(msg){
@@ -1050,8 +1069,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(sessionInterruptBlocked()) return Promise.resolve(true);
     if(!authBootstrapComplete && !force) return Promise.resolve(true);
     return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status === 401) return false;
+      if(r.status === 401){
+        return confirmAuthExpiryFrom401();
+      }
       if(r.status === 200){
+        resetUploadAuthSignals();
         if(embedded && !keycloakStoragePresent()) return false;
         return true;
       }
@@ -1257,7 +1279,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return fetchJson(api("/api/check-conflict")+"?"+qs.toString()).then(function(res){
       if(res.status===401){
         if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return Promise.reject(new Error("session check deferred")); }
-        return handleAuthLoss().then(function(){
+        return handleAuthLoss().then(function(expired){
+          if(expired) throw new Error("Your EDA session has ended. Sign in again.");
           return checkConflict(namespace, name);
         });
       }
@@ -1410,6 +1433,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         delete pendingUploads[k];
         changed=true;
         if(row.downloadStatus==="Available" || row.downloadStatus==="Ready"){
+          uploadSessionLost = false;
+          resetUploadAuthSignals();
           snack("ok", "Upload finalized: " + p.displayName + " is " + row.downloadStatus + ".");
         } else if(row.downloadStatus==="Error" || row.downloadStatus==="Failed"){
           snack("err", "Upload finalized with failure: " + (row.statusReason||row.downloadStatus), true);
@@ -1890,7 +1915,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     fetchJson(api("/api/imports")).then(function(res){
       if(res.status===401){
         if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return; }
-        return handleAuthLoss().then(function(){ refreshImports(); });
+        return handleAuthLoss().then(function(expired){ if(!expired) refreshImports(); });
       }
       if(!res.ok){
         importRows.innerHTML='<tr><td colspan="5" class="empty">'+esc(
@@ -2064,7 +2089,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return fetchJson(api("/api/artifacts")).then(function(res){
       if(res.status===401){
         if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return; }
-        return handleAuthLoss().then(function(){ return refreshArtifacts(opts); });
+        return handleAuthLoss().then(function(expired){ if(!expired) return refreshArtifacts(opts); });
       }
       if(!res.ok){
         if(!opts.silent){
