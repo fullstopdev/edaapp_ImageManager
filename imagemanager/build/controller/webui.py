@@ -1048,7 +1048,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return false;
   }
   function sessionInterruptBlocked(){
-    return uploadInFlight() && !uploadSessionLost;
+    // Never hard-interrupt auth UX while a pending upload row exists — the server
+    // may already have the artifact even if the XHR is still in Unzipping.
+    return uploadInFlight();
+  }
+  function pollingAllowed(){
+    return authReady || uploadInFlight();
   }
   function deferSessionLossQuietly(msg){
     deferredSessionLoss = deferredSessionLoss || msg || "Your EDA session has ended. Sign in again.";
@@ -1098,6 +1103,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function markUploadSessionLoss(){
     if(uploadSessionLost) return;
     uploadSessionLost = true;
+    if(uploadInFlight()){
+      deferSessionLossQuietly("Your EDA session may have expired during upload. Monitoring status automatically.");
+      return;
+    }
     handleSessionLoss("Your EDA session expired during upload. Sign in again, then check Dashboard status.");
     snack("err", "Session expired during upload. Sign in again; if the image appears as Available, no retry is needed.", true);
   }
@@ -1192,6 +1201,24 @@ INDEX_HTML = r"""<!DOCTYPE html>
       deferSessionLossQuietly(msg);
       return;
     }
+    // Never show sign-in UX if the server session cookie is still valid.
+    fetch(api("/api/config"), Object.assign({ cache: "no-store" }, FETCH_OPTS)).then(function(r){
+      if(r.status === 200){
+        onAuthRecovered();
+        return;
+      }
+      if(r.status === 401){
+        return confirmAuthExpiryFrom401().then(function(expired){
+          if(!expired){ onAuthRecovered(); return; }
+          showHardSessionLoss(msg);
+        });
+      }
+      showHardSessionLoss(msg);
+    }).catch(function(){
+      showHardSessionLoss(msg);
+    });
+  }
+  function showHardSessionLoss(msg){
     clearServerSession().then(function(){
       authReady = false;
       if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
@@ -1565,25 +1592,26 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var changed=false;
     Object.keys(pendingUploads).forEach(function(k){
       var p=pendingUploads[k];
-      if(!p.awaitingReconcile) return;
       var row=null;
       for(var i=0;i<currentData.length;i++){
         if(pendingMatchesServer(p, currentData[i])){ row=currentData[i]; break; }
       }
       if(row){
+        var settled=row.downloadStatus==="Available" || row.downloadStatus==="Ready";
         delete pendingUploads[k];
         changed=true;
-        if(row.downloadStatus==="Available" || row.downloadStatus==="Ready"){
+        if(settled){
           onUploadAuthSettled();
           snack("ok", "Upload finalized: " + p.displayName + " is " + row.downloadStatus + ".");
         } else if(row.downloadStatus==="Error" || row.downloadStatus==="Failed"){
+          onAuthRecovered();
           snack("err", "Upload finalized with failure: " + (row.statusReason||row.downloadStatus), true);
-        } else {
+        } else if(p.awaitingReconcile){
           snack("ok", "Upload accepted. Background processing is in progress.");
         }
         return;
       }
-      if(Date.now() > (p.reconcileUntil||0)){
+      if(p.awaitingReconcile && Date.now() > (p.reconcileUntil||0)){
         delete pendingUploads[k];
         changed=true;
         snack("err", "Upload did not finalize in time. Refresh status and retry if needed.", true);
@@ -2246,7 +2274,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         }
         return;
       }
-      if(!uploadInFlight() && inPostUploadAuthGrace()) onAuthRecovered();
+      // A successful artifacts response proves the server session cookie is valid.
+      onAuthRecovered();
       var d=res.body||{};
       currentData=d.artifacts||[];
       reconcilePendingUploads();
@@ -2272,11 +2301,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function syncLiveIndicator(){
     var pill=el("liveIndicator");
     if(!pill) return;
-    var live = authReady && controllerHealthy && !document.hidden;
+    var sessionOk = authReady || uploadInFlight() || inPostUploadAuthGrace();
+    var live = sessionOk && controllerHealthy && !document.hidden;
     pill.classList.toggle("active", live);
     pill.title = live
       ? "Connected — live status updates active"
-      : (!authReady
+      : (!sessionOk
         ? "Sign in required"
         : (!controllerHealthy
           ? "Controller health degraded"
@@ -2305,7 +2335,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function schedulePoll(){
     if(pollTimer) clearTimeout(pollTimer);
     pollTimer=setTimeout(function(){
-      if(!document.hidden && authReady){
+      if(!document.hidden && pollingAllowed()){
         if(activeTab === "status"){
           refreshArtifacts();
           refreshImports();
@@ -2319,7 +2349,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }, pollInterval());
   }
   document.addEventListener("visibilitychange", function(){
-    if(!document.hidden && authReady && authBootstrapComplete){
+    if(!document.hidden && pollingAllowed() && authBootstrapComplete){
       scheduleRevalidate();
       if(activeTab === "status"){
         refreshArtifacts();

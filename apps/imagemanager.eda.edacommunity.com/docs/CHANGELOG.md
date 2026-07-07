@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.1.13
+
+**Fix stuck Un-zipping row and false sign-in banner after upload.**
+
+- **Root cause:** `reconcilePendingUploads()` only cleared pending rows marked
+  `awaitingReconcile`, so a hung XHR in the `Unzipping` phase could hide the
+  server `Available` row indefinitely. A false `uploadSessionLost` flag also
+  disabled the upload auth guard (`sessionInterruptBlocked`), allowing the
+  sign-in banner while the pending row remained; polling then stopped because
+  `authReady` was false.
+- **Server-truth reconcile:** any pending upload whose name/namespace matches an
+  artifacts row is cleared immediately — the server row wins (especially
+  `Available`/`Ready`).
+- **Upload auth guard:** session interrupts stay suppressed for the full pending
+  upload lifetime; suspected expiry during upload is deferred quietly.
+- **Polling during upload:** status refresh continues while pending uploads
+  exist even if auth UX was briefly tripped.
+- **Session-loss gate:** `handleSessionLoss()` re-probes `/api/config` before
+  showing the sign-in banner; successful artifacts refresh always restores
+  `authReady` and dismisses stale banners.
+
 ## v0.1.12
 
 **Fix false sign-in banner when upload reaches Available.**
