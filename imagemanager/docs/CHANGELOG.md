@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.12
+
+**Fix false sign-in banner when upload reaches Available.**
+
+- **Root cause:** `probeSession()` treated `confirmAuthExpiryFrom401()`'s
+  *expired* boolean as *session-ok*, so a transient `401` during post-upload
+  re-probe called `handleSessionLoss()` even when dual-endpoint confirmation
+  said the session was still valid. Deferred loss from mid-upload was also
+  never cleared when pending upload reconciled to `Available`/`Ready` because
+  `flushDeferredSessionLoss()` ran while `pendingUploads` was still non-empty.
+- **Probe semantics:** `401` responses now map to session-ok only when expiry
+  is *not* confirmed (`!expired`).
+- **Reconcile success:** clearing a pending upload to `Available`/`Ready` resets
+  auth-loss streaks, clears deferred session loss, dismisses any auth banner,
+  and starts a short post-upload grace window before hard session-loss UX.
+- **Recovery paths:** `/api/config` `200` after upload (keepalive, flush, or
+  artifacts refresh during grace) clears deferred loss and restores
+  `authReady`/live indicator without showing the sign-in banner.
+
 ## v0.1.11
 
 **UI polish and smoother auth/session UX.**

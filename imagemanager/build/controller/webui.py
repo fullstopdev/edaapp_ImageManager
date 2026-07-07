@@ -931,6 +931,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var authLoss401Streak = 0;
   var AUTH_LOSS_MIN_STREAK = 2;
   var AUTH_LOSS_UPLOAD_STREAK = 3;
+  var POST_UPLOAD_AUTH_GRACE_MS = 15000;
+  var postUploadAuthGraceUntil = 0;
   var authBannerHideTimer = null;
   var lastRowStatus = {};
 
@@ -1051,6 +1053,33 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function deferSessionLossQuietly(msg){
     deferredSessionLoss = deferredSessionLoss || msg || "Your EDA session has ended. Sign in again.";
   }
+  function clearDeferredSessionLoss(){
+    deferredSessionLoss = null;
+  }
+  function startPostUploadAuthGrace(){
+    postUploadAuthGraceUntil = Date.now() + POST_UPLOAD_AUTH_GRACE_MS;
+    setTimeout(function(){
+      if(deferredSessionLoss && !uploadInFlight() && !uploadSessionLost){
+        flushDeferredSessionLoss();
+      }
+    }, POST_UPLOAD_AUTH_GRACE_MS + 50);
+  }
+  function inPostUploadAuthGrace(){
+    return Date.now() < postUploadAuthGraceUntil;
+  }
+  function onAuthRecovered(){
+    uploadSessionLost = false;
+    resetUploadAuthSignals();
+    clearDeferredSessionLoss();
+    authReady = true;
+    syncLiveIndicator();
+    setAuthBanner(null);
+  }
+  function onUploadAuthSettled(){
+    onAuthRecovered();
+    startPostUploadAuthGrace();
+    flushDeferredSessionLoss();
+  }
   function bootDone(){
     var b = document.getElementById("boot-shell");
     if(b){
@@ -1092,12 +1121,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
       var denied = statuses.filter(function(st){ return st === 401; }).length;
       var recovered = statuses.some(function(st){ return st === 200 || st === 204; });
       if(denied >= 2 && !recovered) return true;
-      if(recovered) {
-        uploadSessionLost = false;
-        authReady = true;
-        syncLiveIndicator();
-      }
-      resetUploadAuthSignals();
+      if(recovered) onAuthRecovered();
+      else resetUploadAuthSignals();
       return false;
     }).finally(function(){
       authConfirmInFlight = false;
@@ -1123,12 +1148,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         verifyUploadSessionLoss();
         return;
       }
-      if(r.status === 200){
-        uploadSessionLost = false;
-        resetUploadAuthSignals();
-        authReady = true;
-        syncLiveIndicator();
-      }
+      if(r.status === 200) onAuthRecovered();
     }).catch(function(){});
   }
   function updateUploadKeepalive(){
@@ -1141,6 +1161,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(uploadKeepaliveTimer){ clearInterval(uploadKeepaliveTimer); uploadKeepaliveTimer = null; }
     uploadSessionLost = false;
     resetUploadAuthSignals();
+    startPostUploadAuthGrace();
+    if(deferredSessionLoss) flushDeferredSessionLoss();
   }
   function handleAuthLoss(){
     if(!authBootstrapComplete) return Promise.resolve(false);
@@ -1166,6 +1188,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
       deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
       return;
     }
+    if(inPostUploadAuthGrace() && !uploadSessionLost){
+      deferSessionLossQuietly(msg);
+      return;
+    }
     clearServerSession().then(function(){
       authReady = false;
       if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
@@ -1179,10 +1205,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!authBootstrapComplete && !force) return Promise.resolve(true);
     return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
       if(r.status === 401){
-        return confirmAuthExpiryFrom401();
+        return confirmAuthExpiryFrom401().then(function(expired){ return !expired; });
       }
       if(r.status === 200){
-        resetUploadAuthSignals();
+        onAuthRecovered();
         if(embedded && !keycloakStoragePresent()) return false;
         return true;
       }
@@ -1223,9 +1249,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function flushDeferredSessionLoss(){
     if(!deferredSessionLoss || sessionInterruptBlocked()) return;
     var msg = deferredSessionLoss;
-    deferredSessionLoss = null;
     probeSession(true).then(function(ok){
-      if(!ok) handleSessionLoss(msg);
+      if(ok){
+        clearDeferredSessionLoss();
+        authReady = true;
+        syncLiveIndicator();
+        setAuthBanner(null);
+        return;
+      }
+      clearDeferredSessionLoss();
+      handleSessionLoss(msg);
     }).catch(function(){});
   }
   var signout=el("signoutLink");
@@ -1541,8 +1574,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         delete pendingUploads[k];
         changed=true;
         if(row.downloadStatus==="Available" || row.downloadStatus==="Ready"){
-          uploadSessionLost = false;
-          resetUploadAuthSignals();
+          onUploadAuthSettled();
           snack("ok", "Upload finalized: " + p.displayName + " is " + row.downloadStatus + ".");
         } else if(row.downloadStatus==="Error" || row.downloadStatus==="Failed"){
           snack("err", "Upload finalized with failure: " + (row.statusReason||row.downloadStatus), true);
@@ -2214,6 +2246,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         }
         return;
       }
+      if(!uploadInFlight() && inPostUploadAuthGrace()) onAuthRecovered();
       var d=res.body||{};
       currentData=d.artifacts||[];
       reconcilePendingUploads();
