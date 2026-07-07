@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.17
+
+**Embedded EDA logout sync — detect parent sign-out without full page refresh.**
+
+- **Root cause:** v0.1.15 removed Keycloak `kc-*` storage watchers to stop false
+  sign-in banners; embedded Image Manager no longer noticed when the EDA parent
+  logged out (`im_session` can remain valid server-side for up to 8h).
+- **Targeted watchers (embedded + shared-browser tabs):** debounced `storage`
+  events on `kc-*` keys (and `localStorage.clear`); sustained absence (~1.2s)
+  after a prior `kc-*` sighting clears `im_session` and shows the sign-in banner
+  without waiting for `/api/config` 401.
+- **Safe probes:** periodic and visibility-triggered checks still use
+  `/api/config` only (2× 401 over ≥5s); no `keycloakStoragePresent` veto on 200,
+  no focus/pageshow churn, upload guard unchanged.
+- **Embedded poll:** `/api/config` every 25s when tab visible (60s standalone).
+
 ## v0.1.16
 
 **Fix late upload-done snack — timely feedback when bytes land, not only at Available.**

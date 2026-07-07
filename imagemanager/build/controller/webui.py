@@ -916,7 +916,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var authReady = false;
   var controllerHealthy = true;
   var sessionCheckTimer = null;
-  var SESSION_CHECK_MS = 60000;
+  var revalidateTimer = null;
+  var sustainedKcTimer = null;
+  var SESSION_CHECK_MS = embedded ? 25000 : 60000;
+  var REVALIDATE_DEBOUNCE_MS = 400;
+  var KC_ABSENCE_CONFIRM_MS = 1200;
+  var sawKeycloakStorage = false;
   var AUTH_FAIL_MIN_COUNT = 2;
   var AUTH_FAIL_MIN_SPAN_MS = 5000;
   var authFailCount = 0;
@@ -1034,6 +1039,43 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return fetch(api("/oauth/session/logout"), Object.assign({ method:"POST" }, FETCH_OPTS))
       .catch(function(){ return null; });
   }
+  function keycloakStoragePresent(){
+    try {
+      for(var i=0; i<localStorage.length; i++){
+        var k=localStorage.key(i);
+        if(k && k.indexOf("kc-")===0) return true;
+      }
+    } catch(e){}
+    return false;
+  }
+  function noteKeycloakStorage(){
+    if(keycloakStoragePresent()) sawKeycloakStorage = true;
+  }
+  function scheduleSustainedKcAbsenceCheck(){
+    if(sustainedKcTimer) clearTimeout(sustainedKcTimer);
+    sustainedKcTimer = setTimeout(function(){
+      sustainedKcTimer = null;
+      if(!authBootstrapComplete || !authReady || sessionInterruptBlocked()) return;
+      if(sawKeycloakStorage && !keycloakStoragePresent()){
+        showConfirmedSessionLoss();
+        return;
+      }
+      probeConfigAuth();
+    }, KC_ABSENCE_CONFIRM_MS);
+  }
+  function scheduleRevalidate(){
+    if(revalidateTimer) clearTimeout(revalidateTimer);
+    revalidateTimer = setTimeout(function(){
+      revalidateTimer = null;
+      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
+      noteKeycloakStorage();
+      if(sawKeycloakStorage && !keycloakStoragePresent()){
+        scheduleSustainedKcAbsenceCheck();
+        return;
+      }
+      probeConfigAuth();
+    }, REVALIDATE_DEBOUNCE_MS);
+  }
   function sessionInterruptBlocked(){
     return uploadInFlight();
   }
@@ -1089,6 +1131,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
     clearServerSession().then(function(){
       authReady = false;
       if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
+      if(revalidateTimer){ clearTimeout(revalidateTimer); revalidateTimer = null; }
+      if(sustainedKcTimer){ clearTimeout(sustainedKcTimer); sustainedKcTimer = null; }
       syncLiveIndicator();
       hideAuthUser();
       showSignInBanner(msg || "Your EDA session has ended. Sign in again.");
@@ -1125,6 +1169,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }, SESSION_CHECK_MS);
   }
   function startSessionWatchers(){
+    noteKeycloakStorage();
     scheduleSessionCheck();
   }
   function bootDone(){
@@ -2252,12 +2297,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   document.addEventListener("visibilitychange", function(){
     if(!document.hidden && pollingAllowed() && authBootstrapComplete){
+      if(authReady) scheduleRevalidate();
       if(activeTab === "status"){
         refreshArtifacts();
         refreshImports();
       }
     }
     syncLiveIndicator();
+  });
+  window.addEventListener("storage", function(ev){
+    if(!authBootstrapComplete || !authReady) return;
+    if(ev.key === null || (ev.key && ev.key.indexOf("kc-") === 0)){
+      scheduleRevalidate();
+    }
   });
   var refreshBtn=el("refreshBtn");
   if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });
