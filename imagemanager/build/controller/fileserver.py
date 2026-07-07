@@ -32,6 +32,7 @@ import tempfile
 import threading
 import time
 import urllib.error
+from datetime import datetime, timezone
 from http.cookies import SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, quote, unquote, urlencode, urlsplit
@@ -1074,9 +1075,24 @@ _ASVR_ONLY_REASON = (
     "re-upload the vendor .zip to restore a durable copy."
 )
 _NO_LOCAL_REASON = "Local PVC files missing — re-upload to restore."
+_UPLOAD_FAILURE_GRACE_SECONDS = int(os.environ.get("UPLOAD_FAILURE_GRACE_SECONDS", "120"))
 
 
-def _resolve_download_status(local_ok, cr_st):
+def _within_upload_grace(stored_at):
+    """True while a newly-created upload is still settling in backend reconcile."""
+    if _UPLOAD_FAILURE_GRACE_SECONDS <= 0 or not stored_at:
+        return False
+    try:
+        parsed = datetime.fromisoformat(str(stored_at).replace("Z", "+00:00"))
+        if parsed.tzinfo is None:
+            parsed = parsed.replace(tzinfo=timezone.utc)
+        age = (datetime.now(timezone.utc) - parsed).total_seconds()
+        return age >= 0 and age <= _UPLOAD_FAILURE_GRACE_SECONDS
+    except ValueError:
+        return False
+
+
+def _resolve_download_status(local_ok, cr_st, in_upload_grace=False):
     """Combine PVC bytes with Artifact CR status (PVC is the durable origin)."""
     cr_st = cr_st or {}
     ds = (cr_st.get("downloadStatus") or "").strip()
@@ -1085,6 +1101,8 @@ def _resolve_download_status(local_ok, cr_st):
         if ds == "Available":
             return "Available", reason
         if ds in ("Error", "Failed"):
+            if in_upload_grace:
+                return "InProgress", reason or "Finalizing artifact status"
             return ds, reason
         if ds in ("InProgress", "Downloading", "Pending") or ds:
             return "InProgress", reason
@@ -1149,12 +1167,19 @@ def _single_row(m, status_by_key):
     local_ok = uploads.upload_has_local_bytes(m, upload_id)
     st = status_by_key.get((ns, m.get("artifactName")), {})
     md5_name = m.get("md5ArtifactName")
+    in_upload_grace = _within_upload_grace(m.get("storedAt"))
     md5_st = status_by_key.get((ns, md5_name), {}) if md5_name else {}
-    img_ds, img_reason = _resolve_download_status(local_ok, st)
-    md5_ds, md5_reason = _resolve_download_status(local_ok, md5_st) if md5_name else ("", "")
+    img_ds, img_reason = _resolve_download_status(local_ok, st, in_upload_grace=in_upload_grace)
+    md5_ds, md5_reason = (
+        _resolve_download_status(local_ok, md5_st, in_upload_grace=in_upload_grace)
+        if md5_name else ("", "")
+    )
     yang = m.get("yang") or {}
     yst = status_by_key.get((ns, yang.get("artifactName")), {}) if yang.get("artifactName") else {}
-    yang_ds, yang_reason = _resolve_download_status(local_ok, yst) if yang.get("artifactName") else (None, "")
+    yang_ds, yang_reason = (
+        _resolve_download_status(local_ok, yst, in_upload_grace=in_upload_grace)
+        if yang.get("artifactName") else (None, "")
+    )
     agg_statuses = [s for s in (img_ds, md5_ds, yang_ds) if s]
     agg_reasons = [r for r in (img_reason, md5_reason, yang_reason) if r]
     download_status, status_reason = _aggregate_download_status(agg_statuses, agg_reasons)
@@ -1216,12 +1241,13 @@ def _group_row(m, status_by_key):
     upload_id = m.get("uploadId")
     local_ok = uploads.upload_has_local_bytes(m, upload_id)
     arts = m.get("artifacts") or []
+    in_upload_grace = _within_upload_grace(m.get("storedAt"))
     yang = m.get("yang") or None
     statuses, agg_reasons, image_lines, image_entries = [], [], [], []
     all_images_available = bool(arts)
     for a in arts:
         st = status_by_key.get((ns, a.get("artifactName")), {})
-        ds, part_reason = _resolve_download_status(local_ok, st)
+        ds, part_reason = _resolve_download_status(local_ok, st, in_upload_grace=in_upload_grace)
         statuses.append(ds)
         ipath = ""
         if ds == "Available":
@@ -1237,7 +1263,7 @@ def _group_row(m, status_by_key):
         md5_name = a.get("md5ArtifactName")
         if md5_name:
             mst = status_by_key.get((ns, md5_name), {})
-            mds, md5_reason = _resolve_download_status(local_ok, mst)
+            mds, md5_reason = _resolve_download_status(local_ok, mst, in_upload_grace=in_upload_grace)
             statuses.append(mds)
             if mds == "Available":
                 mpath = artifact.asvr_path(mst.get("internalUrl", ""))
@@ -1251,7 +1277,7 @@ def _group_row(m, status_by_key):
     yang_status, yang_url = None, ""
     if yang:
         yst = status_by_key.get((ns, yang.get("artifactName")), {})
-        yang_status, yang_reason = _resolve_download_status(local_ok, yst)
+        yang_status, yang_reason = _resolve_download_status(local_ok, yst, in_upload_grace=in_upload_grace)
         statuses.append(yang_status)
         if yang_status == "Available":
             yang_url = yst.get("internalUrl", "")    # yang: takes a full asvr URL

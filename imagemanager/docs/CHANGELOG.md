@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.7
+
+**Fix deep-link handling and transient upload failure state.**
+
+- Dashboard deep links now use the stable HttpProxy app path and open details by `uploadId` or image name.
+- Opening Details in the UI now updates the `?details=` query param; closing the dialog clears it.
+- New uploads treat early backend `Error/Failed` signals as `InProgress` for a short grace period, preventing false failure flashes while reconcile converges.
+
 ## v0.1.6
 
 **Fix false session loss during active uploads.**

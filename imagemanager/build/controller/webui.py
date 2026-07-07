@@ -1136,6 +1136,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function closeModal(){
     if(openDlg){ openDlg.classList.remove("open"); }
     scrim.classList.remove("show"); document.body.style.overflow=""; openDlg=null;
+    if(npCurrentUid){ npCurrentUid=null; setDetailsQuery(null); }
   }
   scrim.addEventListener("click", closeModal);
   document.addEventListener("keydown", function(e){ if(e.key==="Escape" && openDlg) closeModal(); });
@@ -1500,7 +1501,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
     var view=t.snippet
-      ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'">Details</button> ')
+      ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'" data-name="'+esc(t.name||"")+'">Details</button> ')
       :'';
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
     return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
@@ -1555,10 +1556,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var t0=btn.textContent; btn.textContent="Copied"; setTimeout(function(){ btn.textContent=t0; }, 1200);
   }
   function openNodeProfile(uid){
+    var needle=(uid||"").trim();
     var t=null;
-    for(var i=0;i<currentData.length;i++){ if(currentData[i].uploadId===uid){ t=currentData[i]; break; } }
+    for(var i=0;i<currentData.length;i++){
+      var row=currentData[i];
+      var rid=(row.uploadId||"").trim();
+      var rname=(row.name||"").trim();
+      var rdisp=(row.displayName||"").trim();
+      if(needle && (needle===rid || needle===rname || needle===rdisp)){ t=row; break; }
+    }
     if(!t) return false;
-    npCurrentUid=uid;
+    npCurrentUid=t.uploadId||t.name||needle;
     el("npTitle").textContent = "NodeProfile — " + (t.displayName||t.name||"")
       + ((t.nosLabel||(t.nos&&NOS_LABELS[t.nos])) ? (" · " + (t.nosLabel||NOS_LABELS[t.nos])) : "");
     // SR-SIM emits a containerImage-based sim NodeProfile, not a spec.images
@@ -1577,6 +1585,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       : 'Snippet &mdash; <span class="mono">spec.images</span>';
     npSnippet.textContent = t.snippet || "(not ready yet)";
     npFull.textContent = t.nodeProfileExample || "(ready once the image is Available)";
+    setDetailsQuery(npCurrentUid);
     openModal(el("npDialog"));
     return true;
   }
@@ -1591,7 +1600,16 @@ INDEX_HTML = r"""<!DOCTYPE html>
     imDelete(uid, (t&&t.namespace)||"", (t&&t.name)||"");
   });
 
-  // Deep link from the EDA dashboard: /?details=<uploadId> opens that image's
+  function setDetailsQuery(value){
+    try{
+      var u=new URL(window.location.href);
+      if(value) u.searchParams.set("details", value);
+      else u.searchParams.delete("details");
+      history.replaceState(null, "", u.pathname + (u.search||"") + (u.hash||""));
+    }catch(e){}
+  }
+
+  // Deep link from the EDA dashboard: /?details=<uploadId or name> opens that image's
   // details dialog (NodeProfile YAML + Delete) as soon as its row is loaded.
   var pendingDetails=(function(){
     try{ return new URLSearchParams(location.search).get("details")||null; }
@@ -1601,7 +1619,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(!pendingDetails) return;
     if(openNodeProfile(pendingDetails)){
       pendingDetails=null;
-      try{ history.replaceState(null, "", location.pathname); }catch(e){}
+      setDetailsQuery(null);
     }
   }
 
@@ -1609,7 +1627,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var b = e.target.closest("button[data-act]");
     if(!b) return;
     if(b.getAttribute("data-act")==="view"){
-      openNodeProfile(b.getAttribute("data-uid"));
+      openNodeProfile(b.getAttribute("data-uid") || b.getAttribute("data-name"));
     } else if(b.getAttribute("data-act")==="del"){
       imDelete(b.getAttribute("data-uid"), b.getAttribute("data-ns"), b.getAttribute("data-name"));
     }

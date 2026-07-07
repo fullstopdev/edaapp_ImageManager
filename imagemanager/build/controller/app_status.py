@@ -24,7 +24,7 @@ logger = logging.getLogger("app_status")
 _SOCKET = os.environ.get("STATUS_PUBLISHER_SOCKET", "/tmp/imagemanager-status.sock")
 _STATUS_BASE = ".cluster.apps.imagemanager.status"   # per-image rows
 _APP_BASE = ".cluster.apps.imagemanager.app"          # single service/server row
-_HTTPPROXY_PATH = "/core/httpproxy/v1/imagemanager/"
+_HTTPPROXY_PATH = "/core/httpproxy/v1/imagemanager"
 _SERVICE_LABEL = "Image Manager"
 APP_VERSION = [""]   # set by main at startup; shown in the dashboard app table
 _last_synced = [None]   # last successfully-synced desired dict (skip no-op sends)
@@ -135,7 +135,7 @@ def sync_app_status_rows(tracked_rows, health=None):
         # Per-row deep link: clicking the dashboard row opens the app with the
         # NodeProfile/details dialog for this image already open.
         deep_link = _HTTPPROXY_PATH + (
-            f"?details={quote(upload_id, safe='')}" if upload_id else "")
+            f"?details={quote(upload_id, safe='')}" if upload_id else "/")
         desired[rid] = {
             "path": _STATUS_BASE,
             "id": rid,
