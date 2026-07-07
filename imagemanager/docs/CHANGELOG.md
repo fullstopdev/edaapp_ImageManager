@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.21
+
+**Fix EDA logout not clearing Image Manager session (v0.1.19 kc-* watcher insufficient).**
+
+- **Root cause:** Image Manager trusts its own 8h `im_session` cookie via `/api/config`.
+  EDA sign-out clears Keycloak **cookies**, not always `kc-*` localStorage keys, so the
+  v0.1.19 storage watcher never fired and the app stayed “logged in” even after refresh.
+- **Fix:** Probe the EDA identity proxy Keycloak session on bootstrap, every 15s while
+  the tab is visible, and on `focus` / `pageshow` / `storage` revalidation. If
+  `login-status-iframe.html/init` is not `unchanged` (403/401/`changed`) while
+  `im_session` is still valid, immediately `POST /oauth/session/logout` and show the
+  sign-in banner. `kc-*` watchers retained as a secondary signal.
+- **Unchanged:** Upload `sessionInterruptBlocked` guard, OAuth flow, 2×401 probe trust model.
+
 ## v0.1.20
 
 **Dashboard and form UI polish (self-contained webui).**

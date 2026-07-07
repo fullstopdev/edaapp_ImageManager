@@ -991,9 +991,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var sessionCheckTimer = null;
   var revalidateTimer = null;
   var sustainedKcTimer = null;
-  var SESSION_CHECK_MS = 60000;
+  var SESSION_CHECK_MS = 15000;
   var REVALIDATE_DEBOUNCE_MS = 400;
   var KC_ABSENCE_CONFIRM_MS = 1200;
+  var IDENTITY_PROBE_PATH = "/core/proxy/v1/identity/realms/eda/protocol/openid-connect/login-status-iframe.html/init";
   var sawKeycloakStorage = false;
   var AUTH_FAIL_MIN_COUNT = 2;
   var AUTH_FAIL_MIN_SPAN_MS = 5000;
@@ -1121,6 +1122,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
     } catch(e){}
     return false;
   }
+  function probeIdentitySession(){
+    return fetch(IDENTITY_PROBE_PATH, {
+      method: "GET",
+      credentials: "include",
+      cache: "no-store",
+      headers: { Accept: "application/json" }
+    }).then(function(r){
+      if(r.status === 401 || r.status === 403) return false;
+      if(!r.ok) return null;
+      return r.json().then(function(j){
+        if(!j || typeof j.status !== "string") return null;
+        return j.status === "unchanged";
+      }).catch(function(){ return null; });
+    }).catch(function(){ return null; });
+  }
   function noteKeycloakStorage(){
     if(keycloakStoragePresent()) sawKeycloakStorage = true;
   }
@@ -1133,7 +1149,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         showConfirmedSessionLoss();
         return;
       }
-      probeConfigAuth();
+      reconcileAuthState();
     }, KC_ABSENCE_CONFIRM_MS);
   }
   function scheduleRevalidate(){
@@ -1146,7 +1162,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         scheduleSustainedKcAbsenceCheck();
         return;
       }
-      probeConfigAuth();
+      reconcileAuthState();
     }, REVALIDATE_DEBOUNCE_MS);
   }
   function sessionInterruptBlocked(){
@@ -1199,6 +1215,35 @@ INDEX_HTML = r"""<!DOCTYPE html>
       return true;
     }).catch(function(){ return true; });
   }
+  function reconcileAuthState(){
+    if(sessionInterruptBlocked()) return Promise.resolve(true);
+    var probe = Object.assign({ cache: "no-store" }, FETCH_OPTS);
+    return Promise.all([
+      fetch(api("/api/config"), probe),
+      probeIdentitySession()
+    ]).then(function(results){
+      var cfgResp = results[0];
+      var kcOk = results[1];
+      if(cfgResp.status === 200){
+        if(kcOk === false){
+          showConfirmedSessionLoss();
+          return false;
+        }
+        return cfgResp.json().then(function(c){
+          applyConfigOk(c && c.user);
+          return true;
+        }).catch(function(){
+          applyConfigOk(null);
+          return true;
+        });
+      }
+      if(cfgResp.status === 401){
+        applyConfig401();
+        return false;
+      }
+      return true;
+    }).catch(function(){ return true; });
+  }
   function showConfirmedSessionLoss(msg){
     if(sessionInterruptBlocked()) return;
     clearServerSession().then(function(){
@@ -1214,7 +1259,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function handleAuthLoss(){
     if(!authBootstrapComplete) return Promise.resolve(false);
     if(sessionInterruptBlocked()) return Promise.resolve(false);
-    return probeConfigAuth().then(function(ok){ return !ok; });
+    return reconcileAuthState().then(function(ok){ return !ok; });
   }
   function uploadKeepaliveTick(){
     if(!uploadInFlight() || !authBootstrapComplete || document.hidden) return;
@@ -1238,7 +1283,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(sessionCheckTimer) clearInterval(sessionCheckTimer);
     sessionCheckTimer = setInterval(function(){
       if(!authBootstrapComplete || document.hidden || sessionInterruptBlocked()) return;
-      probeConfigAuth();
+      reconcileAuthState();
     }, SESSION_CHECK_MS);
   }
   function startSessionWatchers(){
@@ -1490,28 +1535,36 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(res.status === 401){ navigateTo(apiBase + "/oauth/login"); return; }
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
     var c = res.body || {};
-    bootDone();
-    if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
-    binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
-    if(c.version){
-      var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
-    }
-    onAuthReady(c.user || null);
-    var defaultNs=(c.defaultArtifactNamespace||"").trim();
-    fetchJson(api("/api/namespaces")).then(function(nsRes){
-      if(nsRes.status===401) return;
-      if(!nsRes.ok){
-        snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
+    return probeIdentitySession().then(function(kcOk){
+      if(kcOk === false){
+        bootDone();
+        authBootstrapComplete = true;
+        showConfirmedSessionLoss("Your EDA session has ended. Sign in again.");
         return;
       }
-      fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
+      bootDone();
+      if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
+      binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
+      if(c.version){
+        var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
+      }
+      onAuthReady(c.user || null);
+      var defaultNs=(c.defaultArtifactNamespace||"").trim();
+      fetchJson(api("/api/namespaces")).then(function(nsRes){
+        if(nsRes.status===401) return;
+        if(!nsRes.ok){
+          snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
+          return;
+        }
+        fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
+      });
+      refresh();
+      refreshImports();
+      fetchJson(api("/api/settings")).then(function(sRes){
+        if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
+      });
+      syncLiveIndicator();
     });
-    refresh();
-    refreshImports();
-    fetchJson(api("/api/settings")).then(function(sRes){
-      if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
-    });
-    syncLiveIndicator();
   }).catch(function(err){
     var msg = (err && err.message && err.message.indexOf("config unavailable")===0)
             ? err.message : "Failed to load Image Manager configuration.";
@@ -2421,6 +2474,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(ev.key === null || (ev.key && ev.key.indexOf("kc-") === 0)){
       scheduleRevalidate();
     }
+  });
+  window.addEventListener("focus", function(){
+    if(authBootstrapComplete && authReady && !document.hidden) scheduleRevalidate();
+  });
+  window.addEventListener("pageshow", function(ev){
+    if(ev.persisted && authBootstrapComplete && authReady) scheduleRevalidate();
   });
   var refreshBtn=el("refreshBtn");
   if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });
