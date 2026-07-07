@@ -1121,6 +1121,8 @@ def _resolve_download_status(local_ok, cr_st, in_upload_grace=False):
             return ds, reason
         if ds in ("InProgress", "Downloading", "Pending") or ds:
             return "InProgress", reason
+        if in_upload_grace:
+            return "InProgress", reason or "Creating Artifact CR"
         return "NoArtifact", reason
     if ds == "Available":
         return "AsvrOnly", _ASVR_ONLY_REASON
@@ -1144,13 +1146,13 @@ def _aggregate_download_status(statuses, reasons):
         return "AsvrOnly", _ASVR_ONLY_REASON
     if any(s == "NoLocalCopy" for s in statuses):
         return "NoLocalCopy", _NO_LOCAL_REASON
-    if any(s == "NoArtifact" for s in statuses):
-        return "NoArtifact", ""
     if statuses and all(s == "Available" for s in statuses):
         return "Available", ""
     if any(s == "InProgress" for s in statuses):
         prog = [r for s, r in zip(statuses, reasons) if s == "InProgress" and r]
         return "InProgress", "; ".join(prog[:4])
+    if any(s == "NoArtifact" for s in statuses):
+        return "NoArtifact", ""
     return statuses[0], (reasons[0] if reasons else "")
 
 

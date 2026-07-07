@@ -1,5 +1,25 @@
 # Changelog
 
+## v0.1.14
+
+**Fix false "Needs republish" flash after upload.**
+
+- **Root cause:** After upload finalize, PVC bytes exist before Artifact CR
+  `downloadStatus` is populated. `_resolve_download_status` returned
+  `NoArtifact` (UI chip: **Needs republish**) even inside the post-upload grace
+  window that already treated transient `Error`/`Failed` as `InProgress`.
+  `_aggregate_download_status` also ranked `NoArtifact` above `InProgress`, so
+  multi-part uploads could flash republish while one CR was still settling.
+  `reconcilePendingUploads` cleared the pending row as soon as any server row
+  appeared, exposing that transient status.
+- **Server grace:** During `UPLOAD_FAILURE_GRACE_SECONDS`, missing/empty CR
+  status with local bytes now reports `InProgress` instead of `NoArtifact`.
+- **Aggregation:** `InProgress` wins over `NoArtifact` when parts converge at
+  different speeds.
+- **UI smoothing:** Client maps recent `NoArtifact` rows to `InProgress` for
+  display/KPIs; pending upload rows stay visible until the server leaves the
+  transient republish state or reaches `Available`/`Ready`.
+
 ## v0.1.13
 
 **Fix stuck Un-zipping row and false sign-in banner after upload.**

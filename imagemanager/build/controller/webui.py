@@ -932,6 +932,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var AUTH_LOSS_MIN_STREAK = 2;
   var AUTH_LOSS_UPLOAD_STREAK = 3;
   var POST_UPLOAD_AUTH_GRACE_MS = 15000;
+  var UPLOAD_STATUS_GRACE_MS = 120000;
   var postUploadAuthGraceUntil = 0;
   var authBannerHideTimer = null;
   var lastRowStatus = {};
@@ -1597,13 +1598,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
         if(pendingMatchesServer(p, currentData[i])){ row=currentData[i]; break; }
       }
       if(row){
-        var settled=row.downloadStatus==="Available" || row.downloadStatus==="Ready";
+        var ds = effectiveDownloadStatus(row);
+        var settled = ds === "Available" || ds === "Ready";
+        if(!settled && row.downloadStatus === "NoArtifact" && withinUploadGrace(row.storedAt)){
+          return;
+        }
         delete pendingUploads[k];
-        changed=true;
+        changed = true;
         if(settled){
           onUploadAuthSettled();
-          snack("ok", "Upload finalized: " + p.displayName + " is " + row.downloadStatus + ".");
-        } else if(row.downloadStatus==="Error" || row.downloadStatus==="Failed"){
+          snack("ok", "Upload finalized: " + p.displayName + " is " + ds + ".");
+        } else if(ds === "Error" || ds === "Failed"){
           onAuthRecovered();
           snack("err", "Upload finalized with failure: " + (row.statusReason||row.downloadStatus), true);
         } else if(p.awaitingReconcile){
@@ -1741,6 +1746,17 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
     return l?('<span class="os-tag">'+esc(l)+'</span>'):('<span class="os-empty">&mdash;</span>');
   }
+  function withinUploadGrace(storedAt){
+    if(!storedAt) return false;
+    var t = Date.parse(String(storedAt));
+    if(isNaN(t)) return false;
+    return (Date.now() - t) >= 0 && (Date.now() - t) <= UPLOAD_STATUS_GRACE_MS;
+  }
+  function effectiveDownloadStatus(row){
+    var s = (row && row.downloadStatus) || "";
+    if(s === "NoArtifact" && withinUploadGrace(row && row.storedAt)) return "InProgress";
+    return s || "NoArtifact";
+  }
   function chip(s, rowKey){
     var c=s||"NoArtifact";
     var bump = "";
@@ -1775,7 +1791,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function activeStatusCount(){
     var n = Object.keys(pendingUploads).length;
     currentData.forEach(function(t){
-      if(isActiveStatus(t.downloadStatus)) n++;
+      if(isActiveStatus(effectiveDownloadStatus(t))) n++;
     });
     lastImports.forEach(function(i){
       if(isActiveStatus(i.phase)) n++;
@@ -1810,7 +1826,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function updateKpis(){
     var total=currentData.length, ready=0, act=Object.keys(pendingUploads).length, failed=0;
     currentData.forEach(function(t){
-      var s=t.downloadStatus;
+      var s=effectiveDownloadStatus(t);
       if(s==="Available"||s==="Ready") ready++;
       else if(isActiveStatus(s)) act++;
       else if(s==="Error"||s==="Failed") failed++;
@@ -1844,6 +1860,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function serverRowHtml(t){
     var rowKey=(t.uploadId||t.name||t.displayName||"")+"|"+(t.namespace||"");
+    var displayStatus=effectiveDownloadStatus(t);
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
@@ -1853,7 +1870,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
     return '<tr><td class="mono namecell">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
       '</td><td>'+esc(t.namespace)+
-      '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(t.downloadStatus, rowKey)+reason+
+      '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(displayStatus, rowKey)+reason+
       '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
   }
 
