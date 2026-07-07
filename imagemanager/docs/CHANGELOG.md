@@ -1,5 +1,13 @@
 # Changelog
 
+## v0.1.9
+
+**Fix artifact API hard-fail regression during status aggregation.**
+
+- **Root cause:** `/api/artifacts` could fail the full request when one malformed/legacy `meta.json` row triggered an exception while building tracked rows, which surfaced as HttpProxy `HTTP 502` in the UI.
+- **Cleaner behavior (kkayhan-style):** the artifacts endpoint now degrades gracefully; bad rows are skipped with warning logs, and response payload fields fall back to safe defaults instead of returning a 5xx.
+- **Upload/status continuity:** status polling and pending-upload reconciliation keep running even if one stored row is invalid.
+
 ## v0.1.8
 
 **Fix upload session-expiry false positives with verified auth-loss probes.**

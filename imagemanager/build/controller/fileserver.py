@@ -563,15 +563,30 @@ class Handler(BaseHTTPRequestHandler):
 
     def _serve_artifacts(self):
         snap = get_storage_reconcile()
+        try:
+            artifacts = build_tracked_list()
+        except Exception as e:
+            logger.warning("artifacts build failed; returning empty list: %s", e)
+            artifacts = []
+        try:
+            storage = uploads.disk_usage()
+        except Exception as e:
+            logger.warning("storage stats failed; returning zero usage: %s", e)
+            storage = {"totalBytes": 0, "usedBytes": 0, "freeBytes": 0, "usedPercent": 0.0}
+        try:
+            work_dirs = uploads.count_work_dirs()
+        except Exception as e:
+            logger.warning("work-dir count failed; reporting zero: %s", e)
+            work_dirs = 0
         self._send_json({
-            "artifacts": build_tracked_list(),
-            "storage": uploads.disk_usage(),
+            "artifacts": artifacts,
+            "storage": storage,
             "system": {
                 "version": APP_VERSION[0],
                 "deploymentMode": "single-replica",
                 "storageBackend": "pvc",
                 "filePullBaseUrl": CONFIG.get("filePullBaseUrl") or "",
-                "workDirsActive": uploads.count_work_dirs(),
+                "workDirsActive": work_dirs,
                 "reconcile": snap,
             },
         })
@@ -1505,14 +1520,21 @@ def _build_tracked_list():
     out = []
     covered = set()
     for m in uploads.list_meta():
-        key = (m.get("namespace"), m.get("uploadId") or m.get("artifactName"))
-        covered.add(key)
-        if m.get("nos") == "srsim":
-            out.append(_srsim_row(m, status_by_key))
-        elif m.get("artifacts"):
-            out.append(_group_row(m, status_by_key))
-        else:
-            out.append(_single_row(m, status_by_key))
+        if not isinstance(m, dict):
+            logger.warning("skipping malformed upload metadata row: %r", type(m).__name__)
+            continue
+        try:
+            key = (m.get("namespace"), m.get("uploadId") or m.get("artifactName"))
+            covered.add(key)
+            if m.get("nos") == "srsim":
+                out.append(_srsim_row(m, status_by_key))
+            elif m.get("artifacts"):
+                out.append(_group_row(m, status_by_key))
+            else:
+                out.append(_single_row(m, status_by_key))
+        except Exception as e:
+            logger.warning("skipping broken upload metadata row: %s", e)
+            continue
     try:
         out.extend(_artifact_fallback_rows(status_by_key, covered))
     except Exception as e:
