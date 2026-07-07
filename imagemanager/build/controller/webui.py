@@ -911,7 +911,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var maxBytes = 4096*1024*1024;
   var pendingUploads = {}, uploadSeq = 0;
   var el = function(id){ return document.getElementById(id); };
-  // External-launcher (cable-map) opens the SPA in its own tab; iframe embed is an edge case only.
+  // External-launcher (cable-map) opens the SPA in its own tab; iframe embed is an edge case.
+  // Same-origin tabs share localStorage — kc-* watchers detect EDA logout in both modes.
   var embedded = window.self !== window.top;
   var authBootstrapComplete = false;
   var authReady = false;
@@ -1069,12 +1070,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
     revalidateTimer = setTimeout(function(){
       revalidateTimer = null;
       if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
-      if(embedded){
-        noteKeycloakStorage();
-        if(sawKeycloakStorage && !keycloakStoragePresent()){
-          scheduleSustainedKcAbsenceCheck();
-          return;
-        }
+      noteKeycloakStorage();
+      if(sawKeycloakStorage && !keycloakStoragePresent()){
+        scheduleSustainedKcAbsenceCheck();
+        return;
       }
       probeConfigAuth();
     }, REVALIDATE_DEBOUNCE_MS);
@@ -1172,7 +1171,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }, SESSION_CHECK_MS);
   }
   function startSessionWatchers(){
-    if(embedded) noteKeycloakStorage();
+    noteKeycloakStorage();
     scheduleSessionCheck();
   }
   function bootDone(){
@@ -2309,7 +2308,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     syncLiveIndicator();
   });
   window.addEventListener("storage", function(ev){
-    if(!embedded || !authBootstrapComplete || !authReady) return;
+    if(!authBootstrapComplete || !authReady) return;
     if(ev.key === null || (ev.key && ev.key.indexOf("kc-") === 0)){
       scheduleRevalidate();
     }

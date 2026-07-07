@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.1.19
+
+**Fix standalone-tab logout sync when EDA signs out (v0.1.18 regression).**
+
+- **Root cause:** v0.1.18 gated Keycloak `kc-*` localStorage watchers behind
+  `embedded` only, assuming standalone new-tab mode would rely on `/api/config`
+  polling. After external-launcher became the primary mode, logging out of EDA
+  cleared `kc-*` on the shared origin but Image Manager kept a valid `im_session`
+  cookie (up to 8h) and never noticed until a 60s probe — if at all.
+- **Fix:** Restore v0.1.17 targeted `kc-*` watchers for **all** modes (standalone
+  and embedded). Same-origin tabs share `localStorage`; debounced `storage` events
+  on `kc-*` keys plus sustained absence (~1.2s) after a prior sighting immediately
+  POST `/oauth/session/logout` and show the sign-in banner without waiting for
+  `/api/config` 401.
+- **Unchanged:** v0.1.15 `/api/config` trust model (2× 401 over ≥5s for probe-only
+  loss), 60s background poll, upload `sessionInterruptBlocked` guard, dashboard
+  external-launcher JSON from v0.1.18.
+
 ## v0.1.18
 
 **EDA nav: cable-map external-launcher pattern (no iframe embed).**
