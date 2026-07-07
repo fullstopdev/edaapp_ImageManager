@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.1.16
+
+**Fix late upload-done snack — timely feedback when bytes land, not only at Available.**
+
+- **Root cause:** v0.1.14 kept pending upload rows through the post-upload `NoArtifact`
+  grace window until `Available`/`Ready`, deferring the success snack to
+  `reconcilePendingUploads`. Proxy/XHR drops during server finalize also routed to
+  `holdUploadForReconcile`, which showed a sticky error snack and waited for full
+  reconcile before any positive acknowledgment.
+- **Early feedback:** snack "Upload received — processing …" when XHR body transfer
+  completes (`onBodySent`), before server unzip/finalize returns.
+- **POST success:** existing "Uploaded …" snack still fires on `200` from
+  `/api/upload` (unchanged).
+- **Reconcile:** clear pending as soon as a matching server row exists; show
+  processing snack if none shown yet; shorter "X is Available." when early snack
+  already fired. `effectiveDownloadStatus` still maps grace-period `NoArtifact` to
+  `InProgress` so the republish flash fix from v0.1.14 is preserved.
+- **Finalize drops:** `holdUploadForReconcile` now shows a non-sticky ok snack
+  instead of a scary error when the connection ends during server processing.
+- **Faster poll:** 2s artifact refresh for 2 minutes after upload starts (burst
+  window), then existing 4s/12s adaptive intervals.
+
 ## v0.1.15
 
 **Definitive fix for false sign-in banner while EDA session stays active.**

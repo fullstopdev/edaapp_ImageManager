@@ -3,8 +3,8 @@
 Unified single-page app, dashboard-first: Dashboard (KPIs + live artifact
 status) | Upload | URL Import | Settings. Cable-map / Nokia EDA design
 language: dark/light theme, Nokia logo + single EDA-style app bar, KPI overview cards,
-adaptive live polling (4s while work is in flight, 12s at rest, paused when
-the tab is hidden). Sign-in is server-side OIDC (Authorization Code flow via
+adaptive live polling (2s burst for 2 min after upload, 4s while work is in
+flight, 12s at rest, paused when the tab is hidden). Sign-in is server-side OIDC (Authorization Code flow via
 EDA's identity proxy); unauthenticated requests redirect to Keycloak. Role
 gating via ALLOWED_ROLES (EDA ClusterRole). Sign out clears the local session
 and ends the EDA Keycloak session, redirecting to the EDA login page.
@@ -926,6 +926,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var UPLOAD_PENDING_RECONCILE_MS = 3 * 60 * 1000;
   var uploadKeepaliveTimer = null;
   var UPLOAD_STATUS_GRACE_MS = 120000;
+  var UPLOAD_BURST_POLL_MS = 2000;
+  var UPLOAD_BURST_WINDOW_MS = 120000;
+  var postUploadBurstUntil = 0;
   var authBannerHideTimer = null;
   var lastRowStatus = {};
 
@@ -1138,6 +1141,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function uploadInFlight(){
     return Object.keys(pendingUploads).length > 0;
+  }
+  function kickPostUploadBurst(){
+    postUploadBurstUntil = Date.now() + UPLOAD_BURST_WINDOW_MS;
+    schedulePoll();
+  }
+  function inPostUploadBurst(){
+    return Date.now() < postUploadBurstUntil;
   }
   function retrySignIn(){
     resetAuthFailStreak();
@@ -1460,19 +1470,21 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(row){
         var ds = effectiveDownloadStatus(row);
         var settled = ds === "Available" || ds === "Ready";
-        if(!settled && row.downloadStatus === "NoArtifact" && withinUploadGrace(row.storedAt)){
-          return;
-        }
         delete pendingUploads[k];
         changed = true;
         if(settled){
           onAuthRecovered();
-          snack("ok", "Upload finalized: " + p.displayName + " is " + ds + ".");
+          if(p.snackDone){
+            snack("ok", p.displayName + " is " + ds + ".");
+          } else {
+            snack("ok", "Upload finalized: " + p.displayName + " is " + ds + ".");
+          }
         } else if(ds === "Error" || ds === "Failed"){
           onAuthRecovered();
           snack("err", "Upload finalized with failure: " + (row.statusReason||row.downloadStatus), true);
-        } else if(p.awaitingReconcile){
-          snack("ok", "Upload accepted. Background processing is in progress.");
+        } else if(!p.snackDone){
+          p.snackDone = true;
+          snack("ok", "Upload accepted — " + p.displayName + " is processing on the server.");
         }
         return;
       }
@@ -1490,9 +1502,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
     p.reconcileUntil = Date.now() + UPLOAD_PENDING_RECONCILE_MS;
     paintPendingCell(p);
     updateUploadKeepalive();
+    kickPostUploadBurst();
     refreshArtifacts({ silent: true });
     refreshImports();
-    snack("err", msg || "Upload request ended before final acknowledgment; monitoring backend status automatically.", true);
+    if(!p.snackDone){
+      p.snackDone = true;
+      snack("ok", "Upload received — finishing on server…");
+    } else if(msg){
+      snack("ok", msg);
+    }
   }
 
   // Single upload path. The NOS is auto-detected server-side from the zip; md5
@@ -1506,12 +1524,22 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(replace) qs.set("replace","true");
     var key="u"+(++uploadSeq);
     var p={ key:key, displayName:name, namespace:namespace, total:f.size, isZip:true,
-            phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0 };
-    pendingUploads[key]=p; updateUploadKeepalive(); showTab("status"); resetUploadForm(); render();
+            phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0, snackDone:false };
+    pendingUploads[key]=p; updateUploadKeepalive(); kickPostUploadBurst();
+    showTab("status"); resetUploadForm(); render();
     sendUpload(api("/api/upload")+"?"+qs.toString(), f, p, {
-      onBodySent:function(){ p.phase="Unzipping"; paintPendingCell(p); },
+      onBodySent:function(){
+        p.phase="Unzipping";
+        if(!p.snackDone){
+          p.snackDone = true;
+          snack("ok", "Upload received — processing " + p.displayName + "…");
+        }
+        kickPostUploadBurst();
+        paintPendingCell(p);
+      },
       onDone:function(status, r){
         updateUploadKeepalive();
+        kickPostUploadBurst();
         if(isConflictResponse(status, r)){
           delete pendingUploads[key]; render();
           updateUploadKeepalive();
@@ -2199,10 +2227,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
     showFatal("Image Manager failed to start: " + msg);
   });
 
-  // Adaptive reactive polling: 4s while anything is uploading/downloading,
-  // 12s at rest; paused entirely while the tab is hidden.
+  // Adaptive reactive polling: 2s for 2 min after upload starts, 4s while
+  // anything is uploading/downloading, 12s at rest; paused while tab is hidden.
   var pollTimer=null;
-  function pollInterval(){ return activeStatusCount() > 0 ? 4000 : 12000; }
+  function pollInterval(){
+    if(inPostUploadBurst()) return UPLOAD_BURST_POLL_MS;
+    return activeStatusCount() > 0 ? 4000 : 12000;
+  }
   function schedulePoll(){
     if(pollTimer) clearTimeout(pollTimer);
     pollTimer=setTimeout(function(){
