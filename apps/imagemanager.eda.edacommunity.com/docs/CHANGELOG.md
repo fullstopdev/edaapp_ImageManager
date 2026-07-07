@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.1.15
+
+**Definitive fix for false sign-in banner while EDA session stays active.**
+
+- **Root cause (client):** `probeSession()` treated missing `kc-*` localStorage keys
+  as session loss even when `GET /api/config` returned `200`. Keycloak iframe churn
+  fired `storage` / `visibilitychange` / `focus` revalidation, which repeatedly
+  triggered the banner while the user remained signed into EDA.
+- **Root cause (server):** `verify_session()` invalidated `im_session` when the OIDC
+  access-token `te` field expired (~minutes) even though the app session `exp` was
+  still valid for 8 hours — `/api/config` could return `401` with an active EDA GUI
+  session.
+- **Trust model:** Only `GET /api/config` decides auth. `200` always dismisses the
+  banner; `401` must occur on 2+ probes at least 5s apart with no `200` in between
+  before showing sign-in-required UX. Network/non-401 errors never show the banner.
+- **Removed false-positive sources:** Keycloak `kc-*` storage watcher, focus/pageshow
+  session revalidation, dual-endpoint `/api/settings` confirmation, deferred session
+  loss queue, upload-session-loss UI during transfers, and `keycloakStoragePresent()`
+  veto.
+- **Background poll:** `/api/config` every 60s (was 30s); upload keepalive only recovers
+  on `200`, never triggers loss UI.
+
 ## v0.1.14
 
 **Fix false "Needs republish" flash after upload.**

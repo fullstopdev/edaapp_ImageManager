@@ -912,28 +912,20 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var pendingUploads = {}, uploadSeq = 0;
   var el = function(id){ return document.getElementById(id); };
   var embedded = window.self !== window.top;
-  var deferredSessionLoss = null;
   var authBootstrapComplete = false;
   var authReady = false;
   var controllerHealthy = true;
   var sessionCheckTimer = null;
-  var revalidateTimer = null;
-  var SESSION_CHECK_MS = 30000;
-  var REVALIDATE_DEBOUNCE_MS = 400;
+  var SESSION_CHECK_MS = 60000;
+  var AUTH_FAIL_MIN_COUNT = 2;
+  var AUTH_FAIL_MIN_SPAN_MS = 5000;
+  var authFailCount = 0;
+  var authFailFirstAt = 0;
   var UPLOAD_KEEPALIVE_MS = 15000;
   var UPLOAD_XHR_TIMEOUT_MS = 45 * 60 * 1000;
   var UPLOAD_PENDING_RECONCILE_MS = 3 * 60 * 1000;
   var uploadKeepaliveTimer = null;
-  var uploadSessionLost = false;
-  var uploadAuthProbeInFlight = false;
-  var uploadAuth401Streak = 0;
-  var authConfirmInFlight = false;
-  var authLoss401Streak = 0;
-  var AUTH_LOSS_MIN_STREAK = 2;
-  var AUTH_LOSS_UPLOAD_STREAK = 3;
-  var POST_UPLOAD_AUTH_GRACE_MS = 15000;
   var UPLOAD_STATUS_GRACE_MS = 120000;
-  var postUploadAuthGraceUntil = 0;
   var authBannerHideTimer = null;
   var lastRowStatus = {};
 
@@ -1039,52 +1031,98 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return fetch(api("/oauth/session/logout"), Object.assign({ method:"POST" }, FETCH_OPTS))
       .catch(function(){ return null; });
   }
-  function keycloakStoragePresent(){
-    try {
-      for(var i=0; i<localStorage.length; i++){
-        var k=localStorage.key(i);
-        if(k && k.indexOf("kc-")===0) return true;
-      }
-    } catch(e){}
-    return false;
-  }
   function sessionInterruptBlocked(){
-    // Never hard-interrupt auth UX while a pending upload row exists — the server
-    // may already have the artifact even if the XHR is still in Unzipping.
     return uploadInFlight();
   }
   function pollingAllowed(){
     return authReady || uploadInFlight();
   }
-  function deferSessionLossQuietly(msg){
-    deferredSessionLoss = deferredSessionLoss || msg || "Your EDA session has ended. Sign in again.";
+  function resetAuthFailStreak(){
+    authFailCount = 0;
+    authFailFirstAt = 0;
   }
-  function clearDeferredSessionLoss(){
-    deferredSessionLoss = null;
-  }
-  function startPostUploadAuthGrace(){
-    postUploadAuthGraceUntil = Date.now() + POST_UPLOAD_AUTH_GRACE_MS;
-    setTimeout(function(){
-      if(deferredSessionLoss && !uploadInFlight() && !uploadSessionLost){
-        flushDeferredSessionLoss();
-      }
-    }, POST_UPLOAD_AUTH_GRACE_MS + 50);
-  }
-  function inPostUploadAuthGrace(){
-    return Date.now() < postUploadAuthGraceUntil;
-  }
-  function onAuthRecovered(){
-    uploadSessionLost = false;
-    resetUploadAuthSignals();
-    clearDeferredSessionLoss();
+  function onAuthRecovered(user){
+    resetAuthFailStreak();
     authReady = true;
     syncLiveIndicator();
     setAuthBanner(null);
+    if(user) showAuthUser(user);
   }
-  function onUploadAuthSettled(){
-    onAuthRecovered();
-    startPostUploadAuthGrace();
-    flushDeferredSessionLoss();
+  function applyConfigOk(user){
+    onAuthRecovered(user);
+  }
+  function applyConfig401(){
+    if(sessionInterruptBlocked()) return;
+    var now = Date.now();
+    if(!authFailCount) authFailFirstAt = now;
+    authFailCount += 1;
+    if(authFailCount >= AUTH_FAIL_MIN_COUNT &&
+       (now - authFailFirstAt) >= AUTH_FAIL_MIN_SPAN_MS){
+      showConfirmedSessionLoss();
+    }
+  }
+  function probeConfigAuth(){
+    if(sessionInterruptBlocked()) return Promise.resolve(true);
+    var probe = Object.assign({ cache: "no-store" }, FETCH_OPTS);
+    return fetch(api("/api/config"), probe).then(function(r){
+      if(r.status === 200){
+        return r.json().then(function(c){
+          applyConfigOk(c && c.user);
+          return true;
+        }).catch(function(){
+          applyConfigOk(null);
+          return true;
+        });
+      }
+      if(r.status === 401){
+        applyConfig401();
+        return false;
+      }
+      return true;
+    }).catch(function(){ return true; });
+  }
+  function showConfirmedSessionLoss(msg){
+    if(sessionInterruptBlocked()) return;
+    clearServerSession().then(function(){
+      authReady = false;
+      if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
+      syncLiveIndicator();
+      hideAuthUser();
+      showSignInBanner(msg || "Your EDA session has ended. Sign in again.");
+    });
+  }
+  function handleAuthLoss(){
+    if(!authBootstrapComplete) return Promise.resolve(false);
+    if(sessionInterruptBlocked()) return Promise.resolve(false);
+    return probeConfigAuth().then(function(ok){ return !ok; });
+  }
+  function uploadKeepaliveTick(){
+    if(!uploadInFlight() || !authBootstrapComplete || document.hidden) return;
+    fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+      if(r.status === 200){
+        return r.json().then(function(c){ applyConfigOk(c && c.user); }).catch(function(){});
+      }
+    }).catch(function(){});
+  }
+  function updateUploadKeepalive(){
+    if(uploadInFlight()){
+      if(uploadKeepaliveTimer) return;
+      uploadKeepaliveTimer = setInterval(uploadKeepaliveTick, UPLOAD_KEEPALIVE_MS);
+      uploadKeepaliveTick();
+      return;
+    }
+    if(uploadKeepaliveTimer){ clearInterval(uploadKeepaliveTimer); uploadKeepaliveTimer = null; }
+    resetAuthFailStreak();
+  }
+  function scheduleSessionCheck(){
+    if(sessionCheckTimer) clearInterval(sessionCheckTimer);
+    sessionCheckTimer = setInterval(function(){
+      if(!authBootstrapComplete || document.hidden || sessionInterruptBlocked()) return;
+      probeConfigAuth();
+    }, SESSION_CHECK_MS);
+  }
+  function startSessionWatchers(){
+    scheduleSessionCheck();
   }
   function bootDone(){
     var b = document.getElementById("boot-shell");
@@ -1101,171 +1139,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function uploadInFlight(){
     return Object.keys(pendingUploads).length > 0;
   }
-  function markUploadSessionLoss(){
-    if(uploadSessionLost) return;
-    uploadSessionLost = true;
-    if(uploadInFlight()){
-      deferSessionLossQuietly("Your EDA session may have expired during upload. Monitoring status automatically.");
-      return;
-    }
-    handleSessionLoss("Your EDA session expired during upload. Sign in again, then check Dashboard status.");
-    snack("err", "Session expired during upload. Sign in again; if the image appears as Available, no retry is needed.", true);
-  }
-  function resetUploadAuthSignals(){
-    uploadAuth401Streak = 0;
-    authLoss401Streak = 0;
-  }
-  function authLossThreshold(){
-    return uploadInFlight() ? AUTH_LOSS_UPLOAD_STREAK : AUTH_LOSS_MIN_STREAK;
-  }
-  function confirmAuthExpiryFrom401(){
-    if(authConfirmInFlight) return Promise.resolve(false);
-    authLoss401Streak += 1;
-    if(authLoss401Streak < authLossThreshold()) return Promise.resolve(false);
-    authConfirmInFlight = true;
-    var probe = Object.assign({ cache: "no-store" }, FETCH_OPTS);
-    return Promise.all([
-      fetch(api("/api/config"), probe).then(function(r){ return r.status; }).catch(function(){ return 0; }),
-      fetch(api("/api/settings"), probe).then(function(r){ return r.status; }).catch(function(){ return 0; })
-    ]).then(function(statuses){
-      var denied = statuses.filter(function(st){ return st === 401; }).length;
-      var recovered = statuses.some(function(st){ return st === 200 || st === 204; });
-      if(denied >= 2 && !recovered) return true;
-      if(recovered) onAuthRecovered();
-      else resetUploadAuthSignals();
-      return false;
-    }).finally(function(){
-      authConfirmInFlight = false;
-    });
-  }
-  function verifyUploadSessionLoss(){
-    if(uploadSessionLost || uploadAuthProbeInFlight) return;
-    uploadAuthProbeInFlight = true;
-    confirmAuthExpiryFrom401().then(function(expired){
-      if(!expired) return;
-      uploadAuth401Streak += 1;
-      if(uploadAuth401Streak >= authLossThreshold()) markUploadSessionLoss();
-    }).catch(function(){
-      resetUploadAuthSignals();
-    }).finally(function(){
-      uploadAuthProbeInFlight = false;
-    });
-  }
-  function uploadKeepaliveTick(){
-    if(!uploadInFlight() || !authBootstrapComplete || document.hidden) return;
-    fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status === 401){
-        verifyUploadSessionLoss();
-        return;
-      }
-      if(r.status === 200) onAuthRecovered();
-    }).catch(function(){});
-  }
-  function updateUploadKeepalive(){
-    if(uploadInFlight()){
-      if(uploadKeepaliveTimer) return;
-      uploadKeepaliveTimer = setInterval(uploadKeepaliveTick, UPLOAD_KEEPALIVE_MS);
-      uploadKeepaliveTick();
-      return;
-    }
-    if(uploadKeepaliveTimer){ clearInterval(uploadKeepaliveTimer); uploadKeepaliveTimer = null; }
-    uploadSessionLost = false;
-    resetUploadAuthSignals();
-    startPostUploadAuthGrace();
-    if(deferredSessionLoss) flushDeferredSessionLoss();
-  }
-  function handleAuthLoss(){
-    if(!authBootstrapComplete) return Promise.resolve(false);
-    if(sessionInterruptBlocked()){
-      deferSessionLossQuietly();
-      return Promise.resolve(false);
-    }
-    return confirmAuthExpiryFrom401().then(function(expired){
-      if(!expired){
-        authReady = true;
-        syncLiveIndicator();
-        return false;
-      }
-      handleSessionLoss("Your EDA session has ended. Sign in again.");
-      return true;
-    }).catch(function(){
-      return false;
-    });
-  }
-  function handleSessionLoss(msg){
-    if(!authBootstrapComplete) return;
-    if(sessionInterruptBlocked()){
-      deferredSessionLoss = msg || "Your EDA session has ended. Sign in again.";
-      return;
-    }
-    if(inPostUploadAuthGrace() && !uploadSessionLost){
-      deferSessionLossQuietly(msg);
-      return;
-    }
-    // Never show sign-in UX if the server session cookie is still valid.
-    fetch(api("/api/config"), Object.assign({ cache: "no-store" }, FETCH_OPTS)).then(function(r){
-      if(r.status === 200){
-        onAuthRecovered();
-        return;
-      }
-      if(r.status === 401){
-        return confirmAuthExpiryFrom401().then(function(expired){
-          if(!expired){ onAuthRecovered(); return; }
-          showHardSessionLoss(msg);
-        });
-      }
-      showHardSessionLoss(msg);
-    }).catch(function(){
-      showHardSessionLoss(msg);
-    });
-  }
-  function showHardSessionLoss(msg){
-    clearServerSession().then(function(){
-      authReady = false;
-      if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
-      syncLiveIndicator();
-      hideAuthUser();
-      showSignInBanner(msg || "Your EDA session has ended. Sign in again.");
-    });
-  }
-  function probeSession(force){
-    if(sessionInterruptBlocked()) return Promise.resolve(true);
-    if(!authBootstrapComplete && !force) return Promise.resolve(true);
-    return fetch(api("/api/config"), FETCH_OPTS).then(function(r){
-      if(r.status === 401){
-        return confirmAuthExpiryFrom401().then(function(expired){ return !expired; });
-      }
-      if(r.status === 200){
-        onAuthRecovered();
-        if(embedded && !keycloakStoragePresent()) return false;
-        return true;
-      }
-      return true;
-    }).catch(function(){ return true; });
-  }
-  function scheduleRevalidate(){
-    if(revalidateTimer) clearTimeout(revalidateTimer);
-    revalidateTimer = setTimeout(function(){
-      revalidateTimer = null;
-      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
-      probeSession().then(function(ok){
-        if(!ok) handleSessionLoss("Your EDA session has ended.");
-      }).catch(function(){});
-    }, REVALIDATE_DEBOUNCE_MS);
-  }
-  function scheduleSessionCheck(){
-    if(sessionCheckTimer) clearInterval(sessionCheckTimer);
-    sessionCheckTimer = setInterval(function(){
-      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
-      probeSession().then(function(ok){
-        if(!ok) handleSessionLoss("Your EDA session has ended.");
-      }).catch(function(){});
-    }, SESSION_CHECK_MS);
-  }
-  function startSessionWatchers(){
-    scheduleSessionCheck();
-  }
   function retrySignIn(){
+    resetAuthFailStreak();
     setAuthBanner("loading", "Signing in\u2026");
     if(embedded){
       try {
@@ -1273,21 +1148,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
       } catch(e){}
     }
     setTimeout(function(){ navigateTo(apiBase + "/oauth/login"); }, 160);
-  }
-  function flushDeferredSessionLoss(){
-    if(!deferredSessionLoss || sessionInterruptBlocked()) return;
-    var msg = deferredSessionLoss;
-    probeSession(true).then(function(ok){
-      if(ok){
-        clearDeferredSessionLoss();
-        authReady = true;
-        syncLiveIndicator();
-        setAuthBanner(null);
-        return;
-      }
-      clearDeferredSessionLoss();
-      handleSessionLoss(msg);
-    }).catch(function(){});
   }
   var signout=el("signoutLink");
   if(signout){
@@ -1450,7 +1310,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var qs=new URLSearchParams({ namespace:namespace, name:name });
     return fetchJson(api("/api/check-conflict")+"?"+qs.toString()).then(function(res){
       if(res.status===401){
-        if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return Promise.reject(new Error("session check deferred")); }
+        if(sessionInterruptBlocked()) return Promise.reject(new Error("session check deferred"));
         return handleAuthLoss().then(function(expired){
           if(expired) throw new Error("Your EDA session has ended. Sign in again.");
           return checkConflict(namespace, name);
@@ -1606,7 +1466,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         delete pendingUploads[k];
         changed = true;
         if(settled){
-          onUploadAuthSettled();
+          onAuthRecovered();
           snack("ok", "Upload finalized: " + p.displayName + " is " + ds + ".");
         } else if(ds === "Error" || ds === "Failed"){
           onAuthRecovered();
@@ -1655,7 +1515,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
         if(isConflictResponse(status, r)){
           delete pendingUploads[key]; render();
           updateUploadKeepalive();
-          flushDeferredSessionLoss();
           var info=conflictInfo(r, name, namespace);
           askReplace(info.artifactName, info.namespace, function(){
             doUpload(f, namespace, lic, true);
@@ -1673,9 +1532,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
           else msg="Uploaded "+what+"."+(r.md5?(" md5 "+r.md5+"."):"")+(r.yangCreated?" YANG profile attached.":"");
           if(lic){ attachLicense(r.artifactName||r.uploadId||name, what, lic, msg); }
           else { snack("ok", msg); refresh(); }
-          flushDeferredSessionLoss();
         } else {
-          if(status===401){ verifyUploadSessionLoss(); }
           if(p.phase==="Unzipping" || p.phase==="Processing"){
             holdUploadForReconcile(p, (r&&r.error) || ("Upload response HTTP "+status+" while finalizing; tracking status in background."));
           } else {
@@ -1685,7 +1542,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
             snack("err",(r.error||("HTTP "+status)), true);
           }
           if(r.uploadId) refresh();
-          flushDeferredSessionLoss();
         }
       },
       onError:function(){
@@ -1697,7 +1553,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
           render();
           snack("err","Network error during upload.", true);
         }
-        flushDeferredSessionLoss();
       },
       onTimeout:function(){
         if(p.phase==="Unzipping" || p.phase==="Processing"){
@@ -1708,7 +1563,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
           render();
           snack("err","Upload timed out before transfer completed.", true);
         }
-        flushDeferredSessionLoss();
       }
     });
   }
@@ -2106,7 +1960,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function refreshImports(){
     fetchJson(api("/api/imports")).then(function(res){
       if(res.status===401){
-        if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return; }
+        if(sessionInterruptBlocked()) return;
         return handleAuthLoss().then(function(expired){ if(!expired) refreshImports(); });
       }
       if(!res.ok){
@@ -2280,7 +2134,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     opts = opts || {};
     return fetchJson(api("/api/artifacts")).then(function(res){
       if(res.status===401){
-        if(sessionInterruptBlocked()){ deferSessionLossQuietly(); return; }
+        if(sessionInterruptBlocked()) return;
         return handleAuthLoss().then(function(expired){ if(!expired) return refreshArtifacts(opts); });
       }
       if(!res.ok){
@@ -2318,7 +2172,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function syncLiveIndicator(){
     var pill=el("liveIndicator");
     if(!pill) return;
-    var sessionOk = authReady || uploadInFlight() || inPostUploadAuthGrace();
+    var sessionOk = authReady || uploadInFlight();
     var live = sessionOk && controllerHealthy && !document.hidden;
     pill.classList.toggle("active", live);
     pill.title = live
@@ -2367,25 +2221,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   document.addEventListener("visibilitychange", function(){
     if(!document.hidden && pollingAllowed() && authBootstrapComplete){
-      scheduleRevalidate();
       if(activeTab === "status"){
         refreshArtifacts();
         refreshImports();
       }
     }
     syncLiveIndicator();
-  });
-  window.addEventListener("focus", function(){
-    if(authBootstrapComplete && authReady) scheduleRevalidate();
-  });
-  window.addEventListener("storage", function(ev){
-    if(!authBootstrapComplete || !authReady) return;
-    if(ev.key === null || (ev.key && ev.key.indexOf("kc-") === 0)){
-      scheduleRevalidate();
-    }
-  });
-  window.addEventListener("pageshow", function(ev){
-    if(ev.persisted && authBootstrapComplete && authReady) scheduleRevalidate();
   });
   var refreshBtn=el("refreshBtn");
   if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });

@@ -257,11 +257,7 @@ def jwt_exp(access_token):
 
 
 def session_cookie_max_age(token_exp=None):
-    """HttpOnly session cookie Max-Age: min(app TTL, remaining access-token life)."""
-    if token_exp:
-        remaining = int(token_exp) - int(time.time())
-        if remaining > 0:
-            return min(SESSION_TTL, remaining)
+    """HttpOnly session cookie Max-Age (app session TTL; not access-token bound)."""
     return SESSION_TTL
 
 
@@ -316,8 +312,6 @@ def verify_session(cookie):
         return None
     now = time.time()
     if int(payload.get("exp", 0)) < now:
-        return None
-    if int(payload.get("te", 0)) and int(payload["te"]) < now:
         return None
     return payload.get("u")
 
