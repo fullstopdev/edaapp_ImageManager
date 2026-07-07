@@ -869,6 +869,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var revalidateTimer = null;
   var SESSION_CHECK_MS = 30000;
   var REVALIDATE_DEBOUNCE_MS = 400;
+  var UPLOAD_KEEPALIVE_MS = 15000;
+  var UPLOAD_XHR_TIMEOUT_MS = 45 * 60 * 1000;
+  var UPLOAD_PENDING_RECONCILE_MS = 3 * 60 * 1000;
+  var uploadKeepaliveTimer = null;
+  var uploadSessionLost = false;
 
   function navigateTo(url){
     try {
@@ -929,7 +934,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     return false;
   }
   function sessionInterruptBlocked(){
-    return uploadInFlight();
+    return uploadInFlight() && !uploadSessionLost;
   }
   function deferSessionLossQuietly(msg){
     deferredSessionLoss = deferredSessionLoss || msg || "Your EDA session has ended. Sign in again.";
@@ -945,6 +950,32 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function uploadInFlight(){
     return Object.keys(pendingUploads).length > 0;
+  }
+  function markUploadSessionLoss(){
+    if(uploadSessionLost) return;
+    uploadSessionLost = true;
+    handleSessionLoss("Your EDA session expired during upload. Sign in again, then check Dashboard status.");
+    snack("err", "Session expired during upload. Sign in again; if the image appears as Available, no retry is needed.", true);
+  }
+  function uploadKeepaliveTick(){
+    if(!uploadInFlight() || !authBootstrapComplete || document.hidden) return;
+    fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+      if(r.status === 401){
+        markUploadSessionLoss();
+        return;
+      }
+      if(r.status === 200){ uploadSessionLost = false; authReady = true; syncLiveIndicator(); }
+    }).catch(function(){});
+  }
+  function updateUploadKeepalive(){
+    if(uploadInFlight()){
+      if(uploadKeepaliveTimer) return;
+      uploadKeepaliveTimer = setInterval(uploadKeepaliveTick, UPLOAD_KEEPALIVE_MS);
+      uploadKeepaliveTick();
+      return;
+    }
+    if(uploadKeepaliveTimer){ clearInterval(uploadKeepaliveTimer); uploadKeepaliveTimer = null; }
+    uploadSessionLost = false;
   }
   function handleAuthLoss(){
     if(!authBootstrapComplete) return Promise.resolve();
@@ -1305,6 +1336,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var xhr=new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.withCredentials = true;
+    xhr.timeout = UPLOAD_XHR_TIMEOUT_MS;
     var startT=Date.now();
     xhr.upload.onprogress=function(e){
       if(!e.lengthComputable) return;
@@ -1318,8 +1350,53 @@ INDEX_HTML = r"""<!DOCTYPE html>
     xhr.onload=function(){ var r={}; try{ r=JSON.parse(xhr.responseText);}catch(e){}
       handlers.onDone(xhr.status, r); };
     xhr.onerror=function(){ handlers.onError(); };
+    xhr.ontimeout=function(){ if(handlers.onTimeout) handlers.onTimeout(); };
     xhr.send(file);
     return xhr;
+  }
+
+  function pendingMatchesServer(p, row){
+    return !!row && row.namespace===p.namespace &&
+      ((row.displayName||"")===p.displayName || (row.name||"")===p.displayName);
+  }
+  function reconcilePendingUploads(){
+    var changed=false;
+    Object.keys(pendingUploads).forEach(function(k){
+      var p=pendingUploads[k];
+      if(!p.awaitingReconcile) return;
+      var row=null;
+      for(var i=0;i<currentData.length;i++){
+        if(pendingMatchesServer(p, currentData[i])){ row=currentData[i]; break; }
+      }
+      if(row){
+        delete pendingUploads[k];
+        changed=true;
+        if(row.downloadStatus==="Available" || row.downloadStatus==="Ready"){
+          snack("ok", "Upload finalized: " + p.displayName + " is " + row.downloadStatus + ".");
+        } else if(row.downloadStatus==="Error" || row.downloadStatus==="Failed"){
+          snack("err", "Upload finalized with failure: " + (row.statusReason||row.downloadStatus), true);
+        } else {
+          snack("ok", "Upload accepted. Background processing is in progress.");
+        }
+        return;
+      }
+      if(Date.now() > (p.reconcileUntil||0)){
+        delete pendingUploads[k];
+        changed=true;
+        snack("err", "Upload did not finalize in time. Refresh status and retry if needed.", true);
+      }
+    });
+    if(changed){ updateUploadKeepalive(); render(); }
+  }
+  function holdUploadForReconcile(p, msg){
+    p.phase = "Processing";
+    p.awaitingReconcile = true;
+    p.reconcileUntil = Date.now() + UPLOAD_PENDING_RECONCILE_MS;
+    paintPendingCell(p);
+    updateUploadKeepalive();
+    refreshArtifacts({ silent: true });
+    refreshImports();
+    snack("err", msg || "Upload request ended before final acknowledgment; monitoring backend status automatically.", true);
   }
 
   // Single upload path. The NOS is auto-detected server-side from the zip; md5
@@ -1334,12 +1411,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var key="u"+(++uploadSeq);
     var p={ key:key, displayName:name, namespace:namespace, total:f.size, isZip:true,
             phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0 };
-    pendingUploads[key]=p; showTab("status"); resetUploadForm(); render();
+    pendingUploads[key]=p; updateUploadKeepalive(); showTab("status"); resetUploadForm(); render();
     sendUpload(api("/api/upload")+"?"+qs.toString(), f, p, {
       onBodySent:function(){ p.phase="Unzipping"; paintPendingCell(p); },
       onDone:function(status, r){
+        updateUploadKeepalive();
         if(isConflictResponse(status, r)){
           delete pendingUploads[key]; render();
+          updateUploadKeepalive();
           flushDeferredSessionLoss();
           var info=conflictInfo(r, name, namespace);
           askReplace(info.artifactName, info.namespace, function(){
@@ -1350,6 +1429,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         if(status>=200 && status<300 && r.ok){
           // The authoritative row now exists server-side; clear the pending row.
           delete pendingUploads[key];
+          updateUploadKeepalive();
           render();
           var what=(r.displayName||name), msg;
           if(r.nos==="srsim") msg="Uploaded "+what+" — SR-SIM image ready. Open Details for the sim NodeProfile and one-time setup."+(r.yangCreated?" YANG profile attached.":"");
@@ -1358,13 +1438,42 @@ INDEX_HTML = r"""<!DOCTYPE html>
           if(lic){ attachLicense(r.artifactName||r.uploadId||name, what, lic, msg); }
           else { snack("ok", msg); refresh(); }
           flushDeferredSessionLoss();
-        } else { delete pendingUploads[key]; render();
-          snack("err",(r.error||("HTTP "+status)), true); if(r.uploadId) refresh();
-          flushDeferredSessionLoss(); }
+        } else {
+          if(status===401){ markUploadSessionLoss(); }
+          if(p.phase==="Unzipping" || p.phase==="Processing"){
+            holdUploadForReconcile(p, (r&&r.error) || ("Upload response HTTP "+status+" while finalizing; tracking status in background."));
+          } else {
+            delete pendingUploads[key];
+            updateUploadKeepalive();
+            render();
+            snack("err",(r.error||("HTTP "+status)), true);
+          }
+          if(r.uploadId) refresh();
+          flushDeferredSessionLoss();
+        }
       },
-      onError:function(){ delete pendingUploads[key]; render();
-        snack("err","Network error during upload.", true);
-        flushDeferredSessionLoss(); }
+      onError:function(){
+        if(p.phase==="Unzipping" || p.phase==="Processing"){
+          holdUploadForReconcile(p, "Upload connection dropped after transfer. Monitoring backend status; no manual refresh needed.");
+        } else {
+          delete pendingUploads[key];
+          updateUploadKeepalive();
+          render();
+          snack("err","Network error during upload.", true);
+        }
+        flushDeferredSessionLoss();
+      },
+      onTimeout:function(){
+        if(p.phase==="Unzipping" || p.phase==="Processing"){
+          holdUploadForReconcile(p, "Upload timed out while finalizing. Monitoring backend status; sign in again if session expired.");
+        } else {
+          delete pendingUploads[key];
+          updateUploadKeepalive();
+          render();
+          snack("err","Upload timed out before transfer completed.", true);
+        }
+        flushDeferredSessionLoss();
+      }
     });
   }
 
@@ -1929,6 +2038,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
       }
       var d=res.body||{};
       currentData=d.artifacts||[];
+      reconcilePendingUploads();
       if(activeTab === "status"){
         updateStorage(d.storage);
         updateSystem(d.system);

@@ -7,6 +7,8 @@
 - Dashboard deep links now use the stable HttpProxy app path and open details by `uploadId` or image name.
 - Opening Details in the UI now updates the `?details=` query param; closing the dialog clears it.
 - New uploads treat early backend `Error/Failed` signals as `InProgress` for a short grace period, preventing false failure flashes while reconcile converges.
+- If a long upload request drops after transfer (`Unzipping`/`Processing`), the UI keeps tracking backend completion automatically instead of showing a false terminal failure.
+- Upload keepalive checks now detect true session expiry during long transfers and immediately show a sign-in recovery path.
 
 ## v0.1.6
 
