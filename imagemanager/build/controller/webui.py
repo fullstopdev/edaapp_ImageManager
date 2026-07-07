@@ -874,6 +874,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var UPLOAD_PENDING_RECONCILE_MS = 3 * 60 * 1000;
   var uploadKeepaliveTimer = null;
   var uploadSessionLost = false;
+  var uploadAuthProbeInFlight = false;
+  var uploadAuth401Streak = 0;
 
   function navigateTo(url){
     try {
@@ -957,14 +959,49 @@ INDEX_HTML = r"""<!DOCTYPE html>
     handleSessionLoss("Your EDA session expired during upload. Sign in again, then check Dashboard status.");
     snack("err", "Session expired during upload. Sign in again; if the image appears as Available, no retry is needed.", true);
   }
+  function resetUploadAuthSignals(){
+    uploadAuth401Streak = 0;
+  }
+  function verifyUploadSessionLoss(){
+    if(uploadSessionLost || uploadAuthProbeInFlight) return;
+    uploadAuthProbeInFlight = true;
+    fetch(api("/api/config"), Object.assign({ cache: "no-store" }, FETCH_OPTS)).then(function(r){
+      if(r.status !== 401){
+        resetUploadAuthSignals();
+        if(r.status === 200){ uploadSessionLost = false; authReady = true; syncLiveIndicator(); }
+        return;
+      }
+      uploadAuth401Streak += 1;
+      if(uploadAuth401Streak < 2) return;
+      fetch(api("/api/config"), Object.assign({ cache: "no-store" }, FETCH_OPTS)).then(function(confirm){
+        if(confirm.status === 401){
+          markUploadSessionLoss();
+          return;
+        }
+        resetUploadAuthSignals();
+        if(confirm.status === 200){ uploadSessionLost = false; authReady = true; syncLiveIndicator(); }
+      }).catch(function(){
+        resetUploadAuthSignals();
+      });
+    }).catch(function(){
+      resetUploadAuthSignals();
+    }).finally(function(){
+      uploadAuthProbeInFlight = false;
+    });
+  }
   function uploadKeepaliveTick(){
     if(!uploadInFlight() || !authBootstrapComplete || document.hidden) return;
     fetch(api("/api/config"), FETCH_OPTS).then(function(r){
       if(r.status === 401){
-        markUploadSessionLoss();
+        verifyUploadSessionLoss();
         return;
       }
-      if(r.status === 200){ uploadSessionLost = false; authReady = true; syncLiveIndicator(); }
+      if(r.status === 200){
+        uploadSessionLost = false;
+        resetUploadAuthSignals();
+        authReady = true;
+        syncLiveIndicator();
+      }
     }).catch(function(){});
   }
   function updateUploadKeepalive(){
@@ -976,6 +1013,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }
     if(uploadKeepaliveTimer){ clearInterval(uploadKeepaliveTimer); uploadKeepaliveTimer = null; }
     uploadSessionLost = false;
+    resetUploadAuthSignals();
   }
   function handleAuthLoss(){
     if(!authBootstrapComplete) return Promise.resolve();
@@ -1439,7 +1477,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
           else { snack("ok", msg); refresh(); }
           flushDeferredSessionLoss();
         } else {
-          if(status===401){ markUploadSessionLoss(); }
+          if(status===401){ verifyUploadSessionLoss(); }
           if(p.phase==="Unzipping" || p.phase==="Processing"){
             holdUploadForReconcile(p, (r&&r.error) || ("Upload response HTTP "+status+" while finalizing; tracking status in background."));
           } else {

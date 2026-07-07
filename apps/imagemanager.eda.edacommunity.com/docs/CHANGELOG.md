@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.8
+
+**Fix upload session-expiry false positives with verified auth-loss probes.**
+
+- **Root cause:** v0.1.7 marked upload session loss on a single `401` signal during long transfers (`/api/config` keepalive tick or upload final response), which could coincide with transient proxy/network blips while backend reconcile still completed successfully.
+- **Verified expiry only:** Upload flow now requires consecutive explicit `/api/config` `401` responses plus a confirm probe before showing the "Session expired during upload" banner.
+- **Reconcile-first behavior:** While uploads are in `Unzipping`/`Processing`, transient request drops stay in reconciliation mode first; hard expiry is deferred unless auth-loss probe confirmation succeeds.
+- **Recovery UX preserved:** True session expiry still shows the sign-in recovery message; valid sessions continue through automatic status reconciliation without manual sign-in.
+
 ## v0.1.7
 
 **Fix deep-link handling and transient upload failure state.**
