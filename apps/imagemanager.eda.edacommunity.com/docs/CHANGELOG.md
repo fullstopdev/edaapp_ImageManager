@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.23
+
+**Fix SSO login regression from v0.1.21 identity probe (critical).**
+
+- **Root cause:** v0.1.21 probed Keycloak `login-status-iframe.html/init` on bootstrap
+  and during `reconcileAuthState`. From the imagemanager httpproxy origin the probe
+  often returns 403 even when the user is logged into EDA and `/api/config` is 200.
+  Bootstrap treated that as confirmed session loss: `POST /oauth/session/logout`
+  cleared `im_session`, showed the sign-in banner, and in embedded mode “Try again”
+  only reloaded into the same false-positive loop — SSO appeared completely broken.
+- **Fix:** Remove the identity iframe probe. Bootstrap trusts `/api/config` 200 and
+  calls `onAuthReady` directly. Ongoing session checks use `/api/config` only
+  (`probeConfigAuth`); EDA logout is still detected via `kc-*` localStorage watchers
+  and the 2×401-over-≥5s trust model.
+- **Includes:** v0.1.22 upload fixes (dedupe in-flight uploads, preserve File through
+  replace, ignore stale PVC rows during reconcile).
+
 ## v0.1.22
 
 **Fix duplicate upload rows and false replace success during file upload.**
