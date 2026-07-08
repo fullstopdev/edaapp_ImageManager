@@ -279,7 +279,16 @@ def _validate_jwt_claims(payload):
         return False
     if exp < time.time() - _JWT_LEEWAY_SECONDS:
         return False
-    if payload.get("iss") != JWT_ISSUER:
+    # Keycloak's `iss` claim can differ depending on whether it is observed
+    # via internal service URLs vs proxy URLs (EDA front-ends /core/*).
+    # Security note: signature validation already ensures the token was
+    # minted by the correct realm's keys; we only require the realm match.
+    iss = payload.get("iss")
+    if not isinstance(iss, str) or not iss:
+        return False
+    iss_norm = iss.rstrip("/")
+    expected_norm = str(JWT_ISSUER).rstrip("/")
+    if iss_norm != expected_norm and not iss_norm.endswith(f"/realms/{REALM}"):
         return False
 
     aud = payload.get("aud")

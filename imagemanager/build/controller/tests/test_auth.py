@@ -34,6 +34,19 @@ def test_token_identity_rejects_wrong_issuer(make_jwt):
     assert roles == set()
 
 
+def test_token_identity_accepts_same_realm_issuer(make_jwt):
+    token_resp = {
+        "access_token": make_jwt({
+            "iss": "https://example.invalid/realms/eda",
+            "exp": int(time.time()) + 3600,
+            "sub": "x",
+        }),
+    }
+    user, roles = auth.token_identity(token_resp)
+    assert user == "x"
+    assert roles == set()
+
+
 def test_token_identity_rejects_wrong_audience(make_jwt):
     token_resp = {
         "access_token": make_jwt({

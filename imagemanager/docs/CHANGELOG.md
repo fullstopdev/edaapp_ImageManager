@@ -1,5 +1,8 @@
 # Changelog
 
+## v0.1.30
+**Fix sign-in: accept Keycloak JWT issuer formats behind the EDA proxy.**
+
 ## v0.1.29
 
 **Republish Image Manager controller/UI with image tag `v0.1.29`.**
