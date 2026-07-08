@@ -1355,12 +1355,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function retrySignIn(){
     resetAuthFailStreak();
     setAuthBanner("loading", "Signing in\u2026");
-    if(embedded){
-      try {
-        if(window.top && window.top !== window.self){ window.top.location.reload(); return; }
-      } catch(e){}
-    }
-    setTimeout(function(){ navigateTo(apiBase + "/oauth/login"); }, 160);
+    setTimeout(function(){ redirectToEdaLogin(); }, 160);
   }
   var signout=el("signoutLink");
   if(signout){
@@ -1574,9 +1569,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   fetchJson(api("/api/config")).then(function(res){
     if(res.status === 401){
       handleBootstrap401();
-      if(!embedded){
-        setTimeout(function(){ navigateTo(apiBase + "/oauth/login"); }, 160);
-      }
       return;
     }
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
