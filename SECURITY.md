@@ -35,6 +35,8 @@ identity chain.
 
 - On successful token validation and role-based authorization, `auth.py` mints a short-lived
   HttpOnly session cookie (`im_session`) signed with this controller’s process key.
-- API requests use `im_session` to authenticate, but logout correctness is anchored to the
-  live identity-proxy cookie presence.
+- API requests use `im_session` to authenticate. Logout correctness combines periodic
+  `/api/config` probes, `kc-*` localStorage watchers, and a client-side probe of the
+  EDA identity proxy Keycloak session iframe (cookies cleared on EDA logout are not sent
+  to `/core/httpproxy/v1/imagemanager` paths).
 

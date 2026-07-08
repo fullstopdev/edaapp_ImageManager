@@ -994,7 +994,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var sessionCheckTimer = null;
   var revalidateTimer = null;
   var sustainedKcTimer = null;
-  var SESSION_CHECK_MS = 15000;
+  var SESSION_CHECK_MS = 8000;
+  var IDP_PROBE_CLIENT_ID = "auth";
   var REVALIDATE_DEBOUNCE_MS = 400;
   var KC_ABSENCE_CONFIRM_MS = 1200;
   var sawKeycloakStorage = false;
@@ -1202,12 +1203,44 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       return true;
     }).catch(function(){ return true; });
   }
+  function edaIdentityProbeUrl(){
+    var origin = encodeURIComponent(window.location.origin);
+    return window.location.origin + "/core/proxy/v1/identity/realms/eda/protocol/openid-connect/login-status-iframe.html/init?client_id="
+      + encodeURIComponent(IDP_PROBE_CLIENT_ID) + "&origin=" + origin;
+  }
+  function probeEdaIdentitySession(){
+    if(sessionInterruptBlocked()) return Promise.resolve(true);
+    var probe = { credentials: "include", cache: "no-store" };
+    return fetch(edaIdentityProbeUrl(), probe).then(function(r){
+      // 403 is unreliable from the imagemanager proxy origin — never treat as logout.
+      if(r.status === 401) return false;
+      if(r.status === 403) return true;
+      if(!r.ok) return true;
+      return r.text().then(function(body){
+        try {
+          var j = JSON.parse(body);
+          if(j && j.status === "changed") return false;
+        } catch(e){
+          if(/"status"\s*:\s*"changed"/.test(body)) return false;
+        }
+        return true;
+      });
+    }).catch(function(){ return true; });
+  }
   function reconcileAuthState(){
-    // Trust /api/config for session validity; kc-* storage watchers handle EDA
-    // logout. The identity iframe probe is unreliable from the imagemanager
-    // proxy origin (403 while still logged in) so never treat probe failure as
-    // logout when config still returns 200.
-    return probeConfigAuth();
+    // Trust /api/config first; when still 200, probe the EDA identity proxy session
+    // (Keycloak cookies cleared on EDA logout are not sent to imagemanager paths).
+    // kc-* localStorage watchers remain a secondary signal.
+    return probeConfigAuth().then(function(configOk){
+      if(!configOk || !authReady) return configOk;
+      return probeEdaIdentitySession().then(function(idpOk){
+        if(!idpOk){
+          showConfirmedSessionLoss();
+          return false;
+        }
+        return true;
+      });
+    });
   }
   function showConfirmedSessionLoss(msg){
     if(sessionInterruptBlocked()) return;
@@ -1303,8 +1336,16 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       return pendingIdentity(p.displayName, p.namespace) === pid;
     });
   }
-  function setUploadBtnBusy(on){
-    if(btn) btn.disabled = !!on;
+  function currentUploadSelection(){
+    var f = binFile && binFile.files && binFile.files[0];
+    var namespace = (ns && ns.value || "").trim();
+    var name = (imageName && imageName.value || (f ? deriveName(f.name) : "")).trim().toLowerCase();
+    return { name: name, namespace: namespace };
+  }
+  function syncUploadBtnState(){
+    if(!btn) return;
+    var sel = currentUploadSelection();
+    btn.disabled = !!(sel.name && sel.namespace && hasPendingFor(sel.name, sel.namespace));
   }
   function kickPostUploadBurst(){
     postUploadBurstUntil = Date.now() + UPLOAD_BURST_WINDOW_MS;
@@ -1576,13 +1617,16 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(!f) return;
     imageName.value = deriveName(f.name);
     binHint.textContent=f.name+"  ·  "+fmtBytes(f.size);
+    syncUploadBtnState();
   });
   // Names are lowercased everywhere; keep the field lowercase as the user edits.
   imageName.addEventListener("input", function(ev){
     if(ev && ev.isComposing) return;   // don't disturb a mid-IME composition
     var s=imageName.selectionStart, e=imageName.selectionEnd, lo=imageName.value.toLowerCase();
     if(lo!==imageName.value){ imageName.value=lo; try{ imageName.setSelectionRange(s,e); }catch(_){} }
+    syncUploadBtnState();
   });
+  if(ns) ns.addEventListener("change", syncUploadBtnState);
 
   // ---------- upload (closes dialog; progress shown as a live table row) ----------
   function resetUploadForm(){
@@ -1694,7 +1738,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         snack("err", "Upload did not finalize in time. Refresh status and retry if needed.", true);
       }
     });
-    if(changed){ updateUploadKeepalive(); setUploadBtnBusy(uploadInFlight()); render(); }
+    if(changed){ updateUploadKeepalive(); syncUploadBtnState(); render(); }
   }
   function holdUploadForReconcile(p, msg){
     p.phase = "Processing";
@@ -1736,7 +1780,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
             phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0, snackDone:false,
             startedAt:Date.now(), replace:!!replace };
     pendingUploads[key]=p; updateUploadKeepalive(); kickPostUploadBurst();
-    setUploadBtnBusy(true);
+    syncUploadBtnState();
     showTab("status"); render();
     sendUpload(api("/api/upload")+"?"+qs.toString(), f, p, {
       onBodySent:function(){
@@ -1754,7 +1798,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         if(isConflictResponse(status, r)){
           delete pendingUploads[key]; render();
           updateUploadKeepalive();
-          setUploadBtnBusy(uploadInFlight());
+          syncUploadBtnState();
           var info=conflictInfo(r, name, namespace);
           askReplace(info.artifactName, info.namespace, function(){
             doUpload(f, namespace, lic, true, name);
@@ -1765,7 +1809,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
           // The authoritative row now exists server-side; clear the pending row.
           delete pendingUploads[key];
           updateUploadKeepalive();
-          setUploadBtnBusy(uploadInFlight());
+          syncUploadBtnState();
           resetUploadForm();
           render();
           var what=(r.displayName||name), msg;
@@ -1782,7 +1826,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
           } else {
             delete pendingUploads[key];
             updateUploadKeepalive();
-            setUploadBtnBusy(uploadInFlight());
+            syncUploadBtnState();
             resetUploadForm();
             render();
             snack("err",(r.error||("HTTP "+status)), true);
@@ -1796,7 +1840,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         } else {
           delete pendingUploads[key];
           updateUploadKeepalive();
-          setUploadBtnBusy(uploadInFlight());
+          syncUploadBtnState();
           resetUploadForm();
           render();
           snack("err","Network error during upload.", true);
@@ -1808,7 +1852,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         } else {
           delete pendingUploads[key];
           updateUploadKeepalive();
-          setUploadBtnBusy(uploadInFlight());
+          syncUploadBtnState();
           resetUploadForm();
           render();
           snack("err","Upload timed out before transfer completed.", true);
@@ -1819,8 +1863,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   btn.addEventListener("click", function(e){
     if(e && e.preventDefault) e.preventDefault();
-    if(btn.disabled || uploadInFlight()){
-      snack("err","An upload is already in progress.");
+    if(btn.disabled){
+      snack("err","An upload for this image is already in progress.");
       return;
     }
     var f=binFile.files[0];
@@ -1835,6 +1879,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(lic && !looksLikeLicense(lic)){ snack("err","That doesn't look like a license key — paste the full “<node-id> <key>” line (extra spaces, quotes or a label are fine)."); return; }
     var uploadFile=f, uploadNs=namespace, uploadLic=lic;
     var uploadName=(imageName.value||deriveName(f.name)).trim().toLowerCase();
+    if(hasPendingFor(uploadName, uploadNs)){
+      snack("err","An upload for this image is already in progress.");
+      return;
+    }
     checkConflict(uploadNs, uploadName).then(function(body){
       if(body.exists){
         askReplace(body.artifactName||uploadName, body.namespace||uploadNs, function(){
@@ -2521,8 +2569,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   window.addEventListener("focus", function(){
     if(authBootstrapComplete && authReady && !document.hidden) scheduleRevalidate();
   });
-  window.addEventListener("pageshow", function(ev){
-    if(ev.persisted && authBootstrapComplete && authReady) scheduleRevalidate();
+  window.addEventListener("pageshow", function(){
+    if(authBootstrapComplete && authReady && !document.hidden) scheduleRevalidate();
   });
   var refreshBtn=el("refreshBtn");
   if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });

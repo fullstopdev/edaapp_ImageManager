@@ -1,5 +1,27 @@
 # Changelog
 
+## v0.1.31
+
+**Concurrent uploads for different images; EDA logout sync via identity probe.**
+
+- **Concurrent uploads (root cause):** The Upload button and `setUploadBtnBusy()` used a
+  global `uploadInFlight()` lock — any in-flight upload disabled the button and rejected
+  new clicks, even for a different name+namespace pair. `doUpload` already deduped via
+  `hasPendingFor` per image; only the button/global busy state was wrong.
+- **Concurrent uploads (fix):** `syncUploadBtnState()` disables Upload only when the
+  **current** form selection (name+namespace) has a pending row. Different images can
+  upload in parallel; duplicate same-image uploads remain blocked. Replace flow and
+  `sessionInterruptBlocked` upload guard unchanged.
+- **EDA logout (root cause):** After EDA sign-out, Keycloak identity cookies are cleared
+  but `im_session` remains valid (8h TTL) and `/api/config` keeps returning 200. EDA does
+  not always clear `kc-*` localStorage keys, so storage watchers alone miss the logout.
+- **EDA logout (fix):** After a successful `/api/config` probe, `reconcileAuthState()`
+  also probes the EDA identity proxy Keycloak session iframe (`login-status-iframe/init`
+  via `client_id=auth`). Only explicit `401` or JSON `status: "changed"` triggers
+  `POST /oauth/session/logout` and the sign-in banner — **403 is ignored** (v0.1.23
+  regression guard). Session poll interval shortened to 8s; `pageshow` always
+  revalidates (not only bfcache). `kc-*` watchers retained.
+
 ## v0.1.30
 **Fix sign-in: accept Keycloak JWT issuer formats behind the EDA proxy.**
 
