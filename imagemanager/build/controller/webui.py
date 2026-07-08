@@ -2559,7 +2559,9 @@ _IMGR_APP_JS_TOKEN = "__IMGR_APP_JS__"
 _BODY_HTML = (
     _INDEX_HTML_RAW[:_css_open_end]
     + _IMGR_STYLE_TOKEN
-    + _INDEX_HTML_RAW[_css_close_start:_js_open_start]
+    # Keep the opening `<script>\n` tag; `_APP_JS` contains only the JS payload
+    # between `_js_open_end` and `_js_close_start`.
+    + _INDEX_HTML_RAW[_css_close_start:_js_open_end]
     + _IMGR_APP_JS_TOKEN
     + _INDEX_HTML_RAW[_js_close_start:]
 )

@@ -13,6 +13,12 @@
   **Try again** buttons, and clears table loading placeholders. Standalone tabs
   still auto-redirect to `/oauth/login` after a short delay; embedded mode
   shows the banner only (cable-map pattern, no top-frame OAuth redirect).
+- **Additional cause (this release hotfix):** `imagemanager/build/controller/webui.py`
+  reassembled `INDEX_HTML` without preserving the opening `<script>` tag around
+  the `_APP_JS` payload. The browser then rendered the JavaScript as visible
+  page text (instead of executing it), so the app bootstrap never completed.
+- **Additional fix:** preserve `<script>\n` when reassembling `INDEX_HTML`
+  (keep the opening tag; inject only the JS payload contents).
 - **Verified:** `im_session` cookie `Path` remains `APP_PROXY_PREFIX`;
   `auth.verify_session` trusts signed session TTL without IDP cookie gate
   (v0.1.25).
