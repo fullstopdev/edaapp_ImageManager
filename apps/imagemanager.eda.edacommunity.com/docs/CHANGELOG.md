@@ -1,5 +1,12 @@
 # Changelog
 
+## v0.1.27
+
+**Fix controller runtime JWT deps crash (PyJWT/cryptography).**
+
+- Install PyJWT + cryptography in the controller runtime image so `import jwt`
+  succeeds in Kubernetes (no `ModuleNotFoundError: No module named 'jwt'`).
+
 ## v0.1.26
 
 **Harden JWT validation, improve maintainability, and expose operational metrics.**
