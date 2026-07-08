@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.35
+
+**Fix SSO login loop when opening Image Manager from the EDA dashboard.**
+
+- **Root cause:** v0.1.32–v0.1.34 ran the dual identity probe (`login-status-iframe/init`
+  + OIDC `prompt=none`) on **every bootstrap** after `/api/config` 200. The silent OIDC
+  probe used `client_id=auth` with the imagemanager `/oauth/callback` redirect (valid
+  only for `client_id=eda`), so it often returned `false` even for logged-in EDA users.
+  `onIdentityProbeFailed()` then cleared the freshly minted `im_session` and restarted
+  OAuth → infinite refresh loop.
+- **Fix (kkayhan / cable-map pattern):** Bootstrap trusts server session only —
+  `/api/config` 200 + user → `onAuthReady` with no identity probe. Identity probes
+  run only in `reconcileAuthState()` when `authReady` (active session) to detect EDA
+  logout. Silent OIDC probe now uses EDA `/` as `redirect_uri` for the public `auth`
+  client; inconclusive probe results defer to the iframe probe instead of failing.
+- **Unchanged:** Bootstrap 401 → `/oauth/login` silent SSO (v0.1.34); no IDP cookie
+  gate on `verify_session`; embedded sign-in banner; `navigateTo` stays in-frame;
+  concurrent uploads; URL import empty-state fix.
+
 ## v0.1.34
 
 **Fix dashboard launch redirecting to EDA home instead of Image Manager.**

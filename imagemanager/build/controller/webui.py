@@ -1240,7 +1240,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function probeEdaOidcSilent(){
     if(sessionInterruptBlocked()) return Promise.resolve(null);
     var probe = { credentials: "include", redirect: "manual", cache: "no-store" };
-    var ru = encodeURIComponent(apiBase + "/oauth/callback");
+    // Public browser client (auth) + EDA root redirect — not the imagemanager
+    // OAuth callback (that belongs to client_id=eda and breaks silent SSO).
+    var ru = encodeURIComponent(window.location.origin + "/");
     var url = window.location.origin + "/core/proxy/v1/identity/realms/eda/protocol/openid-connect/auth"
       + "?client_id=" + encodeURIComponent(IDP_PROBE_CLIENT_ID)
       + "&redirect_uri=" + ru
@@ -1266,16 +1268,18 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       var iframeOk = results[0];
       var oidcOk = results[1];
       if(oidcOk === false) return false;
-      if(!iframeOk) return false;
-      return true;
+      if(oidcOk === true) return true;
+      // Inconclusive silent probe (403, network) — trust iframe only.
+      return iframeOk;
     });
   }
   function reconcileAuthState(){
-    // Trust /api/config first; when still 200, probe the EDA identity proxy session
-    // (Keycloak cookies cleared on EDA logout are not sent to imagemanager paths).
-    // kc-* localStorage watchers remain a secondary signal.
+    // Trust /api/config first. Identity probes run only after authReady (active
+    // session) to detect EDA logout — not on bootstrap, where a false-negative
+    // probe would clear a freshly minted im_session and loop OAuth.
     return probeConfigAuth().then(function(configOk){
       if(!configOk) return false;
+      if(!authReady) return true;
       return probeEdaIdentitySession().then(function(idpOk){
         if(!idpOk){
           return onIdentityProbeFailed().then(function(){ return false; });
@@ -1653,29 +1657,26 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(c.version){
       var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
-    probeEdaIdentitySession().then(function(idpOk){
-      if(!idpOk){
-        onIdentityProbeFailed();
+    // Trust server session on bootstrap (kkayhan / cable-map pattern): im_session
+    // + /api/config 200 is enough to enter the app. Identity probes are for
+    // detecting EDA logout during an active session (reconcileAuthState).
+    authBootstrapComplete = true;
+    onAuthReady(c.user || null);
+    var defaultNs=(c.defaultArtifactNamespace||"").trim();
+    fetchJson(api("/api/namespaces")).then(function(nsRes){
+      if(nsRes.status===401) return;
+      if(!nsRes.ok){
+        snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
         return;
       }
-      authBootstrapComplete = true;
-      onAuthReady(c.user || null);
-      var defaultNs=(c.defaultArtifactNamespace||"").trim();
-      fetchJson(api("/api/namespaces")).then(function(nsRes){
-        if(nsRes.status===401) return;
-        if(!nsRes.ok){
-          snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
-          return;
-        }
-        fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
-      });
-      refresh();
-      refreshImports();
-      fetchJson(api("/api/settings")).then(function(sRes){
-        if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
-      });
-      syncLiveIndicator();
+      fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
     });
+    refresh();
+    refreshImports();
+    fetchJson(api("/api/settings")).then(function(sRes){
+      if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
+    });
+    syncLiveIndicator();
   }).catch(function(err){
     var msg = (err && err.message && err.message.indexOf("config unavailable")===0)
             ? err.message : "Failed to load Image Manager configuration.";

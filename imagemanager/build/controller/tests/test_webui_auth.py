@@ -5,12 +5,19 @@ from __future__ import annotations
 import webui
 
 
-def test_bootstrap_probes_identity_before_auth_ready():
+def test_bootstrap_trusts_config_without_identity_probe():
     html = webui.INDEX_HTML
+    assert "authBootstrapComplete = true" in html
+    assert "onAuthReady(c.user" in html
+    # Bootstrap must not gate on identity probe (false-negative → OAuth loop).
+    bootstrap = html.split("fetchJson(api(\"/api/config\"))", 1)[1]
+    assert "probeEdaIdentitySession().then(function(idpOk)" not in bootstrap.split("function probeEdaIdentitySession", 1)[0]
+
+
+def test_identity_probe_gated_on_auth_ready():
+    html = webui.INDEX_HTML
+    assert "if(!authReady) return true" in html
     assert "probeEdaIdentitySession().then(function(idpOk)" in html
-    probe_at = html.index("probeEdaIdentitySession().then(function(idpOk)")
-    ready_at = html.index("onAuthReady(c.user")
-    assert probe_at < ready_at
 
 
 def test_periodic_session_revalidation_interval():
@@ -48,6 +55,7 @@ def test_identity_probe_uses_eda_proxy_not_imagemanager_origin():
     assert "if(r.status === 403) return true" in html
     assert "probeEdaOidcSilent" in html
     assert "prompt=none" in html
+    assert 'encodeURIComponent(window.location.origin + "/")' in html
 
 
 def test_url_import_empty_state_navigates_to_import_tab():
