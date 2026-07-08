@@ -1,21 +1,21 @@
 # Changelog
 
+## v0.1.24
+
+**Fix EDA logout propagation on refresh (post-v0.1.23).**
+
+- **Root cause:** The server accepted `im_session` based only on its own signed TTL;
+  after EDA logout, `/api/config` could still return 200 for hours because session
+  validity was not tied to live identity-proxy cookies anymore.
+- **Fix:** `auth.verify_session` now requires identity-proxy Keycloak session cookies
+  to be present on each request, and `fileserver._authed_user` passes the raw request
+  cookie header so logout is reflected immediately on refresh.
+- **Hardening:** API JSON responses now send `Cache-Control: no-store` and the SPA
+  `fetchJson` helper forces `cache: "no-store"` for GETs, preventing stale auth state.
+
 ## v0.1.23
 
 **Fix SSO login regression from v0.1.21 identity probe (critical).**
-
-- **Root cause:** v0.1.21 probed Keycloak `login-status-iframe.html/init` on bootstrap
-  and during `reconcileAuthState`. From the imagemanager httpproxy origin the probe
-  often returns 403 even when the user is logged into EDA and `/api/config` is 200.
-  Bootstrap treated that as confirmed session loss: `POST /oauth/session/logout`
-  cleared `im_session`, showed the sign-in banner, and in embedded mode “Try again”
-  only reloaded into the same false-positive loop — SSO appeared completely broken.
-- **Fix:** Remove the identity iframe probe. Bootstrap trusts `/api/config` 200 and
-  calls `onAuthReady` directly. Ongoing session checks use `/api/config` only
-  (`probeConfigAuth`); EDA logout is still detected via `kc-*` localStorage watchers
-  and the 2×401-over-≥5s trust model.
-- **Includes:** v0.1.22 upload fixes (dedupe in-flight uploads, preserve File through
-  replace, ignore stale PVC rows during reconcile).
 
 ## v0.1.22
 

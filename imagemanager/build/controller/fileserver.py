@@ -178,6 +178,8 @@ class Handler(BaseHTTPRequestHandler):
         body = json.dumps(obj).encode("utf-8")
         self.send_response(code)
         self.send_header("Content-Type", "application/json")
+        self.send_header("Cache-Control", "no-store")
+        self.send_header("Pragma", "no-cache")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
@@ -209,7 +211,10 @@ class Handler(BaseHTTPRequestHandler):
         With auth disabled (local dev), returns a placeholder user."""
         if not auth.enabled():
             return "local"
-        return auth.verify_session(self._cookie(auth.SESSION_COOKIE))
+        return auth.verify_session(
+            self._cookie(auth.SESSION_COOKIE),
+            self.headers.get("Cookie", ""),
+        )
 
     def _set_cookie(self, name, value, max_age):
         parts = [f"{name}={value}", f"Path={auth.APP_PROXY_PREFIX}",

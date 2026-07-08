@@ -38,6 +38,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from http.cookies import SimpleCookie
 
 import k8s
 
@@ -76,6 +77,13 @@ _SIGNING_KEY = os.urandom(32)
 _ca_cache = [None]
 _secret_cache = [None]
 _admin_tok_cache = {"tok": None, "exp": 0}
+_IDP_SESSION_COOKIE_NAMES = (
+    "KEYCLOAK_SESSION",
+    "KEYCLOAK_IDENTITY",
+    "AUTH_SESSION_ID",
+    "AUTH_SESSION_ID_LEGACY",
+    "KC_RESTART",
+)
 
 
 # --------------------------- config ---------------------------
@@ -261,6 +269,21 @@ def session_cookie_max_age(token_exp=None):
     return SESSION_TTL
 
 
+def has_idp_session_cookie(raw_cookie_header):
+    """Whether this request carries Keycloak/identity-proxy session cookies."""
+    if not raw_cookie_header:
+        return False
+    c = SimpleCookie()
+    try:
+        c.load(raw_cookie_header)
+    except Exception:
+        return False
+    for name in c.keys():
+        if name in _IDP_SESSION_COOKIE_NAMES:
+            return True
+    return False
+
+
 def end_session_url(headers, post_logout_redirect=None):
     """Browser-facing Keycloak RP-initiated logout."""
     redirect = post_logout_redirect or (external_base(headers) + "/")
@@ -299,7 +322,7 @@ def make_session(username, token_exp=None):
     return f"{body}.{_sign(body.encode('ascii'))}"
 
 
-def verify_session(cookie):
+def verify_session(cookie, raw_cookie_header=""):
     """Return the username if the session cookie is valid+unexpired, else None."""
     if not cookie or "." not in cookie:
         return None
@@ -312,6 +335,10 @@ def verify_session(cookie):
         return None
     now = time.time()
     if int(payload.get("exp", 0)) < now:
+        return None
+    # If identity-proxy cookies are absent, treat the app session as stale even if
+    # the local signed cookie has not yet hit its own TTL.
+    if not has_idp_session_cookie(raw_cookie_header):
         return None
     return payload.get("u")
 

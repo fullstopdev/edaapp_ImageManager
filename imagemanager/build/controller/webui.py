@@ -974,6 +974,9 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function fetchJson(url, opts){
     opts = opts || {};
     if(!opts.credentials) opts.credentials = "same-origin";
+    if(!opts.cache && (!opts.method || String(opts.method).toUpperCase() === "GET")){
+      opts.cache = "no-store";
+    }
     return fetch(url, opts).then(function(r){
       return r.json().then(function(j){ return {ok:r.ok, status:r.status, body:j}; })
         .catch(function(){ return {ok:r.ok, status:r.status, body:null}; });
