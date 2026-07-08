@@ -11,7 +11,8 @@ def test_bootstrap_trusts_config_without_identity_probe():
     assert "onAuthReady(c.user" in html
     # Bootstrap must not gate on identity probe (false-negative → OAuth loop).
     bootstrap = html.split("fetchJson(api(\"/api/config\"))", 1)[1]
-    assert "probeEdaIdentitySession().then(function(idpOk)" not in bootstrap.split("function probeEdaIdentitySession", 1)[0]
+    before_probe_fn = bootstrap.split("function probeEdaIdentitySession", 1)[0]
+    assert "probeEdaIdentitySession().then(function(idpOk)" not in before_probe_fn
 
 
 def test_identity_probe_gated_on_auth_ready():
