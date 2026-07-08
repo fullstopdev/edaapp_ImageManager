@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.1.34
+
+**Fix dashboard launch redirecting to EDA home instead of Image Manager.**
+
+- **Root cause:** v0.1.32/v0.1.33 regressed bootstrap and session-loss redirects:
+  `handleBootstrap401()` and bootstrap identity-probe failures called
+  `redirectToEdaLogin()` (`/`) instead of `/oauth/login`; `navigateTo()` hijacked
+  `window.top` in the EDA dashboard iframe, kicking users out of the shell.
+- **Fix:** Missing `im_session` (401 on `/api/config`) and bootstrap probe failures
+  before auth is established now start OAuth via `beginOAuthSignIn()` →
+  `/oauth/login` (silent SSO when the EDA session is valid). Embedded mode shows
+  an in-app sign-in banner with **Sign in** / **Try again** — never top-frame
+  redirect. `navigateTo()` always stays in the current frame. Confirmed EDA logout
+  during an active session still clears `im_session` and redirects standalone tabs
+  to EDA `/`; embedded shows the banner only.
+- **Unchanged:** Dual identity probe + 3s revalidation (v0.1.33); no IDP cookie
+  gate on `verify_session`; URL import empty-state fix; concurrent uploads (v0.1.31).
+
 ## v0.1.33
 
 **Fix EDA logout sync (dual identity probe) and URL import empty-state navigation.**

@@ -1015,13 +1015,14 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var lastRowStatus = {};
 
   function navigateTo(url){
-    try {
-      if(embedded && window.top && window.top !== window.self){
-        window.top.location = url;
-        return;
-      }
-    } catch(e){}
+    // Never hijack window.top from the EDA dashboard iframe — stay in this frame.
     window.location = url;
+  }
+  function oauthLoginUrl(){
+    return apiBase + "/oauth/login";
+  }
+  function redirectToOAuthLogin(){
+    navigateTo(oauthLoginUrl());
   }
   function edaLoginUrl(){
     return window.location.origin + "/";
@@ -1068,10 +1069,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function bindAuthBannerActions(){
     var retryBtn=el("authRetryBtn");
     if(retryBtn) retryBtn.addEventListener("click", retrySignIn);
-    if(!embedded){
-      var signInBtn=el("authSignInBtn");
-      if(signInBtn) signInBtn.addEventListener("click", function(){ navigateTo(apiBase + "/oauth/login"); });
-    }
+    var signInBtn=el("authSignInBtn");
+    if(signInBtn) signInBtn.addEventListener("click", function(){ redirectToOAuthLogin(); });
   }
   function setAuthBanner(kind, text, opts){
     opts = opts || {};
@@ -1100,11 +1099,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function showSignInBanner(msg){
     var actions='<span class="auth-actions">'+
-      '<button type="button" class="btn text subtle ripple" id="authRetryBtn">Try again</button>';
-    if(!embedded){
-      actions+='<button type="button" class="btn contained ripple" id="authSignInBtn">Sign in</button>';
-    }
-    actions+='</span>';
+      '<button type="button" class="btn text subtle ripple" id="authRetryBtn">Try again</button>'+
+      '<button type="button" class="btn contained ripple" id="authSignInBtn">Sign in</button>'+
+      '</span>';
     setAuthBanner("err", msg||"Your EDA session has ended. Sign in again to continue.", {
       title: "Sign-in required",
       actionsHtml: actions
@@ -1186,7 +1183,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     authFailCount += 1;
     if(authFailCount >= AUTH_FAIL_MIN_COUNT &&
        (now - authFailFirstAt) >= AUTH_FAIL_MIN_SPAN_MS){
-      showConfirmedSessionLoss();
+      beginOAuthSignIn("Your session has expired. Sign in again to continue.");
     }
   }
   function probeConfigAuth(){
@@ -1281,24 +1278,56 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       if(!configOk) return false;
       return probeEdaIdentitySession().then(function(idpOk){
         if(!idpOk){
-          showConfirmedSessionLoss();
-          return false;
+          return onIdentityProbeFailed().then(function(){ return false; });
         }
         return true;
       });
     });
   }
+  function stopSessionWatchers(){
+    if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
+    if(revalidateTimer){ clearTimeout(revalidateTimer); revalidateTimer = null; }
+    if(sustainedKcTimer){ clearTimeout(sustainedKcTimer); sustainedKcTimer = null; }
+  }
+  function beginOAuthSignIn(msg){
+    bootDone();
+    authBootstrapComplete = true;
+    authReady = false;
+    stopSessionWatchers();
+    syncLiveIndicator();
+    hideAuthUser();
+    resetAuthFailStreak();
+    if(embedded){
+      showSignInBanner(msg || "Sign in to use Image Manager.");
+      return;
+    }
+    setAuthBanner("loading", msg || "Sign-in required. Redirecting\u2026");
+    setTimeout(function(){ redirectToOAuthLogin(); }, 160);
+  }
   function showConfirmedSessionLoss(msg){
     if(sessionInterruptBlocked()) return;
     clearServerSession().then(function(){
       authReady = false;
-      if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
-      if(revalidateTimer){ clearTimeout(revalidateTimer); revalidateTimer = null; }
-      if(sustainedKcTimer){ clearTimeout(sustainedKcTimer); sustainedKcTimer = null; }
+      stopSessionWatchers();
       syncLiveIndicator();
       hideAuthUser();
+      resetAuthFailStreak();
+      if(embedded){
+        showSignInBanner(msg || "Your EDA session has ended. Sign in again to continue.");
+        return;
+      }
       setAuthBanner("loading", msg || "Your EDA session has ended. Redirecting to sign in\u2026");
       setTimeout(function(){ redirectToEdaLogin(); }, 160);
+    });
+  }
+  function onIdentityProbeFailed(){
+    if(sessionInterruptBlocked()) return Promise.resolve();
+    if(authBootstrapComplete){
+      showConfirmedSessionLoss();
+      return Promise.resolve();
+    }
+    return clearServerSession().then(function(){
+      beginOAuthSignIn("Sign in to continue.");
     });
   }
   function handleAuthLoss(){
@@ -1343,11 +1372,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
   }
   function handleBootstrap401(){
-    bootDone();
-    authBootstrapComplete = true;
-    syncLiveIndicator();
-    setAuthBanner("loading", "Sign-in required. Redirecting to EDA\u2026");
-    setTimeout(function(){ redirectToEdaLogin(); }, 160);
+    beginOAuthSignIn("Sign in to use Image Manager.");
   }
   function showFatal(msg){
     bootDone();
@@ -1395,7 +1420,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function retrySignIn(){
     resetAuthFailStreak();
     setAuthBanner("loading", "Signing in\u2026");
-    setTimeout(function(){ redirectToEdaLogin(); }, 160);
+    setTimeout(function(){ redirectToOAuthLogin(); }, 160);
   }
   var signout=el("signoutLink");
   if(signout){
@@ -1630,9 +1655,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
     probeEdaIdentitySession().then(function(idpOk){
       if(!idpOk){
-        showConfirmedSessionLoss();
+        onIdentityProbeFailed();
         return;
       }
+      authBootstrapComplete = true;
       onAuthReady(c.user || null);
       var defaultNs=(c.defaultArtifactNamespace||"").trim();
       fetchJson(api("/api/namespaces")).then(function(nsRes){
