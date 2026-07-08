@@ -153,8 +153,10 @@ From catalog docs + extracted manifests:
 6. **App status EQL** — `.cluster.apps.cable-map.status` feeds the launcher table.
 
 Image Manager already mirrors (2)–(4) in `auth.py`, `fileserver.py`, `webui.py`.
-**Missing vs cable-map:** (5) EDA `ClusterRole` + `urlRules`, (6) app-level status
-table for a launcher dashlet.
+**Done in v0.0.3 / v0.1.x (no longer missing):** (5) EDA `ClusterRole`
+`imagemanager-viewer` with HttpProxy `urlRules` (`imagemanager/manifests/eda_viewer_role.yaml`);
+(6) cable-map-style launcher dashboard JSON with external HttpProxy nav target and
+`.cluster.apps.imagemanager.**` table rules (`imagemanager/ui/imagemanager-dashboard.json`).
 
 ---
 
@@ -176,7 +178,12 @@ the problem is **view embed**, not HttpProxy/controller.
 
 ## 6. Recommendations to align with cable-map
 
-### A. Replace iframe view JSON (preferred structural alignment)
+> **Status (2026-07-08):** Items A and B below are **done** — cable-map-style
+> `imagemanager-dashboard.json` (external HttpProxy launcher, `flexRow` layout) since
+> v0.1.x; `imagemanager-viewer` ClusterRole since v0.0.3. This section is kept as
+> historical context for why those changes were made.
+
+### A. Replace iframe view JSON (preferred structural alignment) — **done v0.1.x**
 
 Rewrite `imagemanager/ui/imagemanager-dashboard.json` as a cable-map-style dashboard:
 
@@ -196,7 +203,7 @@ Data API options:
 
 Use new `uuid` values (generate v4); bump `version` string.
 
-### B. Add EDA ClusterRole (access parity)
+### B. Add EDA ClusterRole (access parity) — **done v0.0.3**
 
 Add `imagemanager-viewer` `ClusterRole` (core.eda.nokia.com/v1) with:
 

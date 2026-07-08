@@ -4,6 +4,8 @@
 # controller refs in imagemanager/manifests/) before pushing to main — e.g.
 # v0.0.0, v0.0.1, … (semver patch bump per release). edabuilder publish creates git tag
 # apps/imagemanager.eda.edacommunity.com/<version>.
+# Pre-publish checklist: manifest.yaml spec.image tag, pyproject.toml version,
+# and imagemanager/ui/imagemanager-dashboard.json version/lastChanged must match.
 #
 # EDABUILDER_VERSION should match PROJECT builderVersion (currently v26.4.2).
 
@@ -41,7 +43,29 @@ env:
   GOTOOLCHAIN: auto
 
 jobs:
+  test:
+    if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies
+        run: pip install pytest ruff
+
+      - name: Ruff
+        run: ruff check imagemanager/build/controller/tests
+
+      - name: Pytest
+        run: pytest imagemanager/build/controller -q
+
   publish:
+    needs: test
     if: github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     env:

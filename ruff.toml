@@ -16,5 +16,9 @@ ignore = [
 
 ]
 
+[lint.per-file-ignores]
+"**/test_*.py" = ["D103"]
+"**/tests/**" = ["D103"]
+
 # Allow autofix for all selected rules
 fixable = ["ALL"]

@@ -1,0 +1,34 @@
+# Lint and test gate for Image Manager controller changes.
+name: CI
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+    paths-ignore:
+      - apps/**
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dev dependencies
+        run: pip install pytest ruff
+
+      - name: Ruff
+        run: ruff check imagemanager/build/controller/tests
+
+      - name: Pytest
+        run: pytest imagemanager/build/controller -q

@@ -275,6 +275,20 @@ This repository is both the **source** and the **app catalog**.
 - Kubernetes manifests: [`imagemanager/manifests/`](imagemanager/manifests/).
 - Catalog entries (published by `edabuilder publish`): `apps/imagemanager.eda.edacommunity.com/`.
 
+### Running the tests
+
+Controller unit tests live under `imagemanager/build/controller/tests/` (pure-logic helpers plus
+`docs/STABILITY.md` regression guards). From the repo root:
+
+```bash
+pip install pytest ruff
+ruff check imagemanager/build/controller/tests
+pytest imagemanager/build/controller -q
+```
+
+CI (`.github/workflows/ci.yml`) runs the same checks on every PR; the publish workflow runs them
+before build/push.
+
 ### GHCR login (required once per machine)
 
 `make imagemanager-publish` runs `edabuilder build-push`, which **does not** use your git credentials. You must log in to the container registry separately. `edabuilder login list` should show `ghcr.io` under `registry` (credentials live in `~/.config/edabuilder/auth.json`). Operator/workflow images use `docker buildx --push`, so log Docker into GHCR as well.
