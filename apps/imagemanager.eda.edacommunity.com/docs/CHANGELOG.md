@@ -1,5 +1,9 @@
 # Changelog
 
+## v0.1.29
+
+**Republish Image Manager controller/UI with image tag `v0.1.29`.**
+
 ## v0.1.28
 
 **Fix bootstrap stuck on "Loading Image Manager…" when unauthenticated.**
