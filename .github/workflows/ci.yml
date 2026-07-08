@@ -32,3 +32,14 @@ jobs:
 
       - name: Pytest
         run: pytest imagemanager/build/controller -q
+
+      - name: Node syntax check (_APP_JS)
+        run: |
+          python3 - <<'PY'
+          import sys
+          sys.path.insert(0, "imagemanager/build/controller")
+          import webui
+          with open("app.js", "w", encoding="utf-8") as f:
+              f.write(webui._APP_JS)
+          PY
+          node --check app.js

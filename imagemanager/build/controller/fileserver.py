@@ -91,6 +91,8 @@ IM_CONFIG_NAME = "default"
 IMPORT_KICK = [None]
 # Set by main: zero-arg callable that wakes the dashboard status sync loop.
 SYNC_KICK = [None]
+# Set by main: zero-arg callable returning Prometheus text for /metrics.
+METRICS_PROVIDER = [None]
 # Last storage reconcile snapshot (startup + periodic re-derive).
 _storage_reconcile = [{}]
 # Set by main at startup; surfaced in /api/config for the UI version chip.
@@ -315,6 +317,9 @@ class Handler(BaseHTTPRequestHandler):
             if path == "/healthz":
                 self._serve_healthz()
                 return
+            if path == "/metrics":
+                self._serve_metrics()
+                return
             if path.startswith("/files/"):
                 self._serve_file(path[len("/files/"):], head_only=False)
                 return
@@ -404,6 +409,19 @@ class Handler(BaseHTTPRequestHandler):
         except FileNotFoundError:
             self._send_text('{"status":"starting","last_reconcile":null}',
                             ctype="application/json")
+
+    def _serve_metrics(self):
+        provider = METRICS_PROVIDER[0]
+        if not provider:
+            self._send_text("# no metrics provider configured\n",
+                            ctype="text/plain; charset=utf-8")
+            return
+        try:
+            payload = provider() or ""
+        except Exception as e:  # noqa: BLE001 - best-effort endpoint
+            logger.warning("metrics generation failed: %s", e)
+            payload = ""
+        self._send_text(payload, ctype="text/plain; version=0.0.4; charset=utf-8")
 
     def _serve_config(self):
         c = CONFIG

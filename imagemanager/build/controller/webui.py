@@ -10,7 +10,7 @@ gating via ALLOWED_ROLES (EDA ClusterRole). Sign out clears the local session
 and ends the EDA Keycloak session, redirecting to the EDA login page.
 """
 
-INDEX_HTML = r"""<!DOCTYPE html>
+_INDEX_HTML_RAW = r"""<!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -2511,3 +2511,40 @@ INDEX_HTML = r"""<!DOCTYPE html>
 </body>
 </html>
 """
+
+# ---- Maintainability split (CSS vs JS) ----
+# This UI is intentionally self-contained (single Python module). To make
+# diffs reviewable, we expose the embedded CSS and main app JS as separate
+# module-level constants, while still assembling the exact same INDEX_HTML
+# string at import time.
+_IMGR_STYLE_OPEN = "<style>\n"
+_IMGR_STYLE_CLOSE = "\n</style>"
+_IMGR_APP_JS_OPEN = "<script>\n"
+_IMGR_APP_JS_CLOSE = "\n</script>"
+
+_css_open_end = _INDEX_HTML_RAW.index(_IMGR_STYLE_OPEN) + len(_IMGR_STYLE_OPEN)
+_css_close_start = _INDEX_HTML_RAW.index(_IMGR_STYLE_CLOSE, _css_open_end)
+_STYLE_CSS = _INDEX_HTML_RAW[_css_open_end:_css_close_start]
+
+_js_open_start = _INDEX_HTML_RAW.rindex(_IMGR_APP_JS_OPEN)
+_js_open_end = _js_open_start + len(_IMGR_APP_JS_OPEN)
+_js_close_start = _INDEX_HTML_RAW.index(_IMGR_APP_JS_CLOSE, _js_open_end)
+_APP_JS = _INDEX_HTML_RAW[_js_open_end:_js_close_start]
+
+_IMGR_STYLE_TOKEN = "__IMGR_STYLE_CSS__"
+_IMGR_APP_JS_TOKEN = "__IMGR_APP_JS__"
+
+_BODY_HTML = (
+    _INDEX_HTML_RAW[:_css_open_end]
+    + _IMGR_STYLE_TOKEN
+    + _INDEX_HTML_RAW[_css_close_start:_js_open_start]
+    + _IMGR_APP_JS_TOKEN
+    + _INDEX_HTML_RAW[_js_close_start:]
+)
+
+# Ensure runtime behavior is unchanged: INDEX_HTML is assembled back from parts.
+INDEX_HTML = (
+    _BODY_HTML.replace(_IMGR_STYLE_TOKEN, _STYLE_CSS)
+    .replace(_IMGR_APP_JS_TOKEN, _APP_JS)
+)
+

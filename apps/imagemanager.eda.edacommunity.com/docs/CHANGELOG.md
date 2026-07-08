@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.26
+
+**Harden JWT validation, improve maintainability, and expose operational metrics.**
+
+- **JWT auth:** Verify Keycloak JWT signatures using JWKS (cached with TTL) and validate `exp`, `iss`, and `aud`/`azp`; added auth unit tests; ensure `_kc_admin_token` / `_client_secret` are never logged.
+- **Trust boundary docs:** Add `SECURITY.md` documenting browser → identity proxy → app → Keycloak responsibility and session discipline.
+- **Refactors:** Split `webui.py` `INDEX_HTML` into `_STYLE_CSS`, `_APP_JS`, and `_BODY_HTML`; decompose `uploads.py` into natural modules while keeping the original public API via re-exports.
+- **Observability:** Add stdlib-only unauthenticated Prometheus `/metrics` endpoint for reconcile timing/failures, active uploads, storage usage, and node-agent heartbeat age.
+- **CI guard:** Add `node --check` smoke test for the extracted JS block.
+
 ## v0.1.25
 
 **Fix login infinite reload loop (critical regression from v0.1.24).**

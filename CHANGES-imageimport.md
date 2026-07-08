@@ -1,4 +1,8 @@
-# Changes in this checkout vs. upstream edaapp_ImageManager
+# ARCHIVED: historical notes folded into `imagemanager/docs/CHANGELOG.md`
+
+This file is kept only for reference. Release history and user-facing changes
+are recorded in `imagemanager/docs/CHANGELOG.md`; see that file for the
+ImageImport-related entries.
 
 Adds a declarative `ImageImport` CRD (import an image by URL from EDA's
 native resource UI, with live status columns) and the missing nav/launcher

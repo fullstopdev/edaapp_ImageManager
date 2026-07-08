@@ -79,6 +79,16 @@ Node-agent (`nodeagent.py`):
 
 - SIGTERM handler calls `cleanup()` (removes `hosts.toml`); no blocking `preStop` hook
 
+## Observability (`/metrics`)
+
+The controller exposes an unauthenticated stdlib-only Prometheus text endpoint at
+`GET /metrics` (served by `fileserver.py`), intended for operational debugging:
+
+- `imagemanager_reconcile_duration_ms` (gauge) and `imagemanager_reconcile_failures_total` (counter)
+- `imagemanager_active_uploads` (gauge)
+- `imagemanager_storage_used_bytes` / `imagemanager_storage_free_bytes` (gauge, plus `imagemanager_storage_used_percent`)
+- `imagemanager_nodeagent_heartbeat_age_seconds` (best-effort; node-agent heartbeats are written inside the node pod)
+
 ## Optional future work
 
 - Talos / immutable nodes: document `machine.registries` mirror instead of DaemonSet.

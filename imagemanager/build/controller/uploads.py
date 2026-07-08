@@ -967,3 +967,48 @@ def disk_usage(path=DATA_DIR):
     used = total - free if total > free else 0
     pct = round(used / total * 100, 1) if total else 0.0
     return {"totalBytes": total, "usedBytes": used, "freeBytes": free, "usedPercent": pct}
+
+
+# --------------------------- Seam re-exports ---------------------------
+# Grouped module structure for maintainability. Callers can keep importing
+# functions from `uploads.py` without any changes.
+from zip_extract import (  # noqa: E402
+    detect_nos_from_zip,
+    extract_image_from_zip,
+    detect_sros_version,
+    extract_sros_images,
+    extract_srsim_image,
+    _parse_oci_layout,
+    _srsim_member,
+)
+from licensing import (  # noqa: E402
+    normalize_license,
+    is_valid_license,
+    detect_license_nos,
+    license_cm_name,
+    set_license_meta,
+    store_license_file,
+)
+from storage import (  # noqa: E402
+    stream_upload,
+    _copy_streaming,
+    _trim_write_cache,
+    disk_usage,
+    storage_stats,
+    upload_dir_size,
+    cleanup_stale_work_dirs,
+    count_work_dirs,
+    _work_dir_is_empty,
+    _dir_age_seconds,
+    scan_incomplete_dirs,
+    wipe_all_uploads,
+)
+from metadata import (  # noqa: E402
+    read_meta,
+    list_meta,
+    rewrite_meta,
+    finalize_upload,
+    finalize_group,
+    delete_upload,
+    upload_has_local_bytes,
+)

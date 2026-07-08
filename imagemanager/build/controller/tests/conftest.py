@@ -26,18 +26,80 @@ def tmp_upload_dir(monkeypatch):
 
 def _make_jwt(payload: dict) -> str:
     import base64
+    import time
 
-    def b64(data: bytes) -> str:
-        return base64.urlsafe_b64encode(data).decode().rstrip("=")
+    import jwt as pyjwt
 
-    header = b64(b'{"alg":"none","typ":"JWT"}')
-    body = b64(json.dumps(payload).encode())
-    return f"{header}.{body}.sig"
+    import auth
+
+    keys, kid = _TEST_RSA_KEYPAIR[0], _TEST_RSA_KEYPAIR[1]
+    private_key = keys
+
+    now = int(time.time())
+    p = dict(payload or {})
+    p.setdefault("exp", now + 3600)
+    # Default claims to the app's configured JWT trust boundary so tests focus
+    # on the behavior under test rather than token plumbing.
+    p.setdefault("iss", auth.JWT_ISSUER)
+    p.setdefault("aud", auth.CLIENT_ID)
+    p.setdefault("azp", auth.CLIENT_ID)
+
+    tok = pyjwt.encode(
+        p,
+        private_key,
+        algorithm="RS256",
+        headers={"kid": kid},
+    )
+    return tok if isinstance(tok, str) else tok.decode("utf-8")
 
 
 @pytest.fixture
 def make_jwt():
     return _make_jwt
+
+
+# --------------------------- auth test setup ---------------------------
+
+# Shared RSA keypair for deterministic JWT verification in tests.
+_TEST_RSA_KEYPAIR = [None, None]  # [private_key, kid]
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _init_test_rsa_keypair():
+    import base64
+
+    from cryptography.hazmat.primitives.asymmetric import rsa
+
+    # Generate once per test run so token signatures stay consistent.
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_numbers = private_key.public_key().public_numbers()
+    kid = "test-kid"
+
+    def b64u_int(i: int) -> str:
+        b = i.to_bytes((i.bit_length() + 7) // 8, "big")
+        return base64.urlsafe_b64encode(b).decode().rstrip("=")
+
+    jwk = {
+        "kty": "RSA",
+        "use": "sig",
+        "alg": "RS256",
+        "kid": kid,
+        "n": b64u_int(public_numbers.n),
+        "e": b64u_int(public_numbers.e),
+    }
+    jwks = {"keys": [jwk]}
+
+    _TEST_RSA_KEYPAIR[0] = private_key
+    _TEST_RSA_KEYPAIR[1] = kid
+
+    import auth
+
+    # Patch auth's JWKS fetch to avoid any network calls.
+    auth._fetch_jwks = lambda: jwks  # type: ignore[assignment]
+    auth._jwks_cache["keys"] = None
+    auth._jwks_cache["exp"] = 0.0
+
+    return None
 
 
 def make_srl_zip(dest: Path, *, bin_name: str = "image.bin", md5: str | None = "a" * 32) -> Path:

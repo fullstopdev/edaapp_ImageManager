@@ -4,8 +4,8 @@
 # controller refs in imagemanager/manifests/) before pushing to main — e.g.
 # v0.0.0, v0.0.1, … (semver patch bump per release). edabuilder publish creates git tag
 # apps/imagemanager.eda.edacommunity.com/<version>.
-# Pre-publish checklist: manifest.yaml spec.image tag, pyproject.toml version,
-# and imagemanager/ui/imagemanager-dashboard.json version/lastChanged must match.
+# Pre-publish checklist (synchronized tags): imagemanager/manifest.yaml spec.image tag,
+# pyproject.toml version, and imagemanager/ui/imagemanager-dashboard.json version/lastChanged must match.
 #
 # EDABUILDER_VERSION should match PROJECT builderVersion (currently v26.4.2).
 

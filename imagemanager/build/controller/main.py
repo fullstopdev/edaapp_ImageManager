@@ -35,9 +35,10 @@ import fileserver
 import import_common
 import imports
 import k8s
+import nodeagent
 import uploads
 
-VERSION = "v0.1.25"
+VERSION = "v0.1.26"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -75,6 +76,65 @@ _consecutive_reconcile_errors = 0
 _status_daemon_proc = None
 _storage_reconcile_lock = threading.Lock()
 _reconcile_cycle = 0
+
+# --------------------------- Prometheus metrics state ---------------------------
+_metrics_reconcile_duration_ms_last = 0
+_metrics_reconcile_failures_total = 0
+
+
+def _metrics_text():
+    """Prometheus text-format metrics (/metrics), stdlib-only."""
+    # Reconcile duration/failures are updated once per reconcile cycle.
+    duration_ms = int(_metrics_reconcile_duration_ms_last or 0)
+    failures_total = int(_metrics_reconcile_failures_total or 0)
+
+    # Operational gauges derived on request.
+    try:
+        active_uploads = int(uploads.count_work_dirs())
+    except Exception:  # noqa: BLE001 - best-effort endpoint
+        active_uploads = 0
+
+    try:
+        du = uploads.disk_usage()
+        used_bytes = int(du.get("usedBytes") or 0)
+        free_bytes = int(du.get("freeBytes") or 0)
+        used_percent = float(du.get("usedPercent") or 0.0)
+    except Exception:  # noqa: BLE001
+        used_bytes, free_bytes, used_percent = 0, 0, 0.0
+
+    try:
+        # Best-effort: node-agent writes heartbeat inside its own pod.
+        hb_age = 0
+        if nodeagent.HEARTBEAT_FILE and os.path.isfile(nodeagent.HEARTBEAT_FILE):
+            hb_age = int(time.time() - os.path.getmtime(nodeagent.HEARTBEAT_FILE))
+    except Exception:  # noqa: BLE001
+        hb_age = 0
+
+    lines = [
+        "# HELP imagemanager_reconcile_duration_ms Last reconcile duration in milliseconds",
+        "# TYPE imagemanager_reconcile_duration_ms gauge",
+        f"imagemanager_reconcile_duration_ms {duration_ms}",
+        "# HELP imagemanager_reconcile_failures_total Total reconcile failures",
+        "# TYPE imagemanager_reconcile_failures_total counter",
+        f"imagemanager_reconcile_failures_total {failures_total}",
+        "# HELP imagemanager_active_uploads In-flight upload work directories",
+        "# TYPE imagemanager_active_uploads gauge",
+        f"imagemanager_active_uploads {active_uploads}",
+        "# HELP imagemanager_storage_used_bytes PVC bytes used by uploads",
+        "# TYPE imagemanager_storage_used_bytes gauge",
+        f"imagemanager_storage_used_bytes {used_bytes}",
+        "# HELP imagemanager_storage_free_bytes PVC bytes free for uploads",
+        "# TYPE imagemanager_storage_free_bytes gauge",
+        f"imagemanager_storage_free_bytes {free_bytes}",
+        "# HELP imagemanager_storage_used_percent PVC used percentage",
+        "# TYPE imagemanager_storage_used_percent gauge",
+        f"imagemanager_storage_used_percent {used_percent}",
+        "# HELP imagemanager_nodeagent_heartbeat_age_seconds Node-agent heartbeat file age (best-effort)",
+        "# TYPE imagemanager_nodeagent_heartbeat_age_seconds gauge",
+        f"imagemanager_nodeagent_heartbeat_age_seconds {hb_age}",
+        "",
+    ]
+    return "\n".join(lines)
 
 
 def _start_status_publisher_daemon():
@@ -396,6 +456,7 @@ def main():
     app_status.APP_VERSION[0] = VERSION
     fileserver.IMPORT_KICK[0] = lambda: _run_imports_async(_read_config())
     fileserver.start_file_server(PORT)
+    fileserver.METRICS_PROVIDER[0] = _metrics_text
     fileserver.write_healthz("starting", None)
     _start_status_publisher_daemon()
 
@@ -428,8 +489,10 @@ def main():
 
         global _reconcile_cycle
         _reconcile_cycle += 1
+        storage_failed = False
         if _reconcile_cycle == 1 or _reconcile_cycle % 10 == 0:
-            _reconcile_storage(cfg)
+            storage_report = _reconcile_storage(cfg)
+            storage_failed = storage_report is None
 
         health, message = "ok", "All systems operational"
         tracked = []
@@ -474,8 +537,14 @@ def main():
 
         _run_imports_async(cfg)
 
+        # Update Prometheus reconcile metrics.
+        global _metrics_reconcile_duration_ms_last, _metrics_reconcile_failures_total
+        _metrics_reconcile_duration_ms_last = int((time.time() - cycle_start) * 1000)
+        if reconcile_failed or storage_failed:
+            _metrics_reconcile_failures_total += 1
+
         logger.info("Reconcile done: %d tracked upload(s), health=%s (%dms)",
-                    len(tracked), health, int((time.time() - cycle_start) * 1000))
+                    len(tracked), health, _metrics_reconcile_duration_ms_last)
         wait = RECONCILE_INTERVAL
         if reconcile_failed:
             wait = min(

@@ -35,10 +35,14 @@ import os
 import secrets
 import ssl
 import time
+import threading
 import urllib.error
 import urllib.parse
 import urllib.request
 from http.cookies import SimpleCookie
+
+import jwt as pyjwt
+from cryptography.hazmat.primitives.asymmetric.rsa import RSAPublicNumbers
 
 import k8s
 
@@ -77,6 +81,14 @@ _SIGNING_KEY = os.urandom(32)
 _ca_cache = [None]
 _secret_cache = [None]
 _admin_tok_cache = {"tok": None, "exp": 0}
+_jwks_cache = {"keys": None, "exp": 0.0}
+_jwks_lock = threading.Lock()
+
+_ISSUER_ENV = "JWT_ISSUER"
+_DEFAULT_JWT_ISSUER = f"{KC_INTERNAL_BASE}/realms/{REALM}"
+JWT_ISSUER = os.environ.get(_ISSUER_ENV, "") or _DEFAULT_JWT_ISSUER
+_JWKS_TTL_SECONDS = int(os.environ.get("JWKS_CACHE_TTL_SECONDS", "300"))
+_JWT_LEEWAY_SECONDS = int(os.environ.get("JWT_LEEWAY_SECONDS", "5"))
 _IDP_SESSION_COOKIE_NAMES = (
     "KEYCLOAK_SESSION",
     "KEYCLOAK_IDENTITY",
@@ -228,12 +240,124 @@ def exchange_code(code, headers):
         raise
 
 
+def _jwks_url():
+    return f"{KC_INTERNAL_BASE}/realms/{REALM}/protocol/openid-connect/certs"
+
+
+def _fetch_jwks():
+    """Fetch Keycloak JWKS (not cached)."""
+    return _get_json(_jwks_url())
+
+
+def _jwks_keys(force=False):
+    """Return JWKS keys list with TTL caching."""
+    now = time.time()
+    with _jwks_lock:
+        if (not force
+                and _jwks_cache["keys"] is not None
+                and _jwks_cache["exp"] > now):
+            return _jwks_cache["keys"]
+        jwks = _fetch_jwks() or {}
+        keys = jwks.get("keys") or []
+        _jwks_cache["keys"] = keys
+        _jwks_cache["exp"] = now + _JWKS_TTL_SECONDS
+        return keys
+
+
+def _b64u_to_int(s):
+    raw = base64.urlsafe_b64decode(
+        (s or "").encode("ascii") + b"=" * (-len(s) % 4)
+    )
+    return int.from_bytes(raw, "big") if raw else 0
+
+
+def _validate_jwt_claims(payload):
+    if not isinstance(payload, dict):
+        return False
+    exp = int(payload.get("exp") or 0)
+    if not exp:
+        return False
+    if exp < time.time() - _JWT_LEEWAY_SECONDS:
+        return False
+    if payload.get("iss") != JWT_ISSUER:
+        return False
+
+    aud = payload.get("aud")
+    azp = payload.get("azp")
+    aud_ok = False
+    if isinstance(aud, str) and aud == CLIENT_ID:
+        aud_ok = True
+    elif isinstance(aud, list) and CLIENT_ID in aud:
+        aud_ok = True
+    azp_ok = (azp == CLIENT_ID) if azp is not None else False
+    return bool(aud_ok or azp_ok)
+
+
 def _decode_jwt(token):
-    parts = token.split(".")
-    if len(parts) < 2:
+    """Decode and verify a Keycloak-signed JWT using the realm JWKS.
+
+    Returns the verified payload dict; returns {} if signature/claims fail.
+    """
+    if not token or "." not in token:
         return {}
-    payload = parts[1] + "=" * (-len(parts[1]) % 4)
-    return json.loads(base64.urlsafe_b64decode(payload).decode("utf-8"))
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return {}
+        header_b64 = parts[0]
+        header_json = base64.urlsafe_b64decode(
+            header_b64 + "=" * (-len(header_b64) % 4)
+        ).decode("utf-8", "replace")
+        header = json.loads(header_json)
+        alg = header.get("alg")
+        kid = header.get("kid")
+        if not alg or alg == "none":
+            return {}
+
+        keys = _jwks_keys()
+        jwk = None
+        if kid:
+            for k in keys:
+                if k.get("kid") == kid:
+                    jwk = k
+                    break
+        if not jwk:
+            # Fall back to the first RSA key.
+            for k in keys:
+                if k.get("kty") == "RSA":
+                    jwk = k
+                    break
+        if not jwk or jwk.get("kty") != "RSA":
+            return {}
+
+        e = _b64u_to_int(jwk.get("e") or "")
+        n = _b64u_to_int(jwk.get("n") or "")
+        if not (e and n):
+            return {}
+
+        public_key = RSAPublicNumbers(e=e, n=n).public_key()
+
+        # Verify signature only; validate claims explicitly to enforce aud/azp
+        # semantics that PyJWT's standard audience check doesn't cover.
+        payload = pyjwt.decode(
+            token,
+            key=public_key,
+            algorithms=[alg],
+            options={
+                "verify_aud": False,
+                "verify_exp": False,
+                "verify_iss": False,
+                "verify_nbf": False,
+                "verify_iat": False,
+            },
+        )
+        if not _validate_jwt_claims(payload):
+            return {}
+        return payload
+    except Exception:
+        # Never log token contents; failure modes include rotated JWKS,
+        # invalid signatures, or mismatched issuer/audience.
+        return {}
 
 
 def token_identity(token_resp):
@@ -241,8 +365,6 @@ def token_identity(token_resp):
     at = token_resp.get("access_token", "")
     p = _decode_jwt(at)
     if not p:
-        return None, set()
-    if p.get("exp", 0) < time.time():
         return None, set()
     user = p.get("preferred_username") or p.get("sub")
     roles = set((p.get("realm_access") or {}).get("roles") or [])
