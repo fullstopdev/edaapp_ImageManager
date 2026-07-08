@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.1.33
+
+**Fix EDA logout sync (dual identity probe) and URL import empty-state navigation.**
+
+- **EDA logout (root cause):** v0.1.32's identity iframe `init` probe alone could
+  still return OK after EDA sign-out — e.g. iframe `403` is ignored (v0.1.23 guard),
+  or the body is not exactly `status:"changed"` while `im_session` keeps
+  `/api/config` at 200. Background polling also paused when the tab was hidden.
+- **EDA logout (fix):** Add a secondary OIDC `prompt=none` probe on the EDA identity
+  proxy (`client_id=auth`); session is valid only when **both** probes agree. Treat
+  any explicit iframe status other than `unchanged` as logout. Poll every 3s even
+  when the tab is hidden; on tab focus run `reconcileAuthState()` immediately.
+- **URL import empty state (root cause):** `data-goto` click handling was wired only
+  on the artifacts `rows` table, not on `importRows`, so "Start a URL import" did
+  nothing.
+- **URL import empty state (fix):** Delegate `data-goto` clicks on `document.body`;
+  switching to the URL Import tab focuses the source URL field.
+
 ## v0.1.32
 
 **Cable-map auth parity: bootstrap identity probe, 3s revalidation, EDA login redirect.**

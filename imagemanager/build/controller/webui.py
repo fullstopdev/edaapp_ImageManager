@@ -1214,7 +1214,16 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     return window.location.origin + "/core/proxy/v1/identity/realms/eda/protocol/openid-connect/login-status-iframe.html/init?client_id="
       + encodeURIComponent(IDP_PROBE_CLIENT_ID) + "&origin=" + origin;
   }
-  function probeEdaIdentitySession(){
+  function extractIdentityProbeStatus(body){
+    try {
+      var j = JSON.parse(body);
+      return (j && j.status) ? String(j.status) : "";
+    } catch(e){
+      var m = /"status"\s*:\s*"([^"]+)"/.exec(body || "");
+      return m ? m[1] : "";
+    }
+  }
+  function probeEdaIdentityIframeInit(){
     if(sessionInterruptBlocked()) return Promise.resolve(true);
     var probe = { credentials: "include", cache: "no-store" };
     return fetch(edaIdentityProbeUrl(), probe).then(function(r){
@@ -1223,15 +1232,46 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       if(r.status === 403) return true;
       if(!r.ok) return true;
       return r.text().then(function(body){
-        try {
-          var j = JSON.parse(body);
-          if(j && j.status === "changed") return false;
-        } catch(e){
-          if(/"status"\s*:\s*"changed"/.test(body)) return false;
-        }
+        var status = extractIdentityProbeStatus(body);
+        if(status === "unchanged") return true;
+        if(status === "changed") return false;
+        if(status) return false;
         return true;
       });
     }).catch(function(){ return true; });
+  }
+  function probeEdaOidcSilent(){
+    if(sessionInterruptBlocked()) return Promise.resolve(null);
+    var probe = { credentials: "include", redirect: "manual", cache: "no-store" };
+    var ru = encodeURIComponent(apiBase + "/oauth/callback");
+    var url = window.location.origin + "/core/proxy/v1/identity/realms/eda/protocol/openid-connect/auth"
+      + "?client_id=" + encodeURIComponent(IDP_PROBE_CLIENT_ID)
+      + "&redirect_uri=" + ru
+      + "&response_type=code&scope=openid&prompt=none";
+    return fetch(url, probe).then(function(r){
+      if(r.status === 401) return false;
+      if(r.status === 403) return null;
+      if(r.status === 302 || r.status === 303){
+        var loc = r.headers.get("Location") || "";
+        if(/[?&]code=/.test(loc)) return true;
+        if(/[?&]error=/.test(loc) || /login_required/i.test(loc)) return false;
+        return false;
+      }
+      if(r.status >= 400) return false;
+      return null;
+    }).catch(function(){ return null; });
+  }
+  function probeEdaIdentitySession(){
+    return Promise.all([
+      probeEdaIdentityIframeInit(),
+      probeEdaOidcSilent()
+    ]).then(function(results){
+      var iframeOk = results[0];
+      var oidcOk = results[1];
+      if(oidcOk === false) return false;
+      if(!iframeOk) return false;
+      return true;
+    });
   }
   function reconcileAuthState(){
     // Trust /api/config first; when still 200, probe the EDA identity proxy session
@@ -1287,7 +1327,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function scheduleSessionCheck(){
     if(sessionCheckTimer) clearInterval(sessionCheckTimer);
     sessionCheckTimer = setInterval(function(){
-      if(!authBootstrapComplete || document.hidden || sessionInterruptBlocked()) return;
+      if(!authBootstrapComplete || sessionInterruptBlocked()) return;
       reconcileAuthState();
     }, SESSION_CHECK_MS);
   }
@@ -1383,8 +1423,16 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   // ---------- tabs ----------
   var activeTab = "status";
-  function showTab(name){
-    if(name === activeTab) return;
+  function focusUrlImportForm(){
+    var u = el("urlSource");
+    if(u){ try{ u.focus(); }catch(e){} }
+  }
+  function showTab(name, opts){
+    opts = opts || {};
+    if(name === activeTab){
+      if(opts.focus && name === "url-import") focusUrlImportForm();
+      return;
+    }
     activeTab = name;
     document.querySelectorAll(".tab").forEach(function(t){
       var on = t.getAttribute("data-tab") === name;
@@ -1396,6 +1444,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     });
     if(name === "status"){ refreshArtifacts(); refreshImports(); }
     if(name === "settings"){ loadSettings(); }
+    if(name === "url-import" && opts.focus) focusUrlImportForm();
   }
   document.querySelectorAll(".tab").forEach(function(t){
     t.addEventListener("click", function(){ showTab(t.getAttribute("data-tab")); });
@@ -2248,9 +2297,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
     updateStatusBadge();
   }
-  rows.addEventListener("click", function(e){
+  document.body.addEventListener("click", function(e){
     var g = e.target.closest("button[data-goto]");
-    if(g) showTab(g.getAttribute("data-goto"));
+    if(!g) return;
+    var tab = g.getAttribute("data-goto");
+    showTab(tab, { focus: tab === "url-import" });
   });
 
   function isImportConflict(i){
@@ -2548,7 +2599,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   document.addEventListener("visibilitychange", function(){
     if(!document.hidden && pollingAllowed() && authBootstrapComplete){
-      if(authReady) scheduleRevalidate();
+      if(authReady){
+        reconcileAuthState();
+        scheduleRevalidate();
+      }
       if(activeTab === "status"){
         refreshArtifacts();
         refreshImports();
