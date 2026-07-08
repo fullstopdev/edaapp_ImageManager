@@ -1262,6 +1262,22 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       b.classList.add("hide");
     }
   }
+  function handleBootstrap401(){
+    bootDone();
+    authBootstrapComplete = true;
+    syncLiveIndicator();
+    var msg = embedded
+      ? "Sign in to EDA to use Image Manager."
+      : "Sign in to use Image Manager.";
+    showSignInBanner(msg);
+    if(rows){
+      rows.innerHTML = emptyStateHtml(6, "warn", "Sign-in required",
+        "Sign in to load your artifact inventory.", "");
+    }
+    if(importRows){
+      importRows.innerHTML = emptyStateHtml(5, "warn", "Sign-in required", "", "");
+    }
+  }
   function showFatal(msg){
     bootDone();
     if(rows) rows.innerHTML = '<tr><td colspan="6" class="empty">'+esc(msg)+'</td></tr>';
@@ -1517,7 +1533,13 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   // ---------- config + namespaces ----------
   fetchJson(api("/api/config")).then(function(res){
-    if(res.status === 401){ navigateTo(apiBase + "/oauth/login"); return; }
+    if(res.status === 401){
+      handleBootstrap401();
+      if(!embedded){
+        setTimeout(function(){ navigateTo(apiBase + "/oauth/login"); }, 160);
+      }
+      return;
+    }
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
     var c = res.body || {};
     bootDone();

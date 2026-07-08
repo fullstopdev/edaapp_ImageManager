@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.28
+
+**Fix bootstrap stuck on "Loading Image Manager…" when unauthenticated.**
+
+- **Root cause:** Bootstrap `GET /api/config` returned 401 and the SPA called
+  `navigateTo(/oauth/login)` but never `bootDone()`, so the boot shell, KPIs
+  (—), and table "Loading…" rows stayed forever when the redirect did not
+  complete (embedded iframe or blocked navigation).
+- **Fix:** New `handleBootstrap401()` always calls `bootDone()`, sets
+  `authBootstrapComplete`, shows the sign-in banner with working **Sign in** /
+  **Try again** buttons, and clears table loading placeholders. Standalone tabs
+  still auto-redirect to `/oauth/login` after a short delay; embedded mode
+  shows the banner only (cable-map pattern, no top-frame OAuth redirect).
+- **Verified:** `im_session` cookie `Path` remains `APP_PROXY_PREFIX`;
+  `auth.verify_session` trusts signed session TTL without IDP cookie gate
+  (v0.1.25).
+
 ## v0.1.27
 
 **Fix controller runtime JWT deps crash (PyJWT/cryptography).**
