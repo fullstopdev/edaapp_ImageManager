@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.22
+
+**Fix duplicate upload rows and false replace success during file upload.**
+
+- **Duplicate rows:** Double-click Upload (or overlapping replace attempts) could create
+  two `pendingUploads` entries for the same image — both showed identical Un-zipping
+  progress. Guard the Upload button, dedupe pending by name|namespace, and hide server
+  rows using `pendingMatchesServer` (including `uploadId`).
+- **False replace / no upload:** `resetUploadForm()` ran before `xhr.send()`, which could
+  invalidate the selected `File` in some browsers; the replace dialog now uses a captured
+  `uploadFile` closure. `reconcilePendingUploads` no longer treats a **stale** PVC row
+  (pre-upload `storedAt`) as completion during replace — that caused premature success
+  snacks while the new zip was still transferring.
+- **Unchanged:** URL-import replace still uses `repush_from_local` when the image is
+  already on PVC (by design). File upload replace continues to stream the zip and
+  `rmtree`+re-extract via `process_zip(replace=true)`.
+
 ## v0.1.21
 
 **Fix EDA logout not clearing Image Manager session (v0.1.19 kc-* watcher insufficient).**

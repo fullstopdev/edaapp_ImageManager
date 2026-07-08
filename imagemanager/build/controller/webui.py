@@ -994,7 +994,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
   var SESSION_CHECK_MS = 15000;
   var REVALIDATE_DEBOUNCE_MS = 400;
   var KC_ABSENCE_CONFIRM_MS = 1200;
-  var IDENTITY_PROBE_PATH = "/core/proxy/v1/identity/realms/eda/protocol/openid-connect/login-status-iframe.html/init";
   var sawKeycloakStorage = false;
   var AUTH_FAIL_MIN_COUNT = 2;
   var AUTH_FAIL_MIN_SPAN_MS = 5000;
@@ -1122,21 +1121,6 @@ INDEX_HTML = r"""<!DOCTYPE html>
     } catch(e){}
     return false;
   }
-  function probeIdentitySession(){
-    return fetch(IDENTITY_PROBE_PATH, {
-      method: "GET",
-      credentials: "include",
-      cache: "no-store",
-      headers: { Accept: "application/json" }
-    }).then(function(r){
-      if(r.status === 401 || r.status === 403) return false;
-      if(!r.ok) return null;
-      return r.json().then(function(j){
-        if(!j || typeof j.status !== "string") return null;
-        return j.status === "unchanged";
-      }).catch(function(){ return null; });
-    }).catch(function(){ return null; });
-  }
   function noteKeycloakStorage(){
     if(keycloakStoragePresent()) sawKeycloakStorage = true;
   }
@@ -1216,33 +1200,11 @@ INDEX_HTML = r"""<!DOCTYPE html>
     }).catch(function(){ return true; });
   }
   function reconcileAuthState(){
-    if(sessionInterruptBlocked()) return Promise.resolve(true);
-    var probe = Object.assign({ cache: "no-store" }, FETCH_OPTS);
-    return Promise.all([
-      fetch(api("/api/config"), probe),
-      probeIdentitySession()
-    ]).then(function(results){
-      var cfgResp = results[0];
-      var kcOk = results[1];
-      if(cfgResp.status === 200){
-        if(kcOk === false){
-          showConfirmedSessionLoss();
-          return false;
-        }
-        return cfgResp.json().then(function(c){
-          applyConfigOk(c && c.user);
-          return true;
-        }).catch(function(){
-          applyConfigOk(null);
-          return true;
-        });
-      }
-      if(cfgResp.status === 401){
-        applyConfig401();
-        return false;
-      }
-      return true;
-    }).catch(function(){ return true; });
+    // Trust /api/config for session validity; kc-* storage watchers handle EDA
+    // logout. The identity iframe probe is unreliable from the imagemanager
+    // proxy origin (403 while still logged in) so never treat probe failure as
+    // logout when config still returns 200.
+    return probeConfigAuth();
   }
   function showConfirmedSessionLoss(msg){
     if(sessionInterruptBlocked()) return;
@@ -1304,6 +1266,26 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
   function uploadInFlight(){
     return Object.keys(pendingUploads).length > 0;
+  }
+  function pendingIdentity(name, namespace){
+    return (name||"").trim().toLowerCase()+"|"+(namespace||"").trim();
+  }
+  function clearPendingFor(name, namespace){
+    var pid = pendingIdentity(name, namespace);
+    Object.keys(pendingUploads).forEach(function(k){
+      var p = pendingUploads[k];
+      if(pendingIdentity(p.displayName, p.namespace) === pid) delete pendingUploads[k];
+    });
+  }
+  function hasPendingFor(name, namespace){
+    var pid = pendingIdentity(name, namespace);
+    return Object.keys(pendingUploads).some(function(k){
+      var p = pendingUploads[k];
+      return pendingIdentity(p.displayName, p.namespace) === pid;
+    });
+  }
+  function setUploadBtnBusy(on){
+    if(btn) btn.disabled = !!on;
   }
   function kickPostUploadBurst(){
     postUploadBurstUntil = Date.now() + UPLOAD_BURST_WINDOW_MS;
@@ -1535,36 +1517,28 @@ INDEX_HTML = r"""<!DOCTYPE html>
     if(res.status === 401){ navigateTo(apiBase + "/oauth/login"); return; }
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
     var c = res.body || {};
-    return probeIdentitySession().then(function(kcOk){
-      if(kcOk === false){
-        bootDone();
-        authBootstrapComplete = true;
-        showConfirmedSessionLoss("Your EDA session has ended. Sign in again.");
+    bootDone();
+    if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
+    binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
+    if(c.version){
+      var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
+    }
+    onAuthReady(c.user || null);
+    var defaultNs=(c.defaultArtifactNamespace||"").trim();
+    fetchJson(api("/api/namespaces")).then(function(nsRes){
+      if(nsRes.status===401) return;
+      if(!nsRes.ok){
+        snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
         return;
       }
-      bootDone();
-      if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
-      binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
-      if(c.version){
-        var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
-      }
-      onAuthReady(c.user || null);
-      var defaultNs=(c.defaultArtifactNamespace||"").trim();
-      fetchJson(api("/api/namespaces")).then(function(nsRes){
-        if(nsRes.status===401) return;
-        if(!nsRes.ok){
-          snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
-          return;
-        }
-        fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
-      });
-      refresh();
-      refreshImports();
-      fetchJson(api("/api/settings")).then(function(sRes){
-        if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
-      });
-      syncLiveIndicator();
+      fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
     });
+    refresh();
+    refreshImports();
+    fetchJson(api("/api/settings")).then(function(sRes){
+      if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
+    });
+    syncLiveIndicator();
   }).catch(function(err){
     var msg = (err && err.message && err.message.indexOf("config unavailable")===0)
             ? err.message : "Failed to load Image Manager configuration.";
@@ -1646,8 +1620,12 @@ INDEX_HTML = r"""<!DOCTYPE html>
   }
 
   function pendingMatchesServer(p, row){
-    return !!row && row.namespace===p.namespace &&
-      ((row.displayName||"")===p.displayName || (row.name||"")===p.displayName);
+    if(!row || row.namespace!==p.namespace) return false;
+    var dn=(p.displayName||"").toLowerCase();
+    var rd=(row.displayName||row.name||"").toLowerCase();
+    var rn=(row.name||"").toLowerCase();
+    var ru=((row.uploadId||"")+"").toLowerCase();
+    return rd===dn || rn===dn || ru===dn;
   }
   function reconcilePendingUploads(){
     var changed=false;
@@ -1660,6 +1638,13 @@ INDEX_HTML = r"""<!DOCTYPE html>
       if(row){
         var ds = effectiveDownloadStatus(row);
         var settled = ds === "Available" || ds === "Ready";
+        var rowTs = Date.parse(String(row.storedAt||"").replace("Z","+00:00")) || 0;
+        // Ignore PVC rows written before this client upload began (replace keeps old meta until done).
+        if(p.startedAt && rowTs && rowTs < p.startedAt) return;
+        // Keep the live client row while XHR is still in flight.
+        if(isActiveStatus(p.phase) && !p.awaitingReconcile) return;
+        // While waiting for server finalize, don't drop pending on an in-flight server status.
+        if(p.awaitingReconcile && !settled) return;
         delete pendingUploads[k];
         changed = true;
         if(settled){
@@ -1684,7 +1669,7 @@ INDEX_HTML = r"""<!DOCTYPE html>
         snack("err", "Upload did not finalize in time. Refresh status and retry if needed.", true);
       }
     });
-    if(changed){ updateUploadKeepalive(); render(); }
+    if(changed){ updateUploadKeepalive(); setUploadBtnBusy(uploadInFlight()); render(); }
   }
   function holdUploadForReconcile(p, msg){
     p.phase = "Processing";
@@ -1705,18 +1690,29 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   // Single upload path. The NOS is auto-detected server-side from the zip; md5
   // and the YANG schema profile are handled automatically.
-  function doUpload(f, namespace, lic, replace){
+  function doUpload(f, namespace, lic, replace, nameOverride){
+    if(!f || !f.size){
+      snack("err","Select a vendor .zip file first.");
+      return;
+    }
     // Lowercase unconditionally here (the authoritative client-side point), so the
     // query param and the live pending row match the server's lowercased name
     // regardless of how text reached the field — the input listener is then cosmetic.
-    var name=(imageName.value||deriveName(f.name)).trim().toLowerCase();
+    var name=(nameOverride||(imageName.value||deriveName(f.name))).trim().toLowerCase();
+    if(!replace && hasPendingFor(name, namespace)){
+      snack("err","An upload for this image is already in progress.");
+      return;
+    }
+    clearPendingFor(name, namespace);
     var qs=new URLSearchParams({ filename:f.name, namespace:namespace, name:name });
     if(replace) qs.set("replace","true");
     var key="u"+(++uploadSeq);
     var p={ key:key, displayName:name, namespace:namespace, total:f.size, isZip:true,
-            phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0, snackDone:false };
+            phase:"Uploading", loaded:0, pct:0, speed:0, elapsed:0, snackDone:false,
+            startedAt:Date.now(), replace:!!replace };
     pendingUploads[key]=p; updateUploadKeepalive(); kickPostUploadBurst();
-    showTab("status"); resetUploadForm(); render();
+    setUploadBtnBusy(true);
+    showTab("status"); render();
     sendUpload(api("/api/upload")+"?"+qs.toString(), f, p, {
       onBodySent:function(){
         p.phase="Unzipping";
@@ -1733,9 +1729,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
         if(isConflictResponse(status, r)){
           delete pendingUploads[key]; render();
           updateUploadKeepalive();
+          setUploadBtnBusy(uploadInFlight());
           var info=conflictInfo(r, name, namespace);
           askReplace(info.artifactName, info.namespace, function(){
-            doUpload(f, namespace, lic, true);
+            doUpload(f, namespace, lic, true, name);
           });
           return;
         }
@@ -1743,10 +1740,14 @@ INDEX_HTML = r"""<!DOCTYPE html>
           // The authoritative row now exists server-side; clear the pending row.
           delete pendingUploads[key];
           updateUploadKeepalive();
+          setUploadBtnBusy(uploadInFlight());
+          resetUploadForm();
           render();
           var what=(r.displayName||name), msg;
           if(r.nos==="srsim") msg="Uploaded "+what+" — SR-SIM image ready. Open Details for the sim NodeProfile and one-time setup."+(r.yangCreated?" YANG profile attached.":"");
           else if(r.nos==="sros") msg="Uploaded "+what+" — "+(r.fileCount||0)+" image files. "+(r.note||"");
+          else if(r.repushed) msg="Re-published "+what+" from stored image data.";
+          else if(p.replace) msg="Replaced and uploaded "+what+"."+(r.md5?(" md5 "+r.md5+"."):"")+(r.yangCreated?" YANG profile attached.":"");
           else msg="Uploaded "+what+"."+(r.md5?(" md5 "+r.md5+"."):"")+(r.yangCreated?" YANG profile attached.":"");
           if(lic){ attachLicense(r.artifactName||r.uploadId||name, what, lic, msg); }
           else { snack("ok", msg); refresh(); }
@@ -1756,6 +1757,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
           } else {
             delete pendingUploads[key];
             updateUploadKeepalive();
+            setUploadBtnBusy(uploadInFlight());
+            resetUploadForm();
             render();
             snack("err",(r.error||("HTTP "+status)), true);
           }
@@ -1768,6 +1771,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         } else {
           delete pendingUploads[key];
           updateUploadKeepalive();
+          setUploadBtnBusy(uploadInFlight());
+          resetUploadForm();
           render();
           snack("err","Network error during upload.", true);
         }
@@ -1778,6 +1783,8 @@ INDEX_HTML = r"""<!DOCTYPE html>
         } else {
           delete pendingUploads[key];
           updateUploadKeepalive();
+          setUploadBtnBusy(uploadInFlight());
+          resetUploadForm();
           render();
           snack("err","Upload timed out before transfer completed.", true);
         }
@@ -1787,6 +1794,10 @@ INDEX_HTML = r"""<!DOCTYPE html>
 
   btn.addEventListener("click", function(e){
     if(e && e.preventDefault) e.preventDefault();
+    if(btn.disabled || uploadInFlight()){
+      snack("err","An upload is already in progress.");
+      return;
+    }
     var f=binFile.files[0];
     // Validate first; on failure keep the dialog open so the user can fix it.
     if(!f){ snack("err","Select a vendor .zip file first."); return; }
@@ -1797,14 +1808,15 @@ INDEX_HTML = r"""<!DOCTYPE html>
     var lic=(licText.value||"").trim();   // optional pasted license key
     if(lic && lic.length>262144){ snack("err","License text is too large (expected a small key)."); return; }
     if(lic && !looksLikeLicense(lic)){ snack("err","That doesn't look like a license key — paste the full “<node-id> <key>” line (extra spaces, quotes or a label are fine)."); return; }
-    var name=(imageName.value||deriveName(f.name)).trim().toLowerCase();
-    checkConflict(namespace, name).then(function(body){
+    var uploadFile=f, uploadNs=namespace, uploadLic=lic;
+    var uploadName=(imageName.value||deriveName(f.name)).trim().toLowerCase();
+    checkConflict(uploadNs, uploadName).then(function(body){
       if(body.exists){
-        askReplace(body.artifactName||name, body.namespace||namespace, function(){
-          doUpload(f, namespace, lic, true);
+        askReplace(body.artifactName||uploadName, body.namespace||uploadNs, function(){
+          doUpload(uploadFile, uploadNs, uploadLic, true, uploadName);
         });
       } else {
-        doUpload(f, namespace, lic, false);
+        doUpload(uploadFile, uploadNs, uploadLic, false, uploadName);
       }
     }).catch(function(err){
       snack("err",(err&&err.message)||"Could not check for duplicate image.", true);
@@ -2142,13 +2154,19 @@ INDEX_HTML = r"""<!DOCTYPE html>
   function render(){
     var activePending={};
     var pend=[];
+    var seenPending={};
     Object.keys(pendingUploads).forEach(function(k){
       var p=pendingUploads[k];
-      activePending[p.displayName+"|"+p.namespace]=true;
+      var pid=pendingIdentity(p.displayName, p.namespace);
+      if(seenPending[pid]) delete pendingUploads[seenPending[pid]];
+      seenPending[pid]=k;
+      activePending[pid]=true;
       pend.push(p);
     });
     var serverRows=sortData(currentData).filter(function(t){
-      return !activePending[(t.displayName||t.name)+"|"+t.namespace];
+      return !Object.keys(pendingUploads).some(function(k){
+        return pendingMatchesServer(pendingUploads[k], t);
+      });
     });
     updateKpis();
     if(!(pend.length+serverRows.length)){
