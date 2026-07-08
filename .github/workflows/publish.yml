@@ -56,7 +56,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dev dependencies
-        run: pip install pytest ruff
+        run: pip install pytest ruff PyJWT cryptography
 
       - name: Ruff
         run: ruff check imagemanager/build/controller/tests
