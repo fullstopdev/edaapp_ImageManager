@@ -25,12 +25,10 @@ def tmp_upload_dir(monkeypatch):
 
 
 def _make_jwt(payload: dict) -> str:
-    import base64
     import time
 
-    import jwt as pyjwt
-
     import auth
+    import jwt as pyjwt
 
     keys, kid = _TEST_RSA_KEYPAIR[0], _TEST_RSA_KEYPAIR[1]
     private_key = keys
