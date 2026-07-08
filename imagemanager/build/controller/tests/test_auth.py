@@ -52,3 +52,10 @@ def test_has_idp_session_cookie():
     assert auth.has_idp_session_cookie("AUTH_SESSION_ID=abc; other=1") is True
     assert auth.has_idp_session_cookie("foo=bar") is False
     assert auth.has_idp_session_cookie("") is False
+
+
+def test_verify_session_without_idp_cookies():
+    """im_session must validate without Keycloak cookies on the httpproxy path."""
+    cookie = auth.make_session("alice")
+    assert auth.verify_session(cookie, "foo=bar") == "alice"
+    assert auth.verify_session(cookie, "") == "alice"

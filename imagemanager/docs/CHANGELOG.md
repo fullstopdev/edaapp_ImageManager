@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.25
+
+**Fix login infinite reload loop (critical regression from v0.1.24).**
+
+- **Root cause:** `auth.verify_session` required identity-proxy Keycloak cookies
+  (`KEYCLOAK_SESSION`, etc.) on every request. Those cookies are scoped to
+  `/core/proxy/v1/identity` and are **not** sent to
+  `/core/httpproxy/v1/imagemanager`, so a valid `im_session` was always rejected.
+  Bootstrap `GET /api/config` returned 401 → redirect to `/oauth/login` → OAuth
+  callback → reload → 401 loop; embedded mode also hit `window.top.location.reload()`
+  in `retrySignIn`.
+- **Fix:** Restore server trust in the signed `im_session` TTL. EDA logout sync
+  remains client-side via `kc-*` localStorage watchers (v0.1.19+).
+- **Unchanged:** `Cache-Control: no-store` on API responses and SPA `fetchJson`
+  `cache: "no-store"` for GETs (v0.1.24 hardening retained).
+
 ## v0.1.24
 
 **Fix EDA logout propagation on refresh (post-v0.1.23).**

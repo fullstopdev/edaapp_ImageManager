@@ -333,13 +333,11 @@ def verify_session(cookie, raw_cookie_header=""):
         payload = json.loads(_b64u_dec(body).decode("utf-8"))
     except Exception:
         return None
-    now = time.time()
-    if int(payload.get("exp", 0)) < now:
+    if int(payload.get("exp", 0)) < time.time():
         return None
-    # If identity-proxy cookies are absent, treat the app session as stale even if
-    # the local signed cookie has not yet hit its own TTL.
-    if not has_idp_session_cookie(raw_cookie_header):
-        return None
+    # Do not require identity-proxy Keycloak cookies here: they are scoped to
+    # /core/proxy/v1/identity and are not sent on /core/httpproxy/v1/imagemanager
+    # requests. EDA logout sync is handled client-side (kc-* localStorage watchers).
     return payload.get("u")
 
 
