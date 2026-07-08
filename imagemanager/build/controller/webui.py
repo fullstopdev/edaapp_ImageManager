@@ -994,7 +994,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var sessionCheckTimer = null;
   var revalidateTimer = null;
   var sustainedKcTimer = null;
-  var SESSION_CHECK_MS = 8000;
+  var SESSION_CHECK_MS = 3000;
   var IDP_PROBE_CLIENT_ID = "auth";
   var REVALIDATE_DEBOUNCE_MS = 400;
   var KC_ABSENCE_CONFIRM_MS = 1200;
@@ -1022,6 +1022,12 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       }
     } catch(e){}
     window.location = url;
+  }
+  function edaLoginUrl(){
+    return window.location.origin + "/";
+  }
+  function redirectToEdaLogin(){
+    navigateTo(edaLoginUrl());
   }
 
   function showAuthUser(user){
@@ -1232,7 +1238,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     // (Keycloak cookies cleared on EDA logout are not sent to imagemanager paths).
     // kc-* localStorage watchers remain a secondary signal.
     return probeConfigAuth().then(function(configOk){
-      if(!configOk || !authReady) return configOk;
+      if(!configOk) return false;
       return probeEdaIdentitySession().then(function(idpOk){
         if(!idpOk){
           showConfirmedSessionLoss();
@@ -1251,7 +1257,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       if(sustainedKcTimer){ clearTimeout(sustainedKcTimer); sustainedKcTimer = null; }
       syncLiveIndicator();
       hideAuthUser();
-      showSignInBanner(msg || "Your EDA session has ended. Sign in again.");
+      setAuthBanner("loading", msg || "Your EDA session has ended. Redirecting to sign in\u2026");
+      setTimeout(function(){ redirectToEdaLogin(); }, 160);
     });
   }
   function handleAuthLoss(){
@@ -1299,17 +1306,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     bootDone();
     authBootstrapComplete = true;
     syncLiveIndicator();
-    var msg = embedded
-      ? "Sign in to EDA to use Image Manager."
-      : "Sign in to use Image Manager.";
-    showSignInBanner(msg);
-    if(rows){
-      rows.innerHTML = emptyStateHtml(6, "warn", "Sign-in required",
-        "Sign in to load your artifact inventory.", "");
-    }
-    if(importRows){
-      importRows.innerHTML = emptyStateHtml(5, "warn", "Sign-in required", "", "");
-    }
+    setAuthBanner("loading", "Sign-in required. Redirecting to EDA\u2026");
+    setTimeout(function(){ redirectToEdaLogin(); }, 160);
   }
   function showFatal(msg){
     bootDone();
@@ -1589,22 +1587,28 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(c.version){
       var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
-    onAuthReady(c.user || null);
-    var defaultNs=(c.defaultArtifactNamespace||"").trim();
-    fetchJson(api("/api/namespaces")).then(function(nsRes){
-      if(nsRes.status===401) return;
-      if(!nsRes.ok){
-        snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
+    probeEdaIdentitySession().then(function(idpOk){
+      if(!idpOk){
+        showConfirmedSessionLoss();
         return;
       }
-      fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
+      onAuthReady(c.user || null);
+      var defaultNs=(c.defaultArtifactNamespace||"").trim();
+      fetchJson(api("/api/namespaces")).then(function(nsRes){
+        if(nsRes.status===401) return;
+        if(!nsRes.ok){
+          snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
+          return;
+        }
+        fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
+      });
+      refresh();
+      refreshImports();
+      fetchJson(api("/api/settings")).then(function(sRes){
+        if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
+      });
+      syncLiveIndicator();
     });
-    refresh();
-    refreshImports();
-    fetchJson(api("/api/settings")).then(function(sRes){
-      if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
-    });
-    syncLiveIndicator();
   }).catch(function(err){
     var msg = (err && err.message && err.message.indexOf("config unavailable")===0)
             ? err.message : "Failed to load Image Manager configuration.";

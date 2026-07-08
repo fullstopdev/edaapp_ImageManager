@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.1.32
+
+**Cable-map auth parity: bootstrap identity probe, 3s revalidation, EDA login redirect.**
+
+- **Root cause (stale logged-in UI):** v0.1.31 added the identity-proxy session probe in
+  `reconcileAuthState()` but gated it on `authReady`, and bootstrap called `onAuthReady`
+  immediately after `/api/config` 200 without probing. After EDA logout the 8h `im_session`
+  cookie still returned 200, so refresh showed a logged-in shell until the first periodic
+  check (8s later) — and session loss only showed an in-app banner instead of the EDA
+  login page.
+- **Bootstrap (cable-map pattern):** On every page load/refresh with a valid
+  `im_session`, probe the EDA identity proxy (`login-status-iframe/init` via
+  `client_id=auth` on `/core/proxy/v1/identity`) **before** `onAuthReady`. Invalid
+  sessions clear `im_session` and redirect to the EDA login page (`/`).
+- **Periodic revalidation:** Session poll interval shortened from 8s to **3s**; identity
+  probe runs on every `reconcileAuthState()` when config is 200 (no `authReady` gate).
+- **Session loss UX:** `showConfirmedSessionLoss` redirects to the EDA login page instead
+  of leaving a stale logged-in UI with a recoverable banner.
+- **Unchanged:** No identity-proxy cookies on `verify_session`; no Keycloak iframe from
+  imagemanager origin; 403 probe responses ignored; concurrent upload fix from v0.1.31.
+
 ## v0.1.31
 
 **Concurrent uploads for different images; EDA logout sync via identity probe.**
