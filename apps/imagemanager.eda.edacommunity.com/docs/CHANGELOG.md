@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.38
+
+**Fix startup crash: keycloak-js ES module loaded as classic script.**
+
+- **Root cause:** v0.1.36 bundled the `keycloak-js` 26.2.4 **ES module** source
+  (`export default class Keycloak`) as `/assets/keycloak.min.js`, but `loadKeycloakScript()`
+  injects a plain `<script src>` tag expecting global `window.Keycloak`.
+- **Fix:** Replace with a Rollup UMD build of `keycloak-js` 26.2.4 that exposes
+  `window.Keycloak` for the self-contained SPA. Cable-map SSO flow unchanged
+  (silent check-sso, `POST /oauth/session`, v0.1.37 logout reconcile).
+
 ## v0.1.37
 
 **Fix EDA logout not disconnecting Image Manager (v0.1.36 regression).**
