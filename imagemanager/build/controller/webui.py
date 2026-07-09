@@ -290,12 +290,45 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     letter-spacing:.06em; white-space:nowrap; background:var(--panel2);
     box-shadow:0 1px 0 var(--line);
   }
-  .mtable th.sortable { cursor:pointer; user-select:none; transition:color var(--transition); }
-  .mtable th.sortable:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
-  .mtable th.sortable .arr { opacity:0; margin-left:5px; font-size:10px; transition:opacity var(--transition); }
-  .mtable th.sortable:hover .arr { opacity:.45; }
-  .mtable th.sorted { color:var(--accent); }
-  .mtable th.sorted .arr { opacity:1; color:var(--accent); }
+  .mtable th .th-sort.sortable {
+    display:inline-flex; align-items:center; gap:var(--space-2);
+    cursor:pointer; user-select:none; transition:color var(--transition);
+    background:none; border:0; padding:0; margin:0; font:inherit;
+    color:inherit; letter-spacing:inherit; text-transform:inherit;
+  }
+  .mtable th .th-sort.sortable:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--radius-sm); }
+  .mtable th .th-sort.sortable .arr { opacity:0; margin-left:var(--space-2); font-size:var(--text-2xs); transition:opacity var(--transition); }
+  .mtable th .th-sort.sortable:hover .arr { opacity:.45; }
+  .mtable th .th-sort.sortable.sorted { color:var(--accent); }
+  .mtable th .th-sort.sortable.sorted .arr { opacity:1; color:var(--accent); }
+  .table-toolbar {
+    display:flex; flex-direction:column; gap:var(--space-6);
+    padding:var(--space-7) var(--space-9); border-bottom:1px solid var(--line);
+    background:color-mix(in srgb, var(--panel) 92%, var(--surface));
+  }
+  .artifact-search {
+    display:flex; align-items:center; gap:var(--space-5);
+    padding:var(--space-4) var(--space-7); border:1px solid var(--line);
+    border-radius:var(--radius-md); background:var(--input-bg);
+    transition:border-color var(--transition), box-shadow var(--transition);
+  }
+  .artifact-search:focus-within { border-color:var(--accent); box-shadow:var(--focus-ring); }
+  .artifact-search .icon { width:16px; height:16px; color:var(--muted); flex:none; }
+  .artifact-search input {
+    flex:1; border:0; background:transparent; color:var(--fg);
+    font:var(--text-base) inherit; outline:none; min-width:0;
+  }
+  .artifact-search input::placeholder { color:var(--muted); }
+  .ns-filter-chips { display:flex; flex-wrap:wrap; gap:var(--space-4); }
+  .ns-chip {
+    display:inline-flex; align-items:center; padding:var(--space-3) var(--space-7);
+    border-radius:999px; font-size:var(--text-xs); font-weight:var(--font-semibold);
+    border:1px solid var(--line); background:var(--panel2); color:var(--muted);
+    cursor:pointer; transition:background var(--transition), color var(--transition), border-color var(--transition);
+  }
+  .ns-chip:hover { border-color:var(--accent); color:var(--accent); }
+  .ns-chip.active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .ns-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   .mtable th.num, .mtable td.num { text-align:right; }
   .mtable tbody tr { transition:background var(--transition); }
   .mtable tbody tr:nth-child(even) { background:var(--row-stripe); }
@@ -328,12 +361,38 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     animation:spin 1.1s linear infinite; transform-origin:center;
   }
   .upinfo { margin-top:6px; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
-  .uprog { margin-top:8px; height:5px; width:200px; max-width:100%; background:var(--panel2);
+  .uprog { margin-top:var(--space-5); height:5px; width:200px; max-width:100%; background:var(--panel2);
     border-radius:999px; overflow:hidden; border:1px solid var(--line); }
   .uprog > div { height:100%; background:linear-gradient(90deg,var(--accent),var(--eda-teal-400));
     border-radius:999px; transition:width .22s cubic-bezier(.4,0,.2,1); }
   .uprog.indet > div { width:40%; animation:indet 1.15s ease-in-out infinite; }
-  .upload-status-cell { min-width:200px; }
+  .uprog-prominent { height:10px; width:100%; max-width:none; margin-top:var(--space-6); }
+  .upinfo-prominent { margin-top:var(--space-4); font-size:var(--text-sm); color:var(--fg); font-weight:var(--font-medium); }
+  .upload-status-cell { min-width:240px; }
+  .actions-cell { width:48px; text-align:right; }
+  .row-menu { position:relative; display:inline-block; }
+  .kebab-btn {
+    width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:var(--radius-sm);
+    background:var(--panel2); color:var(--muted); cursor:pointer;
+    display:inline-flex; align-items:center; justify-content:center;
+    transition:background var(--transition), border-color var(--transition), color var(--transition);
+  }
+  .kebab-btn:hover, .kebab-btn[aria-expanded="true"] { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
+  .kebab-btn .icon { width:18px; height:18px; }
+  .kebab-menu {
+    position:absolute; right:0; top:calc(100% + var(--space-3)); z-index:8; min-width:148px;
+    padding:var(--space-3); border:1px solid var(--line); border-radius:var(--radius-md);
+    background:var(--panel); box-shadow:var(--shadow-lg);
+  }
+  .kebab-menu[hidden] { display:none; }
+  .kebab-menu button {
+    display:block; width:100%; text-align:left; padding:var(--space-5) var(--space-7);
+    border:0; border-radius:var(--radius-sm); background:transparent; color:var(--fg);
+    font-size:var(--text-sm); font-weight:var(--font-medium); cursor:pointer;
+  }
+  .kebab-menu button:hover { background:var(--state); }
+  .kebab-menu button.danger { color:var(--err-fg); }
+  .kebab-menu button.danger:hover { background:var(--err-bg); }
   .reason { color:var(--err-fg); font-size:12px; margin-top:5px; }
   .empty {
     color:var(--muted); padding:36px 20px; text-align:center; font-size:13px; line-height:1.55;
@@ -376,14 +435,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   /* Dialogs */
   .scrim { position:fixed; inset:0; background:var(--scrim); opacity:0; visibility:hidden;
-    transition:opacity .2s; z-index:40; backdrop-filter:blur(2px); }
+    transition:opacity .25s ease, visibility .25s; z-index:40; backdrop-filter:blur(3px); }
   .scrim.show { opacity:1; visibility:visible; }
   .dialog {
     position:fixed; z-index:50; left:50%; top:50%;
-    transform:translate(-50%,-48%) scale(.97); opacity:0; visibility:hidden;
-    width:min(560px,calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow:auto;
+    transform:translate(-50%,-46%) scale(.94); opacity:0; visibility:hidden;
+    width:min(560px,calc(100vw - var(--space-12))); max-height:calc(100vh - var(--space-14)); overflow:auto;
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg);
-    box-shadow:var(--shadow-lg); transition:opacity .2s, transform .2s;
+    box-shadow:var(--shadow-lg);
+    transition:opacity .25s ease, transform .25s cubic-bezier(.2,.7,.3,1), visibility .25s;
   }
   .dialog.open { transform:translate(-50%,-50%) scale(1); opacity:1; visibility:visible; }
   .dialog.confirm { width:min(420px,calc(100vw - 32px)); }
@@ -450,21 +510,34 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     animation:spin .7s linear infinite;
   }
 
-  .filefield { margin-top:4px; }
-  .filefield > .lbl { font-size:12px; color:var(--muted); font-weight:600; }
-  .filebox {
-    margin-top:8px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
-    border:1px dashed var(--line-soft); border-radius:var(--radius-md); padding:14px;
-    background:var(--panel2); transition:border-color var(--transition), background var(--transition);
+  .filefield { margin-top:var(--space-4); }
+  .filefield > .lbl { font-size:var(--text-sm); color:var(--muted); font-weight:var(--font-semibold); }
+  .dropzone {
+    margin-top:var(--space-6); border:2px dashed var(--line-soft); border-radius:var(--radius-lg);
+    padding:var(--space-11) var(--space-10); background:var(--panel2); text-align:center;
+    cursor:pointer; transition:border-color var(--transition), background var(--transition), transform var(--transition);
   }
-  .filebox:hover, .filebox:focus-within { border-color:var(--accent); background:var(--state); }
-  .filebox input[type=file] { color:var(--muted); font-size:12.5px; max-width:100%; }
-  .filebox input[type=file]::file-selector-button {
-    background:var(--accent); color:#fff; border:0; border-radius:var(--radius-sm);
-    padding:8px 14px; margin-right:12px; cursor:pointer; font-weight:600; font-size:12.5px;
-    transition:background var(--transition);
+  .dropzone:hover, .dropzone:focus-within, .dropzone.dragover {
+    border-color:var(--accent); background:var(--state); transform:translateY(-1px);
   }
-  .filebox input[type=file]::file-selector-button:hover { background:var(--accent2); }
+  .dropzone.has-file { padding:var(--space-8); text-align:left; cursor:default; }
+  .dropzone.has-file:hover { transform:none; }
+  .dropzone input[type=file] { display:none; }
+  .dropzone-icon { width:40px; height:40px; margin:0 auto var(--space-6); color:var(--accent); }
+  .dropzone-prompt { margin:0; font-size:var(--text-md); color:var(--muted); line-height:var(--leading-relaxed); }
+  .dropzone-browse {
+    background:none; border:0; padding:0; color:var(--accent); font:inherit; font-weight:var(--font-semibold);
+    cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+  }
+  .dropzone-browse:hover { color:var(--accent2); }
+  .file-preview { margin-top:var(--space-6); padding:var(--space-7) var(--space-8);
+    border:1px solid var(--line); border-radius:var(--radius-md); background:var(--panel); }
+  .file-preview[hidden] { display:none; }
+  .file-preview-name { font:var(--text-md)/var(--leading-snug) ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-weight:var(--font-semibold); word-break:break-all; }
+  .file-preview-meta { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-5); margin-top:var(--space-4);
+    font-size:var(--text-sm); color:var(--muted); }
+  .file-preview-meta .os-tag { color:var(--accent); background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 35%, transparent); }
 
   /* === Snackbar === */
   .snackbar {
@@ -479,14 +552,14 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   .snackbar.show { transform:translate(-50%,0); opacity:1; visibility:visible; }
   .snackbar.ok {
-    border-left-color:var(--ok-bd);
-    background:color-mix(in srgb, var(--ok-bg) 42%, var(--snack-bg));
-    color:color-mix(in srgb, var(--ok-fg) 88%, var(--snack-fg));
+    border-left-width:6px; border-left-color:var(--ok-bd); border-color:var(--ok-bd);
+    background:var(--ok-bg); color:var(--ok-fg);
+    box-shadow:var(--shadow-lg), 0 0 0 1px color-mix(in srgb, var(--ok-bd) 45%, transparent);
   }
   .snackbar.err {
-    border-left-color:var(--err-bd);
-    background:color-mix(in srgb, var(--err-bg) 48%, var(--snack-bg));
-    color:color-mix(in srgb, var(--err-fg) 90%, var(--snack-fg));
+    border-left-width:6px; border-left-color:var(--err-bd); border-color:var(--err-bd);
+    background:var(--err-bg); color:var(--err-fg);
+    box-shadow:var(--shadow-lg), 0 0 0 1px color-mix(in srgb, var(--err-bd) 50%, transparent);
   }
   .snackbar.loading, .snackbar.info {
     border-left-color:var(--info-bd);
@@ -620,10 +693,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .kpi-val-row { display:flex; align-items:baseline; gap:var(--space-3); }
   .kpi-val { font-size:var(--text-3xl); font-weight:var(--font-bold); line-height:var(--leading-tight); letter-spacing:-.01em;
     font-variant-numeric:tabular-nums; transition:color var(--transition); }
-  .kpi-delta { font-size:var(--text-xs); font-weight:var(--font-semibold); opacity:.9; min-width:1.5em; }
+  .kpi-delta {
+    display:block; margin-top:var(--space-3); font-size:var(--text-sm); font-weight:var(--font-semibold);
+    line-height:var(--leading-snug); min-height:1.2em;
+  }
   .kpi-delta.up { color:var(--ok-fg); }
   .kpi-delta.down { color:var(--err-fg); }
-  .kpi-label { font-size:var(--text-xs); font-weight:var(--font-semibold); color:var(--muted); text-transform:uppercase; letter-spacing:.07em; }
+  .kpi-delta.flat { color:var(--muted); font-weight:var(--font-medium); }
+  .kpi-sparkline { display:block; width:72px; height:22px; margin-top:var(--space-4); opacity:.85; }
+  .kpi-label { font-size:var(--text-xs); font-weight:var(--font-semibold); color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin-top:var(--space-2); }
   .kpi-val.bump { animation:badgePop .35s ease; }
   .detail-head { margin:6px 0 14px; padding-top:18px; border-top:1px solid var(--line); }
   .detail-label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
@@ -699,6 +777,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   <symbol id="icon-status-error" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M5.5 5.5l5 5M10.5 5.5l-5 5"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
   <symbol id="icon-status-warn" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M8 3.5L13.2 12H2.8L8 3.5z"/><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8 6.5v3"/><circle cx="8" cy="11.2" r=".55" fill="currentColor"/></symbol>
   <symbol id="icon-status-neutral" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M5.5 8h5"/></symbol>
+  <symbol id="icon-more" viewBox="0 0 24 24"><circle cx="12" cy="6" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="18" r="1.6" fill="currentColor"/></symbol>
+  <symbol id="icon-upload" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 16V5m0 0l-4 4m4-4l4 4M5 19h14"/></symbol>
+  <symbol id="icon-search" viewBox="0 0 24 24"><circle fill="none" stroke="currentColor" stroke-width="1.8" cx="11" cy="11" r="6.5"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M16 16l4.5 4.5"/></symbol>
 </svg>
 <noscript><div style="padding:24px 20px;background:#121c2a;color:#e6edf3;font:14px sans-serif">
   Image Manager requires JavaScript. Enable it, or open
@@ -745,8 +826,19 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       <div class="card-body">
       <div class="filefield">
         <span class="lbl">Vendor image &mdash; <span class="mono">.zip</span> (required)</span>
-        <div class="filebox">
+        <div class="dropzone" id="uploadDropzone">
           <input type="file" id="binFile" accept=".zip">
+          <div class="dropzone-pick" id="dropzonePick">
+            <svg class="icon dropzone-icon" aria-hidden="true"><use href="#icon-upload"/></svg>
+            <p class="dropzone-prompt">Drag &amp; drop a vendor <span class="mono">.zip</span> here, or <button type="button" class="dropzone-browse" id="dropzoneBrowse">browse files</button></p>
+          </div>
+          <div class="file-preview" id="filePreview" hidden>
+            <div class="file-preview-name" id="filePreviewName"></div>
+            <div class="file-preview-meta">
+              <span id="filePreviewSize"></span>
+              <span class="os-tag" id="filePreviewOs" hidden></span>
+            </div>
+          </div>
         </div>
         <div class="helper" id="binHint"></div>
       </div>
@@ -855,25 +947,25 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         <span class="kpi-icon total" aria-hidden="true">
           <svg class="icon"><use href="#icon-images"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiTotal">&mdash;</span><span class="kpi-delta" id="kpiTotalDelta" aria-hidden="true"></span></div><div class="kpi-label">Images</div></div>
+        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiTotal">&mdash;</span></div><span class="kpi-delta" id="kpiTotalDelta" aria-live="polite"></span><svg class="kpi-sparkline" id="kpiTotalSpark" aria-hidden="true"></svg><div class="kpi-label">Images</div></div>
       </div>
       <div class="kpi-card">
         <span class="kpi-icon ok" aria-hidden="true">
           <svg class="icon"><use href="#icon-check"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiReady">&mdash;</span><span class="kpi-delta" id="kpiReadyDelta" aria-hidden="true"></span></div><div class="kpi-label">Available</div></div>
+        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiReady">&mdash;</span></div><span class="kpi-delta" id="kpiReadyDelta" aria-live="polite"></span><div class="kpi-label">Available</div></div>
       </div>
       <div class="kpi-card">
         <span class="kpi-icon info" aria-hidden="true">
           <svg class="icon"><use href="#icon-spinner"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiActive">&mdash;</span><span class="kpi-delta" id="kpiActiveDelta" aria-hidden="true"></span></div><div class="kpi-label">In progress</div></div>
+        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiActive">&mdash;</span></div><span class="kpi-delta" id="kpiActiveDelta" aria-live="polite"></span><div class="kpi-label">In progress</div></div>
       </div>
       <div class="kpi-card kpi-failed" id="kpiFailedCard">
         <span class="kpi-icon err" aria-hidden="true">
           <svg class="icon"><use href="#icon-warn"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiFailed">&mdash;</span><span class="kpi-delta" id="kpiFailedDelta" aria-hidden="true"></span></div><div class="kpi-label">Failed</div></div>
+        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiFailed">&mdash;</span></div><span class="kpi-delta" id="kpiFailedDelta" aria-live="polite"></span><svg class="kpi-sparkline" id="kpiFailedSpark" aria-hidden="true"></svg><div class="kpi-label">Failed</div></div>
       </div>
     </div>
     <div class="ops-grid" aria-label="Platform status">
@@ -919,15 +1011,22 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
           <button class="iconbtn ripple" id="refreshBtn" title="Refresh now">Refresh</button>
         </span>
       </div>
+      <div class="table-toolbar">
+        <div class="artifact-search">
+          <svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg>
+          <input type="search" id="artifactFilter" placeholder="Search by name or namespace…" aria-label="Filter artifacts" autocomplete="off">
+        </div>
+        <div class="ns-filter-chips" id="nsFilterChips" role="group" aria-label="Filter by namespace"></div>
+      </div>
       <div class="table-wrap">
         <table class="mtable">
           <thead><tr>
-            <th class="sortable" data-sort="displayName">Name <span class="arr"></span></th>
-            <th class="sortable" data-sort="nosLabel">OS <span class="arr"></span></th>
-            <th class="sortable" data-sort="namespace">Namespace <span class="arr"></span></th>
-            <th class="sortable num" data-sort="sizeBytes">Size <span class="arr"></span></th>
-            <th class="sortable" data-sort="downloadStatus">Status <span class="arr"></span></th>
-            <th></th>
+            <th scope="col"><button type="button" class="th-sort sortable" data-sort="displayName">Name <span class="arr"></span></button></th>
+            <th scope="col"><button type="button" class="th-sort sortable" data-sort="nosLabel">OS <span class="arr"></span></button></th>
+            <th scope="col"><button type="button" class="th-sort sortable" data-sort="namespace">Namespace <span class="arr"></span></button></th>
+            <th scope="col" class="num"><button type="button" class="th-sort sortable" data-sort="sizeBytes">Size <span class="arr"></span></button></th>
+            <th scope="col"><button type="button" class="th-sort sortable" data-sort="downloadStatus">Status <span class="arr"></span></button></th>
+            <th scope="col" aria-label="Actions"></th>
           </tr></thead>
           <tbody id="rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
         </table>
@@ -1906,14 +2005,41 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   el("snackClose").addEventListener("click", hideSnack);
 
   // ---------- modal infrastructure ----------
-  var scrim=el("scrim"), openDlg=null;
+  var scrim=el("scrim"), openDlg=null, focusTrapHandler=null;
+  function getFocusableElements(container){
+    return Array.prototype.slice.call(container.querySelectorAll(
+      'button:not([disabled]), input:not([disabled]):not([type="hidden"]), select:not([disabled]), textarea:not([disabled]), [href], [tabindex]:not([tabindex="-1"])'
+    )).filter(function(node){
+      return !node.hasAttribute("disabled") && node.offsetParent !== null;
+    });
+  }
+  function enableFocusTrap(d){
+    disableFocusTrap();
+    var focusables=getFocusableElements(d);
+    if(!focusables.length) return;
+    var first=focusables[0], last=focusables[focusables.length-1];
+    focusTrapHandler=function(e){
+      if(e.key!=="Tab" || !openDlg) return;
+      if(e.shiftKey){
+        if(document.activeElement===first){ e.preventDefault(); last.focus(); }
+      } else if(document.activeElement===last){
+        e.preventDefault(); first.focus();
+      }
+    };
+    document.addEventListener("keydown", focusTrapHandler);
+  }
+  function disableFocusTrap(){
+    if(focusTrapHandler){ document.removeEventListener("keydown", focusTrapHandler); focusTrapHandler=null; }
+  }
   function openModal(d){
     openDlg=d; scrim.classList.add("show"); d.classList.add("open");
     document.body.style.overflow="hidden";
     var f=d.querySelector("input:not([type=file]),button,select,textarea");
     if(f){ try{ f.focus(); }catch(e){} }
+    enableFocusTrap(d);
   }
   function closeModal(){
+    disableFocusTrap();
     if(openDlg){ openDlg.classList.remove("open"); }
     scrim.classList.remove("show"); document.body.style.overflow=""; openDlg=null;
     if(npCurrentUid){ npCurrentUid=null; setDetailsQuery(null); }
@@ -2171,13 +2297,65 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   });
 
   // ---------- file selection ----------
-  binFile.addEventListener("change", function(){
-    var f=binFile.files[0];
+  var NOS_LABELS={srl:"Nokia SR Linux",sros:"Nokia SR OS",srsim:"Nokia SR OS (SIM)"};
+  var uploadDropzone=el("uploadDropzone"), dropzonePick=el("dropzonePick"), dropzoneBrowse=el("dropzoneBrowse");
+  function guessNosFromFilename(fn){
+    var base=(fn||"");
+    if(/sr[ _-]?sim/i.test(base)) return NOS_LABELS.srsim;
+    if(/sr[ _-]?linux/i.test(base)) return NOS_LABELS.srl;
+    if(/\d+\.\d+\.[Rr]\d+/.test(base)) return NOS_LABELS.sros;
+    return "";
+  }
+  function showFilePreview(f){
+    var preview=el("filePreview"), osBadge=el("filePreviewOs");
+    if(!f){
+      if(preview) preview.hidden=true;
+      if(uploadDropzone) uploadDropzone.classList.remove("has-file");
+      if(dropzonePick) dropzonePick.hidden=false;
+      return;
+    }
+    if(preview) preview.hidden=false;
+    if(uploadDropzone) uploadDropzone.classList.add("has-file");
+    if(dropzonePick) dropzonePick.hidden=true;
+    el("filePreviewName").textContent=f.name;
+    el("filePreviewSize").textContent=fmtBytes(f.size);
+    var nosLbl=guessNosFromFilename(f.name);
+    if(osBadge){
+      if(nosLbl){ osBadge.hidden=false; osBadge.textContent=nosLbl; }
+      else { osBadge.hidden=true; osBadge.textContent=""; }
+    }
+    binHint.textContent=f.name+"  ·  "+fmtBytes(f.size)+(nosLbl?("  ·  "+nosLbl):"");
+  }
+  function handleFileSelect(f){
     if(!f) return;
-    imageName.value = deriveName(f.name);
-    binHint.textContent=f.name+"  ·  "+fmtBytes(f.size);
+    if(!isZip(f.name)){ snack("err","Please select a vendor .zip file."); binFile.value=""; showFilePreview(null); return; }
+    imageName.value=deriveName(f.name);
+    showFilePreview(f);
     syncUploadBtnState();
+  }
+  binFile.addEventListener("change", function(){
+    handleFileSelect(binFile.files[0]||null);
   });
+  if(dropzoneBrowse){
+    dropzoneBrowse.addEventListener("click", function(e){ e.stopPropagation(); binFile.click(); });
+  }
+  if(uploadDropzone){
+    uploadDropzone.addEventListener("dragover", function(e){ e.preventDefault(); uploadDropzone.classList.add("dragover"); });
+    uploadDropzone.addEventListener("dragleave", function(){ uploadDropzone.classList.remove("dragover"); });
+    uploadDropzone.addEventListener("drop", function(e){
+      e.preventDefault(); uploadDropzone.classList.remove("dragover");
+      var f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
+      if(!f) return;
+      try{
+        var dt=new DataTransfer(); dt.items.add(f); binFile.files=dt.files;
+      }catch(err){ /* fallback: change handler may not fire on all browsers */ }
+      handleFileSelect(f);
+    });
+    uploadDropzone.addEventListener("click", function(e){
+      if(e.target.closest(".dropzone-browse") || e.target.closest("#filePreview")) return;
+      binFile.click();
+    });
+  }
   // Names are lowercased everywhere; keep the field lowercase as the user edits.
   imageName.addEventListener("input", function(ev){
     if(ev && ev.isComposing) return;   // don't disturb a mid-IME composition
@@ -2190,6 +2368,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   // ---------- upload (closes dialog; progress shown as a live table row) ----------
   function resetUploadForm(){
     binFile.value=""; imageName.value=""; ns.selectedIndex=0; licText.value="";
+    showFilePreview(null);
     binHint.textContent="Maximum upload size: "+Math.round(maxBytes/1048576)+" MiB.";
   }
 
@@ -2459,7 +2638,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   // ---------- artifacts table ----------
   var lastImports=[];   // in-flight browser->controller uploads tracked in pendingUploads
-  var NOS_LABELS={srl:"Nokia SR Linux",sros:"Nokia SR OS",srsim:"Nokia SR OS (SIM)"};
+  var artifactFilterText="", artifactNsFilter="", openRowMenu=null;
+  var kpiHistory={ total:[], failed:[] };
+  var KPI_HISTORY_MAX=12;
   function osLabel(t){
     var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
     return l?('<span class="os-tag">'+esc(l)+'</span>'):('<span class="os-empty">&mdash;</span>');
@@ -2555,6 +2736,31 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   // ---------- KPI overview (dashboard cards) ----------
   var prevKpi = {};
+  function setKpiDelta(deltaEl, d){
+    if(!deltaEl) return;
+    if(d > 0){ deltaEl.textContent="+"+d+" since last refresh"; deltaEl.className="kpi-delta up"; }
+    else if(d < 0){ deltaEl.textContent=String(d)+" since last refresh"; deltaEl.className="kpi-delta down"; }
+    else { deltaEl.textContent=""; deltaEl.className="kpi-delta"; }
+  }
+  function pushKpiHistory(key, val){
+    var arr=kpiHistory[key];
+    if(!arr) return;
+    arr.push(val);
+    if(arr.length > KPI_HISTORY_MAX) arr.shift();
+  }
+  function renderSparkline(svgId, data, stroke){
+    var svg=el(svgId);
+    if(!svg) return;
+    if(!data || data.length < 2){ svg.innerHTML=""; return; }
+    var w=72, h=22, min=Math.min.apply(null, data), max=Math.max.apply(null, data), range=max-min||1;
+    var pts=data.map(function(v,i){
+      var x=(i/(data.length-1))*w;
+      var y=h-((v-min)/range)*h;
+      return x.toFixed(1)+","+y.toFixed(1);
+    }).join(" ");
+    svg.setAttribute("viewBox","0 0 "+w+" "+h);
+    svg.innerHTML='<polyline fill="none" stroke="'+stroke+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="'+pts+'"/>';
+  }
   function setKpi(id, val){
     var n = el(id);
     if(!n) return;
@@ -2567,10 +2773,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(deltaEl){
       var prev = prevKpi[id];
       if(prev !== undefined && prev !== null && prev !== val){
-        var d = val - prev;
-        if(d > 0){ deltaEl.textContent = "+" + d; deltaEl.className = "kpi-delta up"; }
-        else if(d < 0){ deltaEl.textContent = String(d); deltaEl.className = "kpi-delta down"; }
-        else { deltaEl.textContent = ""; deltaEl.className = "kpi-delta"; }
+        setKpiDelta(deltaEl, val - prev);
       } else if(prev === undefined || prev === null){
         deltaEl.textContent = ""; deltaEl.className = "kpi-delta";
       }
@@ -2590,6 +2793,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     setKpi("kpiReady", ready);
     setKpi("kpiActive", act);
     setKpi("kpiFailed", failed);
+    pushKpiHistory("total", total);
+    pushKpiHistory("failed", failed);
+    renderSparkline("kpiTotalSpark", kpiHistory.total, "var(--accent2)");
+    renderSparkline("kpiFailedSpark", kpiHistory.failed, "var(--err-fg)");
     var fc = el("kpiFailedCard");
     if(fc) fc.classList.toggle("kpi-hot", failed > 0);
   }
@@ -2597,11 +2804,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function pendStatusHtml(p){
     if(p.phase==="Uploading"){
       var line=p.pct.toFixed(0)+"%  \u00b7  "+fmtBytes(p.loaded)+" / "+fmtBytes(p.total)+
-               "  \u00b7  "+p.speed.toFixed(1)+" MB/s  \u00b7  "+
+               "  \u00b7  "+p.speed.toFixed(1)+" MB/s  \u00b7  ETA "+
                fmtEta(p.loaded, p.total, p.speed, p.elapsed);
       return '<span class="chip c-Uploading">'+iconRef("icon-status-progress","chip-icon")+'Uploading</span>'+
-             '<div class="uprog"><div style="width:'+p.pct.toFixed(1)+'%"></div></div>'+
-             '<div class="upinfo">'+esc(line)+'</div>';
+             '<div class="uprog uprog-prominent"><div style="width:'+p.pct.toFixed(1)+'%"></div></div>'+
+             '<div class="upinfo upinfo-prominent">'+esc(line)+'</div>';
     }
     var label = p.phase==="Unzipping" ? "Un-zipping" : "Finalizing";
     var sub   = p.phase==="Unzipping" ? "extracting image + reading md5" : "creating Artifact";
@@ -2614,20 +2821,47 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       '</td><td class="num">'+fmtBytes(p.total)+'</td><td class="upload-status-cell" id="upstat-'+p.key+'">'+pendStatusHtml(p)+
       '</td><td></td></tr>';
   }
+  function closeRowMenus(except){
+    document.querySelectorAll(".kebab-menu").forEach(function(menu){
+      if(except && menu===except) return;
+      menu.hidden=true;
+      var btn=menu.parentElement && menu.parentElement.querySelector(".kebab-btn");
+      if(btn) btn.setAttribute("aria-expanded","false");
+    });
+    if(!except) openRowMenu=null;
+  }
+  function toggleRowMenu(btn){
+    var menu=btn.parentElement && btn.parentElement.querySelector(".kebab-menu");
+    if(!menu) return;
+    var willOpen=menu.hidden;
+    closeRowMenus(willOpen ? menu : null);
+    menu.hidden=!willOpen;
+    btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+    openRowMenu=willOpen ? menu : null;
+    if(willOpen){
+      var first=menu.querySelector("button");
+      if(first){ try{ first.focus(); }catch(e){} }
+    }
+  }
   function serverRowHtml(t){
     var rowKey=(t.uploadId||t.name||t.displayName||"")+"|"+(t.namespace||"");
     var displayStatus=effectiveDownloadStatus(t);
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
-    var view=t.snippet
-      ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'" data-name="'+esc(t.name||"")+'">Details</button> ')
-      :'';
-    var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
+    var uid=esc(t.uploadId||""), ns=esc(t.namespace||""), name=esc(t.name||"");
+    var items='';
+    if(t.snippet){
+      items+='<button type="button" role="menuitem" data-act="view" data-uid="'+uid+'" data-name="'+name+'">Details</button>';
+      items+='<button type="button" role="menuitem" data-act="copy-snippet" data-uid="'+uid+'" data-name="'+name+'">Copy snippet</button>';
+    }
+    items+='<button type="button" role="menuitem" class="danger" data-act="del" data-uid="'+uid+'" data-ns="'+ns+'" data-name="'+name+'">Delete</button>';
+    var actions='<div class="row-menu"><button type="button" class="kebab-btn ripple" aria-label="Row actions" aria-haspopup="true" aria-expanded="false">'
+      +iconRef("icon-more")+'</button><div class="kebab-menu" role="menu" hidden>'+items+'</div></div>';
     return '<tr><td class="mono namecell" title="'+esc(t.displayName||t.name)+'">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
       '</td><td title="'+esc(t.namespace)+'">'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(displayStatus, rowKey)+reason+
-      '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
+      '</td><td class="actions-cell">'+actions+'</td></tr>';
   }
 
   function imDelete(uid, nsv, name){
@@ -2744,13 +2978,29 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
 
   rows.addEventListener("click", function(e){
+    var kebab=e.target.closest(".kebab-btn");
+    if(kebab){ e.stopPropagation(); toggleRowMenu(kebab); return; }
     var b = e.target.closest("button[data-act]");
     if(!b) return;
+    closeRowMenus();
     if(b.getAttribute("data-act")==="view"){
       openNodeProfile(b.getAttribute("data-uid") || b.getAttribute("data-name"));
+    } else if(b.getAttribute("data-act")==="copy-snippet"){
+      var uid=b.getAttribute("data-uid")||b.getAttribute("data-name");
+      for(var i=0;i<currentData.length;i++){
+        var row=currentData[i];
+        if(uid && (uid===row.uploadId || uid===row.name || uid===row.displayName) && row.snippet){
+          if(navigator.clipboard) navigator.clipboard.writeText(row.snippet);
+          snack("ok","Snippet copied to clipboard.");
+          break;
+        }
+      }
     } else if(b.getAttribute("data-act")==="del"){
       imDelete(b.getAttribute("data-uid"), b.getAttribute("data-ns"), b.getAttribute("data-name"));
     }
+  });
+  document.addEventListener("click", function(e){
+    if(!e.target.closest(".row-menu")) closeRowMenus();
   });
 
   importRows.addEventListener("click", function(e){
@@ -2772,6 +3022,45 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
   });
 
+  function passesArtifactFilter(t){
+    if(artifactNsFilter && (t.namespace||"") !== artifactNsFilter) return false;
+    if(!artifactFilterText) return true;
+    var hay=((t.displayName||t.name||"")+" "+(t.namespace||"")+" "+(t.nosLabel||"")+" "+(t.nos||"")).toLowerCase();
+    return hay.indexOf(artifactFilterText) >= 0;
+  }
+  function buildNsFilterChips(){
+    var chipBar=el("nsFilterChips");
+    if(!chipBar) return;
+    var nsSet={}, namespaces=[];
+    currentData.forEach(function(t){
+      var n=(t.namespace||"").trim();
+      if(n && !nsSet[n]){ nsSet[n]=true; namespaces.push(n); }
+    });
+    namespaces.sort();
+    var html='<button type="button" class="ns-chip'+(artifactNsFilter===""?" active":"")+'" data-ns="">All namespaces</button>';
+    namespaces.forEach(function(n){
+      html+='<button type="button" class="ns-chip'+(artifactNsFilter===n?" active":"")+'" data-ns="'+esc(n)+'">'+esc(n)+'</button>';
+    });
+    chipBar.innerHTML=html;
+  }
+  var artifactFilterEl=el("artifactFilter");
+  if(artifactFilterEl){
+    artifactFilterEl.addEventListener("input", function(){
+      artifactFilterText=(artifactFilterEl.value||"").trim().toLowerCase();
+      render();
+    });
+  }
+  var nsFilterChipsEl=el("nsFilterChips");
+  if(nsFilterChipsEl){
+    nsFilterChipsEl.addEventListener("click", function(e){
+      var chip=e.target.closest(".ns-chip");
+      if(!chip) return;
+      artifactNsFilter=chip.getAttribute("data-ns")||"";
+      buildNsFilterChips();
+      render();
+    });
+  }
+
   // sorting
   var STATUS_RANK={Available:0,Ready:0,InProgress:1,AsvrOnly:2,NoLocalCopy:2,Error:3,Failed:4,NoArtifact:5};
   var currentData=[], sortState=null;  // null = server order (newest first)
@@ -2792,7 +3081,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     return c;
   }
   function paintHeaders(){
-    var ths=document.querySelectorAll(".mtable th.sortable");
+    var ths=document.querySelectorAll(".mtable button.th-sort.sortable");
     ths.forEach(function(th){
       var col=th.getAttribute("data-sort");
       var arr=th.querySelector(".arr");
@@ -2801,12 +3090,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       } else { th.classList.remove("sorted"); arr.textContent="↕"; }
     });
   }
-  document.querySelectorAll(".mtable th.sortable").forEach(function(th){
-    th.addEventListener("click", function(){
-      var col=th.getAttribute("data-sort");
-      if(sortState && sortState.col===col){ sortState.dir = sortState.dir==="asc"?"desc":"asc"; }
-      else { sortState={col:col, dir:"asc"}; }
-      paintHeaders(); render();
+  function toggleSort(col){
+    if(sortState && sortState.col===col){ sortState.dir = sortState.dir==="asc"?"desc":"asc"; }
+    else { sortState={col:col, dir:"asc"}; }
+    paintHeaders(); render();
+  }
+  document.querySelectorAll(".mtable button.th-sort.sortable").forEach(function(th){
+    th.addEventListener("click", function(){ toggleSort(th.getAttribute("data-sort")); });
+    th.addEventListener("keydown", function(e){
+      if(e.key==="Enter" || e.key===" "){ e.preventDefault(); toggleSort(th.getAttribute("data-sort")); }
     });
   });
   paintHeaders();
@@ -2824,16 +3116,30 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       pend.push(p);
     });
     var serverRows=sortData(currentData).filter(function(t){
-      return !Object.keys(pendingUploads).some(function(k){
+      return passesArtifactFilter(t) && !Object.keys(pendingUploads).some(function(k){
         return pendingMatchesServer(pendingUploads[k], t);
       });
     });
+    buildNsFilterChips();
     updateKpis();
     if(!(pend.length+serverRows.length)){
-      rows.innerHTML=emptyStateHtml(6, "images", "No images yet",
-        "Upload a vendor <span class=\"mono\">.zip</span> or import from a URL to create your first Artifact.",
-        '<button class="btn contained ripple" data-goto="upload">Upload image</button>'+
-        '<button class="btn text ripple" data-goto="url-import">Import from URL</button>');
+      var filterActive=!!(artifactFilterText||artifactNsFilter);
+      rows.innerHTML=emptyStateHtml(6, "images", filterActive ? "No matching images" : "No images yet",
+        filterActive
+          ? "Try clearing the search box or namespace filter."
+          : 'Upload a vendor <span class="mono">.zip</span> or import from a URL to create your first Artifact.',
+        filterActive
+          ? '<button class="btn text ripple" id="clearArtifactFilters">Clear filters</button>'
+          : '<button class="btn contained ripple" data-goto="upload">Upload image</button>'+
+            '<button class="btn text ripple" data-goto="url-import">Import from URL</button>');
+      var clearBtn=el("clearArtifactFilters");
+      if(clearBtn){
+        clearBtn.addEventListener("click", function(){
+          artifactFilterText=""; artifactNsFilter="";
+          if(artifactFilterEl) artifactFilterEl.value="";
+          buildNsFilterChips(); render();
+        });
+      }
       el("statusCount").style.display="none"; return;
     }
     rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");

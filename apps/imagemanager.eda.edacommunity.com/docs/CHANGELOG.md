@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.48
+
+**Visible UX polish: table filters, kebab actions, upload dropzone, KPI deltas, dialog motion.**
+
+- **Artifacts table:** Search box (`#artifactFilter`) filters rows client-side; namespace
+  filter chips row; per-row ⋮ kebab menu (Details, Copy snippet, Delete) replaces
+  always-visible buttons; sortable column headers are keyboard-accessible buttons.
+- **Upload tab:** Drag-and-drop `.dropzone` with hidden file input; selected file
+  preview shows name, size, and detected OS badge; upload progress bar is taller
+  with speed + ETA in prominent text.
+- **KPI cards:** Visible `+N since last refresh` delta line under counts; sparklines
+  on Total and Failed after a few polls.
+- **Dialogs:** Scale+fade scrim/dialog transitions; Tab focus trap inside modals.
+- **Snackbar:** Strong green/red full-tint backgrounds (clear ok vs err at a glance).
+- **Unchanged:** Self-contained controller (no npm build), themes, auth/SSO,
+  ripple, `eda-embedded`, concurrent uploads, URL import navigation.
+
 ## v0.1.47
 
 **UX polish phase 1 — design tokens, icon sprite, KPI deltas.**
