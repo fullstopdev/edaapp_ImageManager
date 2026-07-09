@@ -302,32 +302,33 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .mtable th .th-sort.sortable.sorted { color:var(--accent); }
   .mtable th .th-sort.sortable.sorted .arr { opacity:1; color:var(--accent); }
   .table-toolbar {
-    display:flex; flex-direction:column; gap:var(--space-6);
-    padding:var(--space-7) var(--space-9); border-bottom:1px solid var(--line);
-    background:color-mix(in srgb, var(--panel) 92%, var(--surface));
+    display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-5) var(--space-6);
+    padding:var(--space-6) var(--space-9); border-bottom:1px solid var(--line);
+    background:color-mix(in srgb, var(--panel) 94%, var(--surface));
   }
   .artifact-search {
-    display:flex; align-items:center; gap:var(--space-5);
-    padding:var(--space-4) var(--space-7); border:1px solid var(--line);
-    border-radius:var(--radius-md); background:var(--input-bg);
+    display:flex; align-items:center; gap:var(--space-4); flex:1 1 180px; max-width:280px;
+    padding:var(--space-3) var(--space-6); border:1px solid var(--line);
+    border-radius:var(--radius-sm); background:var(--input-bg);
     transition:border-color var(--transition), box-shadow var(--transition);
   }
   .artifact-search:focus-within { border-color:var(--accent); box-shadow:var(--focus-ring); }
-  .artifact-search .icon { width:16px; height:16px; color:var(--muted); flex:none; }
+  .artifact-search .icon { width:14px; height:14px; color:var(--muted); flex:none; opacity:.85; }
   .artifact-search input {
     flex:1; border:0; background:transparent; color:var(--fg);
-    font:var(--text-base) inherit; outline:none; min-width:0;
+    font:var(--text-sm) inherit; outline:none; min-width:0;
   }
   .artifact-search input::placeholder { color:var(--muted); }
-  .ns-filter-chips { display:flex; flex-wrap:wrap; gap:var(--space-4); }
+  .ns-filter-chips { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3); flex:1 1 auto; }
   .ns-chip {
-    display:inline-flex; align-items:center; padding:var(--space-3) var(--space-7);
-    border-radius:999px; font-size:var(--text-xs); font-weight:var(--font-semibold);
-    border:1px solid var(--line); background:var(--panel2); color:var(--muted);
-    cursor:pointer; transition:background var(--transition), color var(--transition), border-color var(--transition);
+    display:inline-flex; align-items:center; padding:2px var(--space-5);
+    border-radius:999px; font-size:var(--text-2xs); font-weight:var(--font-medium);
+    border:1px solid var(--line); background:transparent; color:var(--muted);
+    cursor:pointer; letter-spacing:.02em;
+    transition:background var(--transition), color var(--transition), border-color var(--transition);
   }
-  .ns-chip:hover { border-color:var(--accent); color:var(--accent); }
-  .ns-chip.active { background:var(--accent-soft); border-color:var(--accent); color:var(--accent); }
+  .ns-chip:hover { border-color:color-mix(in srgb, var(--line) 50%, var(--accent)); color:var(--fg); }
+  .ns-chip.active { background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 40%, var(--line)); color:var(--accent); }
   .ns-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
   .mtable th.num, .mtable td.num { text-align:right; }
   .mtable tbody tr { transition:background var(--transition); }
@@ -366,33 +367,14 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .uprog > div { height:100%; background:linear-gradient(90deg,var(--accent),var(--eda-teal-400));
     border-radius:999px; transition:width .22s cubic-bezier(.4,0,.2,1); }
   .uprog.indet > div { width:40%; animation:indet 1.15s ease-in-out infinite; }
-  .uprog-prominent { height:10px; width:100%; max-width:none; margin-top:var(--space-6); }
-  .upinfo-prominent { margin-top:var(--space-4); font-size:var(--text-sm); color:var(--fg); font-weight:var(--font-medium); }
-  .upload-status-cell { min-width:240px; }
-  .actions-cell { width:48px; text-align:right; }
-  .row-menu { position:relative; display:inline-block; }
-  .kebab-btn {
-    width:32px; height:32px; padding:0; border:1px solid var(--line); border-radius:var(--radius-sm);
-    background:var(--panel2); color:var(--muted); cursor:pointer;
-    display:inline-flex; align-items:center; justify-content:center;
-    transition:background var(--transition), border-color var(--transition), color var(--transition);
+  .upload-status-cell { min-width:200px; }
+  .actions-cell { width:1%; white-space:nowrap; text-align:right; }
+  .row-actions {
+    display:inline-flex; align-items:center; gap:var(--space-3);
+    opacity:0; transition:opacity var(--transition);
   }
-  .kebab-btn:hover, .kebab-btn[aria-expanded="true"] { border-color:var(--accent); color:var(--accent); background:var(--accent-soft); }
-  .kebab-btn .icon { width:18px; height:18px; }
-  .kebab-menu {
-    position:absolute; right:0; top:calc(100% + var(--space-3)); z-index:8; min-width:148px;
-    padding:var(--space-3); border:1px solid var(--line); border-radius:var(--radius-md);
-    background:var(--panel); box-shadow:var(--shadow-lg);
-  }
-  .kebab-menu[hidden] { display:none; }
-  .kebab-menu button {
-    display:block; width:100%; text-align:left; padding:var(--space-5) var(--space-7);
-    border:0; border-radius:var(--radius-sm); background:transparent; color:var(--fg);
-    font-size:var(--text-sm); font-weight:var(--font-medium); cursor:pointer;
-  }
-  .kebab-menu button:hover { background:var(--state); }
-  .kebab-menu button.danger { color:var(--err-fg); }
-  .kebab-menu button.danger:hover { background:var(--err-bg); }
+  .mtable tbody tr:hover .row-actions, .row-actions:focus-within { opacity:1; }
+  @media (hover:none){ .row-actions { opacity:1; } }
   .reason { color:var(--err-fg); font-size:12px; margin-top:5px; }
   .empty {
     color:var(--muted); padding:36px 20px; text-align:center; font-size:13px; line-height:1.55;
@@ -435,15 +417,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   /* Dialogs */
   .scrim { position:fixed; inset:0; background:var(--scrim); opacity:0; visibility:hidden;
-    transition:opacity .25s ease, visibility .25s; z-index:40; backdrop-filter:blur(3px); }
+    transition:opacity .2s ease, visibility .2s; z-index:40; backdrop-filter:blur(2px); }
   .scrim.show { opacity:1; visibility:visible; }
   .dialog {
     position:fixed; z-index:50; left:50%; top:50%;
-    transform:translate(-50%,-46%) scale(.94); opacity:0; visibility:hidden;
+    transform:translate(-50%,-48%) scale(.98); opacity:0; visibility:hidden;
     width:min(560px,calc(100vw - var(--space-12))); max-height:calc(100vh - var(--space-14)); overflow:auto;
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg);
     box-shadow:var(--shadow-lg);
-    transition:opacity .25s ease, transform .25s cubic-bezier(.2,.7,.3,1), visibility .25s;
+    transition:opacity .2s ease, transform .2s cubic-bezier(.2,.7,.3,1), visibility .2s;
   }
   .dialog.open { transform:translate(-50%,-50%) scale(1); opacity:1; visibility:visible; }
   .dialog.confirm { width:min(420px,calc(100vw - 32px)); }
@@ -513,31 +495,30 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .filefield { margin-top:var(--space-4); }
   .filefield > .lbl { font-size:var(--text-sm); color:var(--muted); font-weight:var(--font-semibold); }
   .dropzone {
-    margin-top:var(--space-6); border:2px dashed var(--line-soft); border-radius:var(--radius-lg);
-    padding:var(--space-11) var(--space-10); background:var(--panel2); text-align:center;
-    cursor:pointer; transition:border-color var(--transition), background var(--transition), transform var(--transition);
+    margin-top:var(--space-5); border:1px solid var(--line); border-radius:var(--radius-md);
+    padding:var(--space-7) var(--space-8); background:var(--input-bg);
+    cursor:pointer; transition:border-color var(--transition), background var(--transition), box-shadow var(--transition);
   }
   .dropzone:hover, .dropzone:focus-within, .dropzone.dragover {
-    border-color:var(--accent); background:var(--state); transform:translateY(-1px);
+    border-color:var(--accent); background:var(--state); box-shadow:var(--focus-ring);
   }
-  .dropzone.has-file { padding:var(--space-8); text-align:left; cursor:default; }
-  .dropzone.has-file:hover { transform:none; }
+  .dropzone.has-file { cursor:default; }
+  .dropzone.has-file:hover, .dropzone.has-file.dragover { box-shadow:none; background:var(--input-bg); border-color:var(--line); }
+  .dropzone.has-file.dragover { border-color:var(--accent); background:var(--state); }
   .dropzone input[type=file] { display:none; }
-  .dropzone-icon { width:40px; height:40px; margin:0 auto var(--space-6); color:var(--accent); }
-  .dropzone-prompt { margin:0; font-size:var(--text-md); color:var(--muted); line-height:var(--leading-relaxed); }
+  .dropzone-prompt { margin:0; font-size:var(--text-sm); color:var(--muted); line-height:var(--leading-normal); }
   .dropzone-browse {
     background:none; border:0; padding:0; color:var(--accent); font:inherit; font-weight:var(--font-semibold);
-    cursor:pointer; text-decoration:underline; text-underline-offset:2px;
+    cursor:pointer; text-decoration:none;
   }
-  .dropzone-browse:hover { color:var(--accent2); }
-  .file-preview { margin-top:var(--space-6); padding:var(--space-7) var(--space-8);
-    border:1px solid var(--line); border-radius:var(--radius-md); background:var(--panel); }
+  .dropzone-browse:hover { color:var(--accent2); text-decoration:underline; text-underline-offset:2px; }
+  .file-preview { margin-top:var(--space-5); padding-top:var(--space-5); border-top:1px solid var(--line); }
   .file-preview[hidden] { display:none; }
-  .file-preview-name { font:var(--text-md)/var(--leading-snug) ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-weight:var(--font-semibold); word-break:break-all; }
-  .file-preview-meta { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-5); margin-top:var(--space-4);
-    font-size:var(--text-sm); color:var(--muted); }
-  .file-preview-meta .os-tag { color:var(--accent); background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 35%, transparent); }
+  .file-preview-name { font:var(--text-sm)/var(--leading-snug) ui-monospace,SFMono-Regular,Menlo,monospace;
+    font-weight:var(--font-semibold); word-break:break-all; color:var(--fg); }
+  .file-preview-meta { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-4); margin-top:var(--space-2);
+    font-size:var(--text-xs); color:var(--muted); }
+  .file-preview-meta .os-tag { font-size:var(--text-2xs); color:var(--accent); background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 30%, transparent); }
 
   /* === Snackbar === */
   .snackbar {
@@ -552,19 +533,19 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   .snackbar.show { transform:translate(-50%,0); opacity:1; visibility:visible; }
   .snackbar.ok {
-    border-left-width:6px; border-left-color:var(--ok-bd); border-color:var(--ok-bd);
-    background:var(--ok-bg); color:var(--ok-fg);
-    box-shadow:var(--shadow-lg), 0 0 0 1px color-mix(in srgb, var(--ok-bd) 45%, transparent);
+    border-left-color:var(--ok-bd);
+    background:color-mix(in srgb, var(--snack-bg) 82%, var(--ok-bg));
+    color:var(--snack-fg);
   }
   .snackbar.err {
-    border-left-width:6px; border-left-color:var(--err-bd); border-color:var(--err-bd);
-    background:var(--err-bg); color:var(--err-fg);
-    box-shadow:var(--shadow-lg), 0 0 0 1px color-mix(in srgb, var(--err-bd) 50%, transparent);
+    border-left-color:var(--err-bd);
+    background:color-mix(in srgb, var(--snack-bg) 82%, var(--err-bg));
+    color:var(--snack-fg);
   }
   .snackbar.loading, .snackbar.info {
     border-left-color:var(--info-bd);
-    background:color-mix(in srgb, var(--info-bg) 40%, var(--snack-bg));
-    color:color-mix(in srgb, var(--info-fg) 85%, var(--snack-fg));
+    background:color-mix(in srgb, var(--snack-bg) 82%, var(--info-bg));
+    color:var(--snack-fg);
   }
   .snackbar .stext { flex:1; font-size:var(--text-base); line-height:var(--leading-snug); word-break:break-word; }
   .snackbar .sdot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--muted); }
@@ -694,13 +675,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .kpi-val { font-size:var(--text-3xl); font-weight:var(--font-bold); line-height:var(--leading-tight); letter-spacing:-.01em;
     font-variant-numeric:tabular-nums; transition:color var(--transition); }
   .kpi-delta {
-    display:block; margin-top:var(--space-3); font-size:var(--text-sm); font-weight:var(--font-semibold);
-    line-height:var(--leading-snug); min-height:1.2em;
+    font-size:var(--text-2xs); font-weight:var(--font-medium); line-height:var(--leading-tight);
+    color:var(--muted); letter-spacing:.01em;
   }
-  .kpi-delta.up { color:var(--ok-fg); }
-  .kpi-delta.down { color:var(--err-fg); }
-  .kpi-delta.flat { color:var(--muted); font-weight:var(--font-medium); }
-  .kpi-sparkline { display:block; width:72px; height:22px; margin-top:var(--space-4); opacity:.85; }
+  .kpi-delta.up { color:color-mix(in srgb, var(--muted) 70%, var(--ok-fg)); }
+  .kpi-delta.down { color:color-mix(in srgb, var(--muted) 70%, var(--err-fg)); }
   .kpi-label { font-size:var(--text-xs); font-weight:var(--font-semibold); color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin-top:var(--space-2); }
   .kpi-val.bump { animation:badgePop .35s ease; }
   .detail-head { margin:6px 0 14px; padding-top:18px; border-top:1px solid var(--line); }
@@ -829,8 +808,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         <div class="dropzone" id="uploadDropzone">
           <input type="file" id="binFile" accept=".zip">
           <div class="dropzone-pick" id="dropzonePick">
-            <svg class="icon dropzone-icon" aria-hidden="true"><use href="#icon-upload"/></svg>
-            <p class="dropzone-prompt">Drag &amp; drop a vendor <span class="mono">.zip</span> here, or <button type="button" class="dropzone-browse" id="dropzoneBrowse">browse files</button></p>
+            <p class="dropzone-prompt">Vendor <span class="mono">.zip</span> &mdash; drag here or <button type="button" class="dropzone-browse" id="dropzoneBrowse">browse files</button></p>
           </div>
           <div class="file-preview" id="filePreview" hidden>
             <div class="file-preview-name" id="filePreviewName"></div>
@@ -947,25 +925,25 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         <span class="kpi-icon total" aria-hidden="true">
           <svg class="icon"><use href="#icon-images"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiTotal">&mdash;</span></div><span class="kpi-delta" id="kpiTotalDelta" aria-live="polite"></span><svg class="kpi-sparkline" id="kpiTotalSpark" aria-hidden="true"></svg><div class="kpi-label">Images</div></div>
+        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiTotal">&mdash;</span><span class="kpi-delta" id="kpiTotalDelta" aria-live="polite"></span></div><div class="kpi-label">Images</div></div>
       </div>
       <div class="kpi-card">
         <span class="kpi-icon ok" aria-hidden="true">
           <svg class="icon"><use href="#icon-check"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiReady">&mdash;</span></div><span class="kpi-delta" id="kpiReadyDelta" aria-live="polite"></span><div class="kpi-label">Available</div></div>
+        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiReady">&mdash;</span><span class="kpi-delta" id="kpiReadyDelta" aria-live="polite"></span></div><div class="kpi-label">Available</div></div>
       </div>
       <div class="kpi-card">
         <span class="kpi-icon info" aria-hidden="true">
           <svg class="icon"><use href="#icon-spinner"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiActive">&mdash;</span></div><span class="kpi-delta" id="kpiActiveDelta" aria-live="polite"></span><div class="kpi-label">In progress</div></div>
+        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiActive">&mdash;</span><span class="kpi-delta" id="kpiActiveDelta" aria-live="polite"></span></div><div class="kpi-label">In progress</div></div>
       </div>
       <div class="kpi-card kpi-failed" id="kpiFailedCard">
         <span class="kpi-icon err" aria-hidden="true">
           <svg class="icon"><use href="#icon-warn"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiFailed">&mdash;</span></div><span class="kpi-delta" id="kpiFailedDelta" aria-live="polite"></span><svg class="kpi-sparkline" id="kpiFailedSpark" aria-hidden="true"></svg><div class="kpi-label">Failed</div></div>
+        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiFailed">&mdash;</span><span class="kpi-delta" id="kpiFailedDelta" aria-live="polite"></span></div><div class="kpi-label">Failed</div></div>
       </div>
     </div>
     <div class="ops-grid" aria-label="Platform status">
@@ -2638,9 +2616,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   // ---------- artifacts table ----------
   var lastImports=[];   // in-flight browser->controller uploads tracked in pendingUploads
-  var artifactFilterText="", artifactNsFilter="", openRowMenu=null;
-  var kpiHistory={ total:[], failed:[] };
-  var KPI_HISTORY_MAX=12;
+  var artifactFilterText="", artifactNsFilter="";
   function osLabel(t){
     var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
     return l?('<span class="os-tag">'+esc(l)+'</span>'):('<span class="os-empty">&mdash;</span>');
@@ -2738,28 +2714,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var prevKpi = {};
   function setKpiDelta(deltaEl, d){
     if(!deltaEl) return;
-    if(d > 0){ deltaEl.textContent="+"+d+" since last refresh"; deltaEl.className="kpi-delta up"; }
-    else if(d < 0){ deltaEl.textContent=String(d)+" since last refresh"; deltaEl.className="kpi-delta down"; }
+    if(d > 0){ deltaEl.textContent="+"+d; deltaEl.className="kpi-delta up"; }
+    else if(d < 0){ deltaEl.textContent=String(d); deltaEl.className="kpi-delta down"; }
     else { deltaEl.textContent=""; deltaEl.className="kpi-delta"; }
-  }
-  function pushKpiHistory(key, val){
-    var arr=kpiHistory[key];
-    if(!arr) return;
-    arr.push(val);
-    if(arr.length > KPI_HISTORY_MAX) arr.shift();
-  }
-  function renderSparkline(svgId, data, stroke){
-    var svg=el(svgId);
-    if(!svg) return;
-    if(!data || data.length < 2){ svg.innerHTML=""; return; }
-    var w=72, h=22, min=Math.min.apply(null, data), max=Math.max.apply(null, data), range=max-min||1;
-    var pts=data.map(function(v,i){
-      var x=(i/(data.length-1))*w;
-      var y=h-((v-min)/range)*h;
-      return x.toFixed(1)+","+y.toFixed(1);
-    }).join(" ");
-    svg.setAttribute("viewBox","0 0 "+w+" "+h);
-    svg.innerHTML='<polyline fill="none" stroke="'+stroke+'" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" points="'+pts+'"/>';
   }
   function setKpi(id, val){
     var n = el(id);
@@ -2793,10 +2750,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     setKpi("kpiReady", ready);
     setKpi("kpiActive", act);
     setKpi("kpiFailed", failed);
-    pushKpiHistory("total", total);
-    pushKpiHistory("failed", failed);
-    renderSparkline("kpiTotalSpark", kpiHistory.total, "var(--accent2)");
-    renderSparkline("kpiFailedSpark", kpiHistory.failed, "var(--err-fg)");
     var fc = el("kpiFailedCard");
     if(fc) fc.classList.toggle("kpi-hot", failed > 0);
   }
@@ -2807,8 +2760,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
                "  \u00b7  "+p.speed.toFixed(1)+" MB/s  \u00b7  ETA "+
                fmtEta(p.loaded, p.total, p.speed, p.elapsed);
       return '<span class="chip c-Uploading">'+iconRef("icon-status-progress","chip-icon")+'Uploading</span>'+
-             '<div class="uprog uprog-prominent"><div style="width:'+p.pct.toFixed(1)+'%"></div></div>'+
-             '<div class="upinfo upinfo-prominent">'+esc(line)+'</div>';
+             '<div class="uprog"><div style="width:'+p.pct.toFixed(1)+'%"></div></div>'+
+             '<div class="upinfo">'+esc(line)+'</div>';
     }
     var label = p.phase==="Unzipping" ? "Un-zipping" : "Finalizing";
     var sub   = p.phase==="Unzipping" ? "extracting image + reading md5" : "creating Artifact";
@@ -2821,28 +2774,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       '</td><td class="num">'+fmtBytes(p.total)+'</td><td class="upload-status-cell" id="upstat-'+p.key+'">'+pendStatusHtml(p)+
       '</td><td></td></tr>';
   }
-  function closeRowMenus(except){
-    document.querySelectorAll(".kebab-menu").forEach(function(menu){
-      if(except && menu===except) return;
-      menu.hidden=true;
-      var btn=menu.parentElement && menu.parentElement.querySelector(".kebab-btn");
-      if(btn) btn.setAttribute("aria-expanded","false");
-    });
-    if(!except) openRowMenu=null;
-  }
-  function toggleRowMenu(btn){
-    var menu=btn.parentElement && btn.parentElement.querySelector(".kebab-menu");
-    if(!menu) return;
-    var willOpen=menu.hidden;
-    closeRowMenus(willOpen ? menu : null);
-    menu.hidden=!willOpen;
-    btn.setAttribute("aria-expanded", willOpen ? "true" : "false");
-    openRowMenu=willOpen ? menu : null;
-    if(willOpen){
-      var first=menu.querySelector("button");
-      if(first){ try{ first.focus(); }catch(e){} }
-    }
-  }
   function serverRowHtml(t){
     var rowKey=(t.uploadId||t.name||t.displayName||"")+"|"+(t.namespace||"");
     var displayStatus=effectiveDownloadStatus(t);
@@ -2850,14 +2781,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
     var uid=esc(t.uploadId||""), ns=esc(t.namespace||""), name=esc(t.name||"");
-    var items='';
-    if(t.snippet){
-      items+='<button type="button" role="menuitem" data-act="view" data-uid="'+uid+'" data-name="'+name+'">Details</button>';
-      items+='<button type="button" role="menuitem" data-act="copy-snippet" data-uid="'+uid+'" data-name="'+name+'">Copy snippet</button>';
-    }
-    items+='<button type="button" role="menuitem" class="danger" data-act="del" data-uid="'+uid+'" data-ns="'+ns+'" data-name="'+name+'">Delete</button>';
-    var actions='<div class="row-menu"><button type="button" class="kebab-btn ripple" aria-label="Row actions" aria-haspopup="true" aria-expanded="false">'
-      +iconRef("icon-more")+'</button><div class="kebab-menu" role="menu" hidden>'+items+'</div></div>';
+    var view=t.snippet
+      ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+uid+'" data-name="'+name+'">Details</button>')
+      :'';
+    var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+uid+'" data-ns="'+ns+'" data-name="'+name+'">Delete</button>';
+    var actions='<span class="row-actions">'+view+(view?' ':'')+del+'</span>';
     return '<tr><td class="mono namecell" title="'+esc(t.displayName||t.name)+'">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
       '</td><td title="'+esc(t.namespace)+'">'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(displayStatus, rowKey)+reason+
@@ -2978,29 +2906,13 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
 
   rows.addEventListener("click", function(e){
-    var kebab=e.target.closest(".kebab-btn");
-    if(kebab){ e.stopPropagation(); toggleRowMenu(kebab); return; }
     var b = e.target.closest("button[data-act]");
     if(!b) return;
-    closeRowMenus();
     if(b.getAttribute("data-act")==="view"){
       openNodeProfile(b.getAttribute("data-uid") || b.getAttribute("data-name"));
-    } else if(b.getAttribute("data-act")==="copy-snippet"){
-      var uid=b.getAttribute("data-uid")||b.getAttribute("data-name");
-      for(var i=0;i<currentData.length;i++){
-        var row=currentData[i];
-        if(uid && (uid===row.uploadId || uid===row.name || uid===row.displayName) && row.snippet){
-          if(navigator.clipboard) navigator.clipboard.writeText(row.snippet);
-          snack("ok","Snippet copied to clipboard.");
-          break;
-        }
-      }
     } else if(b.getAttribute("data-act")==="del"){
       imDelete(b.getAttribute("data-uid"), b.getAttribute("data-ns"), b.getAttribute("data-name"));
     }
-  });
-  document.addEventListener("click", function(e){
-    if(!e.target.closest(".row-menu")) closeRowMenus();
   });
 
   importRows.addEventListener("click", function(e){

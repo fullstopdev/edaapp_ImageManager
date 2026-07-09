@@ -1,5 +1,17 @@
 # Changelog
 
+## v0.1.49
+
+**UX refinement: professional EDA visual polish, tone down v0.1.48 chrome.**
+
+- **Snackbars:** Reverted to subtle left-accent + lightly tinted background (not full green/red bleed).
+- **KPI cards:** Clean number + label; tiny muted inline deltas; sparklines removed.
+- **Artifacts table:** Search + namespace filters kept but restyled (single toolbar row, understated chips).
+- **Row actions:** Restored Details / Delete icon buttons (revealed on row hover) instead of kebab menu.
+- **Upload:** Minimal file picker — solid border, inline hint + file meta; drag-drop retained.
+- **Dialogs:** Subtler motion (200ms, scale 0.98→1); focus trap unchanged.
+- **Unchanged:** Self-contained controller (no npm build), themes, auth/SSO, `eda-embedded`.
+
 ## v0.1.48
 
 **Visible UX polish: table filters, kebab actions, upload dropzone, KPI deltas, dialog motion.**
