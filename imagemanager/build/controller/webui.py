@@ -1005,11 +1005,16 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function keycloakIdentityUrl(){
     return window.location.origin + "/core/proxy/v1/identity";
   }
+  function edaRootRedirectUri(){
+    // Public Keycloak client "auth" only accepts the EDA GUI root (not imagemanager
+    // paths). Same pattern as probeEdaOidcSilent (v0.1.35) and cable-map SSO.
+    return window.location.origin + "/";
+  }
   function silentCheckSsoUri(){
-    return apiBase + "/oauth/silent-check-sso.html";
+    return edaRootRedirectUri();
   }
   function keycloakRedirectUri(){
-    return apiBase + "/";
+    return edaRootRedirectUri();
   }
   function hasKeycloakCallback(){
     var q = window.location.search || "";
@@ -1131,12 +1136,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function startKeycloakLogin(){
     setAuthBanner("loading", "Signing in\u2026");
-    return loadKeycloakScript().then(function(){
-      ensureKeycloakInstance();
-      return keycloak.login({ redirectUri: keycloakRedirectUri() });
-    }).catch(function(){
-      redirectToOAuthLogin();
-    });
+    // Interactive sign-in uses the confidential "eda" client via /oauth/login
+    // (imagemanager callback). keycloak.login() with the auth client would only
+    // accept EDA-root redirect_uri and strand the user on the EDA home page.
+    redirectToOAuthLogin();
   }
   function fetchJson(url, opts){
     opts = opts || {};

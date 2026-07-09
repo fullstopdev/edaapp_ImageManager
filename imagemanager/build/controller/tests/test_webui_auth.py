@@ -41,10 +41,32 @@ def test_bootstrap_401_runs_keycloak_silent_sso():
 def test_keycloak_js_and_silent_sso_assets():
     html = webui.INDEX_HTML
     assert "/assets/keycloak.min.js" in html
-    assert "/oauth/silent-check-sso.html" in html
     assert "KEYCLOAK_CLIENT_ID = \"auth\"" in html
     assert "exchangeKeycloakSession" in html
     assert 'api("/oauth/session")' in html
+
+
+def test_keycloak_auth_client_uses_eda_root_redirect():
+    html = webui.INDEX_HTML
+    assert "function edaRootRedirectUri" in html
+    assert "function silentCheckSsoUri" in html
+    assert "function keycloakRedirectUri" in html
+    eda_root = 'return window.location.origin + "/"'
+    root_fn = html.split("function edaRootRedirectUri", 1)[1].split("function ", 1)[0]
+    silent = html.split("function silentCheckSsoUri", 1)[1].split("function ", 1)[0]
+    redirect = html.split("function keycloakRedirectUri", 1)[1].split("function ", 1)[0]
+    assert eda_root in root_fn
+    assert "edaRootRedirectUri()" in silent
+    assert "edaRootRedirectUri()" in redirect
+    assert "apiBase + \"/oauth/silent-check-sso.html\"" not in html
+    assert 'apiBase + "/"' not in html.split("function keycloakRedirectUri", 1)[1].split("function startKeycloakLogin", 1)[0]
+
+
+def test_interactive_sign_in_uses_server_oauth_login():
+    html = webui.INDEX_HTML
+    login_fn = html.split("function startKeycloakLogin", 1)[1].split("function fetchJson", 1)[0]
+    assert "redirectToOAuthLogin();" in login_fn
+    assert "keycloak.login({" not in login_fn
 
 
 def test_confirmed_session_loss_redirects_standalone_to_eda_login():

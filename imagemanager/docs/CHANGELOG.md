@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.40
+
+**Fix Keycloak `redirect_uri` mismatch (invalid parameter) on sign-in.**
+
+- **Root cause:** v0.1.36 set `keycloak.init` / `keycloak.login` to imagemanager paths
+  (`apiBase + "/"` and `apiBase + "/oauth/silent-check-sso.html"`). EDA's public
+  `auth` client only registers the GUI root (`https://<host>/`), so check-sso and
+  interactive login failed with *Invalid parameter: redirect_uri* — stuck on
+  *Signing in…* then the Keycloak error page.
+- **Fix:** `redirectUri` and `silentCheckSsoRedirectUri` now use
+  `window.location.origin + "/"` (same as v0.1.35 `probeEdaOidcSilent`). Interactive
+  **Sign in** / **Try again** use server `/oauth/login` (confidential `eda` client +
+  imagemanager `/oauth/callback`) instead of `keycloak.login()` with an auth-client
+  redirect that would strand users on the EDA home page.
+- **Unchanged:** v0.1.39 bootstrap timeouts, v0.1.37 logout reconcile, v0.1.38 UMD
+  keycloak, embedded no `window.top` hijack, `POST /oauth/session` token exchange.
+
 ## v0.1.39
 
 **Fix infinite "Checking session…" bootstrap hang (v0.1.37 regression).**
