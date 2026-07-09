@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.50
+
+**UI: restore clean baseline + professional EDA visual pass.**
+
+- **Reverted** v0.1.47–0.1.49 UX experiments (KPI deltas, table filter toolbar,
+  namespace chip row, dropzone upload, hover-only row actions, icon sprite).
+- **Restored** v0.1.45-era layout: segmented tabs, clean KPI cards (number +
+  label only), zebra data table with always-visible Details/Delete buttons,
+  standard file-input upload panel.
+- **Polish:** Understated version badge; calmer card/KPI hover (no lift);
+  slightly larger KPI numerals; dialog focus trap retained.
+- **Unchanged:** Self-contained controller (no npm build), dark/light themes,
+  auth/SSO, `eda-embedded`, URL import navigation, concurrent uploads.
+
 ## v0.1.49
 
 **UX refinement: professional EDA visual polish, tone down v0.1.48 chrome.**

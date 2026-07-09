@@ -23,7 +23,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 <link rel="icon" type="image/png" href="/core/httpproxy/v1/imagemanager/assets/nokia-n.png">
 <link rel="preload" href="/core/httpproxy/v1/imagemanager/assets/keycloak.min.js" as="script" crossorigin>
 <style>
-  /* === Design tokens === */
   :root {
     --eda-blue-100:#e4f0ff; --eda-blue-400:#4092ff; --eda-blue-500:#005aff; --eda-blue-600:#005adf;
     --eda-green-400:#63e194; --eda-green-500:#37cc73; --eda-green-700:#089b2a;
@@ -50,13 +49,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     --transition:180ms cubic-bezier(.4,0,.2,1);
     --focus-ring:0 0 0 3px var(--accent-soft);
     --table-min:720px;
-    --space-1:2px; --space-2:4px; --space-3:6px; --space-4:8px; --space-5:10px;
-    --space-6:12px; --space-7:14px; --space-8:16px; --space-9:18px; --space-10:20px;
-    --space-11:24px; --space-12:32px; --space-13:40px; --space-14:56px;
-    --text-2xs:10px; --text-xs:11px; --text-sm:12px; --text-base:13px; --text-md:14px;
-    --text-lg:15px; --text-xl:16px; --text-2xl:17px; --text-3xl:21px; --text-4xl:22px;
-    --leading-tight:1.2; --leading-snug:1.45; --leading-normal:1.5; --leading-relaxed:1.55;
-    --font-medium:500; --font-semibold:600; --font-bold:700;
     color-scheme:dark;
   }
   html[data-theme="light"] {
@@ -83,7 +75,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     --shadow-lg:0 12px 28px rgba(16,24,36,.12);
     color-scheme:light;
   }
-  /* === Base & motion === */
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {
       animation-duration:.01ms !important; animation-iteration-count:1 !important;
@@ -94,16 +85,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   html, body { min-height:100%; }
   body {
     margin:0; background:var(--bg); color:var(--fg);
-    font:var(--text-base)/var(--leading-relaxed) "Nokia Pure Text",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
+    font:14px/1.55 "Nokia Pure Text",system-ui,-apple-system,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;
     -webkit-font-smoothing:antialiased; -moz-osx-font-smoothing:grayscale;
   }
   html.eda-embedded { --bg:#121c2a; --surface:#121c2a; }
   html.eda-embedded body { min-height:100vh; }
-
-  /* === Icons (SVG sprite) === */
-  .icon-sprite { position:absolute; width:0; height:0; overflow:hidden; }
-  .icon { width:1em; height:1em; display:block; flex:none; }
-  .chip-icon { width:12px; height:12px; flex:none; }
 
   .ripple { position:relative; overflow:hidden; }
   .ripple-ink { position:absolute; border-radius:50%; background:currentColor; opacity:.22;
@@ -120,25 +106,25 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   @keyframes tabIn { from { opacity:.88; } to { opacity:1; } }
   @keyframes chipPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
 
-  /* === App chrome (appbar) === */
+  /* AppBar — EDA top bar */
   .appbar {
-    position:sticky; top:0; z-index:30; height:52px; padding:0 var(--space-10);
+    position:sticky; top:0; z-index:30; height:52px; padding:0 20px;
     background:color-mix(in srgb, var(--chrome-top-bg) 92%, transparent);
   backdrop-filter:saturate(1.2) blur(10px); -webkit-backdrop-filter:saturate(1.2) blur(10px);
     color:var(--chrome-top-fg);
     border-bottom:1px solid var(--chrome-line);
-    display:flex; align-items:center; gap:var(--space-8); flex-shrink:0;
+    display:flex; align-items:center; gap:16px; flex-shrink:0;
     box-shadow:0 1px 0 color-mix(in srgb, var(--chrome-line) 55%, transparent);
   }
-  .appbar-brand { display:flex; align-items:center; gap:var(--space-7); min-width:0; flex:1 1 auto; }
+  .appbar-brand { display:flex; align-items:center; gap:14px; min-width:0; flex:1 1 auto; }
   .nokia-logo { height:14px; width:auto; display:block; flex:none; object-fit:contain; }
   .appbar-title {
-    font-size:var(--text-lg); font-weight:var(--font-medium); letter-spacing:.015em; line-height:var(--leading-tight);
+    font-size:15px; font-weight:500; letter-spacing:.015em; line-height:1.2;
     color:var(--chrome-top-fg); white-space:nowrap;
   }
-  @media (max-width:640px){ .appbar { padding:0 var(--space-7); } .appbar-title { font-size:var(--text-base); } }
-  .appbar-actions { margin-left:auto; display:flex; align-items:center; gap:var(--space-2); flex:none; }
-  .toolbar-sep { width:1px; height:22px; background:var(--chrome-line); margin:0 var(--space-4); flex:none; }
+  @media (max-width:640px){ .appbar { padding:0 14px; } .appbar-title { font-size:13px; } }
+  .appbar-actions { margin-left:auto; display:flex; align-items:center; gap:2px; flex:none; }
+  .toolbar-sep { width:1px; height:22px; background:var(--chrome-line); margin:0 8px; flex:none; }
   .appbar .user-chip {
     border-color:color-mix(in srgb, var(--chrome-line) 85%, transparent);
     background:color-mix(in srgb, var(--chrome-top-fg) 6%, transparent);
@@ -154,11 +140,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .appbar .live-pill.active { color:var(--ok-fg); border-color:var(--ok-bd); background:var(--ok-bg); }
   .ver-badge {
     display:inline-flex; align-items:center; flex:none;
-    padding:var(--space-1) 7px; border-radius:999px;
-    font-size:var(--text-2xs); font-weight:var(--font-semibold); letter-spacing:.05em;
+    padding:1px 6px; border-radius:4px;
+    font-size:10px; font-weight:500; letter-spacing:.03em;
     font-family:ui-monospace,SFMono-Regular,Menlo,Consolas,monospace;
-    color:var(--accent); background:var(--accent-soft);
-    border:1px solid color-mix(in srgb, var(--accent) 30%, transparent);
+    color:var(--chrome-top-muted); background:transparent;
+    border:1px solid color-mix(in srgb, var(--chrome-line) 80%, transparent);
     line-height:1.5;
   }
   .icon-btn {
@@ -169,14 +155,14 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   .icon-btn:hover { background:color-mix(in srgb, var(--chrome-top-fg) 8%, transparent); color:var(--chrome-top-fg); }
   .icon-btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
-  .icon-btn svg { width:20px; height:20px; }
+  .icon-btn svg { width:20px; height:20px; display:block; }
   .icon-btn .icon-sun { display:none; }
   html[data-theme="dark"] .icon-btn .icon-moon { display:none; }
   html[data-theme="dark"] .icon-btn .icon-sun { display:block; }
   .live-pill {
-    display:inline-flex; align-items:center; gap:var(--space-3);
-    padding:var(--space-2) var(--space-5) var(--space-2) var(--space-4); border-radius:999px;
-    font-size:var(--text-xs); font-weight:var(--font-semibold); letter-spacing:.04em; text-transform:uppercase;
+    display:inline-flex; align-items:center; gap:6px;
+    padding:4px 10px 4px 8px; border-radius:999px;
+    font-size:11px; font-weight:600; letter-spacing:.04em; text-transform:uppercase;
     color:var(--muted); background:var(--panel); border:1px solid var(--line);
     transition:color var(--transition), border-color var(--transition), background var(--transition);
   }
@@ -189,10 +175,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .live-pill.active { animation:liveGlow 2.4s ease-in-out infinite; }
   @media (max-width:640px){ .live-pill .live-label { display:none; } }
   .user-chip {
-    display:inline-flex; align-items:center; gap:var(--space-4);
-    padding:3px var(--space-6) 3px var(--space-2); margin-left:var(--space-2);
+    display:inline-flex; align-items:center; gap:8px;
+    padding:3px 12px 3px 4px; margin-left:2px;
     border-radius:999px; background:var(--panel); border:1px solid var(--line);
-    color:var(--fg); font-size:var(--text-sm); font-weight:var(--font-medium);
+    color:var(--fg); font-size:12px; font-weight:500;
     transition:border-color var(--transition), background var(--transition), opacity .28s ease, transform .28s ease;
   }
   .user-chip.appear { animation:fadeIn .38s cubic-bezier(.2,.7,.3,1); }
@@ -201,17 +187,17 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .user-chip .avatar {
     width:26px; height:26px; border-radius:50%;
     background:linear-gradient(135deg, var(--eda-blue-500), var(--eda-teal-400));
-    color:#fff; font-size:var(--text-xs); font-weight:var(--font-bold);
+    color:#fff; font-size:11px; font-weight:700;
     display:flex; align-items:center; justify-content:center;
     text-transform:uppercase; letter-spacing:.02em;
     box-shadow:0 0 0 2px var(--accent-soft);
   }
   @media (max-width:560px){ .user-chip .uname { display:none; } }
 
-  /* === Buttons === */
+  /* Buttons */
   .btn {
-    border:0; border-radius:var(--radius-sm); padding:9px var(--space-8); font:var(--font-semibold) var(--text-base)/1 inherit;
-    letter-spacing:.01em; cursor:pointer; display:inline-flex; align-items:center; gap:var(--space-4);
+    border:0; border-radius:var(--radius-sm); padding:9px 16px; font:600 13px/1 inherit;
+    letter-spacing:.01em; cursor:pointer; display:inline-flex; align-items:center; gap:8px;
     text-decoration:none; transition:background var(--transition), box-shadow var(--transition), transform .08s;
   }
   .btn:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
@@ -227,17 +213,17 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .btn.text.danger:hover { background:var(--err-bg); }
   .btn.text.danger:disabled { color:var(--muted); background:transparent; cursor:not-allowed; opacity:.55; }
 
-  /* === Layout === */
-  .app-shell { max-width:1240px; margin:0 auto; padding:var(--space-10) var(--space-10) var(--space-14); }
-  .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:var(--space-8);
-    margin:0 0 var(--space-10); flex-wrap:wrap; padding:var(--space-9) var(--space-10); border-radius:var(--radius-lg);
+  /* Layout */
+  .app-shell { max-width:1240px; margin:0 auto; padding:20px 20px 56px; }
+  .page-head { display:flex; align-items:flex-start; justify-content:space-between; gap:16px;
+    margin:0 0 20px; flex-wrap:wrap; padding:18px 20px; border-radius:var(--radius-lg);
     border:1px solid var(--line); background:linear-gradient(135deg,
       color-mix(in srgb, var(--panel) 92%, var(--accent) 8%),
       color-mix(in srgb, var(--panel) 96%, var(--surface) 4%));
     box-shadow:var(--shadow-sm); }
-  .page-title { margin:0; font-size:var(--text-4xl); font-weight:var(--font-semibold); letter-spacing:-.01em;
-    display:flex; align-items:center; gap:var(--space-5); }
-  .page-sub { margin:var(--space-3) 0 0; color:var(--muted); font-size:var(--text-base); max-width:640px; line-height:var(--leading-normal); }
+  .page-title { margin:0; font-size:22px; font-weight:600; letter-spacing:-.01em;
+    display:flex; align-items:center; gap:10px; }
+  .page-sub { margin:6px 0 0; color:var(--muted); font-size:13px; max-width:640px; line-height:1.5; }
   .count {
     display:inline-flex; align-items:center; justify-content:center; min-width:20px; height:20px;
     padding:0 6px; font-size:11px; font-weight:700; color:#fff; background:var(--accent);
@@ -251,12 +237,12 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     margin-bottom:16px; overflow:hidden; box-shadow:var(--shadow-sm);
     transition:border-color var(--transition), box-shadow var(--transition);
   }
-  .card:hover { border-color:color-mix(in srgb,var(--line) 70%, var(--accent)); }
+  .card:hover { border-color:color-mix(in srgb,var(--line) 85%, var(--accent)); }
   .card-header {
     display:flex; align-items:center; justify-content:space-between; gap:12px;
     padding:14px 18px; border-bottom:1px solid var(--line); background:color-mix(in srgb,var(--panel) 88%, var(--surface));
   }
-  .card-header .section-title { margin:0; font-size:14px; font-weight:600; }
+  .card-header .section-title { margin:0; font-size:14px; font-weight:600; letter-spacing:.01em; }
   .card-header .card-hint { font-size:12px; color:var(--muted); }
   .form-card { padding:0; }
   .form-card .card-body { padding:18px 20px 20px; }
@@ -290,46 +276,12 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     letter-spacing:.06em; white-space:nowrap; background:var(--panel2);
     box-shadow:0 1px 0 var(--line);
   }
-  .mtable th .th-sort.sortable {
-    display:inline-flex; align-items:center; gap:var(--space-2);
-    cursor:pointer; user-select:none; transition:color var(--transition);
-    background:none; border:0; padding:0; margin:0; font:inherit;
-    color:inherit; letter-spacing:inherit; text-transform:inherit;
-  }
-  .mtable th .th-sort.sortable:focus-visible { outline:2px solid var(--accent); outline-offset:2px; border-radius:var(--radius-sm); }
-  .mtable th .th-sort.sortable .arr { opacity:0; margin-left:var(--space-2); font-size:var(--text-2xs); transition:opacity var(--transition); }
-  .mtable th .th-sort.sortable:hover .arr { opacity:.45; }
-  .mtable th .th-sort.sortable.sorted { color:var(--accent); }
-  .mtable th .th-sort.sortable.sorted .arr { opacity:1; color:var(--accent); }
-  .table-toolbar {
-    display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-5) var(--space-6);
-    padding:var(--space-6) var(--space-9); border-bottom:1px solid var(--line);
-    background:color-mix(in srgb, var(--panel) 94%, var(--surface));
-  }
-  .artifact-search {
-    display:flex; align-items:center; gap:var(--space-4); flex:1 1 180px; max-width:280px;
-    padding:var(--space-3) var(--space-6); border:1px solid var(--line);
-    border-radius:var(--radius-sm); background:var(--input-bg);
-    transition:border-color var(--transition), box-shadow var(--transition);
-  }
-  .artifact-search:focus-within { border-color:var(--accent); box-shadow:var(--focus-ring); }
-  .artifact-search .icon { width:14px; height:14px; color:var(--muted); flex:none; opacity:.85; }
-  .artifact-search input {
-    flex:1; border:0; background:transparent; color:var(--fg);
-    font:var(--text-sm) inherit; outline:none; min-width:0;
-  }
-  .artifact-search input::placeholder { color:var(--muted); }
-  .ns-filter-chips { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-3); flex:1 1 auto; }
-  .ns-chip {
-    display:inline-flex; align-items:center; padding:2px var(--space-5);
-    border-radius:999px; font-size:var(--text-2xs); font-weight:var(--font-medium);
-    border:1px solid var(--line); background:transparent; color:var(--muted);
-    cursor:pointer; letter-spacing:.02em;
-    transition:background var(--transition), color var(--transition), border-color var(--transition);
-  }
-  .ns-chip:hover { border-color:color-mix(in srgb, var(--line) 50%, var(--accent)); color:var(--fg); }
-  .ns-chip.active { background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 40%, var(--line)); color:var(--accent); }
-  .ns-chip:focus-visible { outline:2px solid var(--accent); outline-offset:2px; }
+  .mtable th.sortable { cursor:pointer; user-select:none; transition:color var(--transition); }
+  .mtable th.sortable:focus-visible { outline:2px solid var(--accent); outline-offset:-2px; }
+  .mtable th.sortable .arr { opacity:0; margin-left:5px; font-size:10px; transition:opacity var(--transition); }
+  .mtable th.sortable:hover .arr { opacity:.45; }
+  .mtable th.sorted { color:var(--accent); }
+  .mtable th.sorted .arr { opacity:1; color:var(--accent); }
   .mtable th.num, .mtable td.num { text-align:right; }
   .mtable tbody tr { transition:background var(--transition); }
   .mtable tbody tr:nth-child(even) { background:var(--row-stripe); }
@@ -342,14 +294,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .mtable td:nth-child(3) { max-width:120px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
   .mtable .url-cell { max-width:280px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-  /* === Status chips === */
+  /* Status chips */
   .chip {
-    display:inline-flex; align-items:center; gap:var(--space-3); padding:3px var(--space-5); border-radius:999px;
-    font-size:var(--text-xs); font-weight:var(--font-semibold); border:1px solid transparent; white-space:nowrap;
+    display:inline-flex; align-items:center; gap:6px; padding:3px 10px; border-radius:999px;
+    font-size:11px; font-weight:600; border:1px solid transparent; white-space:nowrap;
     letter-spacing:.02em;
     transition:background var(--transition), color var(--transition), border-color var(--transition), transform .22s ease;
   }
   .chip.bump { animation:chipPulse .42s ease; }
+  .chip::before { content:""; width:6px; height:6px; border-radius:50%; background:currentColor; flex:none; }
   .c-Available, .c-Ready { background:var(--ok-bg); color:var(--ok-fg); border-color:var(--ok-bd); }
   .c-InProgress { background:var(--info-bg); color:var(--info-fg); border-color:var(--info-bd); }
   .c-Error, .c-Failed { background:var(--err-bg); color:var(--err-fg); border-color:var(--err-bd); }
@@ -358,23 +311,16 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .c-Uploading, .c-Unzipping, .c-Processing, .c-Pending {
     background:var(--info-bg); color:var(--info-fg); border-color:var(--info-bd);
   }
-  .c-Uploading .chip-icon, .c-Unzipping .chip-icon, .c-Processing .chip-icon, .c-Pending .chip-icon {
-    animation:spin 1.1s linear infinite; transform-origin:center;
+  .c-Uploading::before, .c-Unzipping::before, .c-Processing::before, .c-Pending::before {
+    animation:pulse 1.1s ease-in-out infinite;
   }
   .upinfo { margin-top:6px; font:11px ui-monospace,SFMono-Regular,Menlo,monospace; color:var(--muted); }
-  .uprog { margin-top:var(--space-5); height:5px; width:200px; max-width:100%; background:var(--panel2);
+  .uprog { margin-top:8px; height:5px; width:200px; max-width:100%; background:var(--panel2);
     border-radius:999px; overflow:hidden; border:1px solid var(--line); }
   .uprog > div { height:100%; background:linear-gradient(90deg,var(--accent),var(--eda-teal-400));
     border-radius:999px; transition:width .22s cubic-bezier(.4,0,.2,1); }
   .uprog.indet > div { width:40%; animation:indet 1.15s ease-in-out infinite; }
   .upload-status-cell { min-width:200px; }
-  .actions-cell { width:1%; white-space:nowrap; text-align:right; }
-  .row-actions {
-    display:inline-flex; align-items:center; gap:var(--space-3);
-    opacity:0; transition:opacity var(--transition);
-  }
-  .mtable tbody tr:hover .row-actions, .row-actions:focus-within { opacity:1; }
-  @media (hover:none){ .row-actions { opacity:1; } }
   .reason { color:var(--err-fg); font-size:12px; margin-top:5px; }
   .empty {
     color:var(--muted); padding:36px 20px; text-align:center; font-size:13px; line-height:1.55;
@@ -417,15 +363,14 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   /* Dialogs */
   .scrim { position:fixed; inset:0; background:var(--scrim); opacity:0; visibility:hidden;
-    transition:opacity .2s ease, visibility .2s; z-index:40; backdrop-filter:blur(2px); }
+    transition:opacity .2s; z-index:40; backdrop-filter:blur(2px); }
   .scrim.show { opacity:1; visibility:visible; }
   .dialog {
     position:fixed; z-index:50; left:50%; top:50%;
-    transform:translate(-50%,-48%) scale(.98); opacity:0; visibility:hidden;
-    width:min(560px,calc(100vw - var(--space-12))); max-height:calc(100vh - var(--space-14)); overflow:auto;
+    transform:translate(-50%,-48%) scale(.97); opacity:0; visibility:hidden;
+    width:min(560px,calc(100vw - 32px)); max-height:calc(100vh - 48px); overflow:auto;
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg);
-    box-shadow:var(--shadow-lg);
-    transition:opacity .2s ease, transform .2s cubic-bezier(.2,.7,.3,1), visibility .2s;
+    box-shadow:var(--shadow-lg); transition:opacity .2s, transform .2s;
   }
   .dialog.open { transform:translate(-50%,-50%) scale(1); opacity:1; visibility:visible; }
   .dialog.confirm { width:min(420px,calc(100vw - 32px)); }
@@ -492,62 +437,38 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     animation:spin .7s linear infinite;
   }
 
-  .filefield { margin-top:var(--space-4); }
-  .filefield > .lbl { font-size:var(--text-sm); color:var(--muted); font-weight:var(--font-semibold); }
-  .dropzone {
-    margin-top:var(--space-5); border:1px solid var(--line); border-radius:var(--radius-md);
-    padding:var(--space-7) var(--space-8); background:var(--input-bg);
-    cursor:pointer; transition:border-color var(--transition), background var(--transition), box-shadow var(--transition);
+  .filefield { margin-top:4px; }
+  .filefield > .lbl { font-size:12px; color:var(--muted); font-weight:600; }
+  .filebox {
+    margin-top:8px; display:flex; align-items:center; gap:12px; flex-wrap:wrap;
+    border:1px dashed var(--line-soft); border-radius:var(--radius-md); padding:14px;
+    background:var(--panel2); transition:border-color var(--transition), background var(--transition);
   }
-  .dropzone:hover, .dropzone:focus-within, .dropzone.dragover {
-    border-color:var(--accent); background:var(--state); box-shadow:var(--focus-ring);
+  .filebox:hover, .filebox:focus-within { border-color:var(--accent); background:var(--state); }
+  .filebox input[type=file] { color:var(--muted); font-size:12.5px; max-width:100%; }
+  .filebox input[type=file]::file-selector-button {
+    background:var(--accent); color:#fff; border:0; border-radius:var(--radius-sm);
+    padding:8px 14px; margin-right:12px; cursor:pointer; font-weight:600; font-size:12.5px;
+    transition:background var(--transition);
   }
-  .dropzone.has-file { cursor:default; }
-  .dropzone.has-file:hover, .dropzone.has-file.dragover { box-shadow:none; background:var(--input-bg); border-color:var(--line); }
-  .dropzone.has-file.dragover { border-color:var(--accent); background:var(--state); }
-  .dropzone input[type=file] { display:none; }
-  .dropzone-prompt { margin:0; font-size:var(--text-sm); color:var(--muted); line-height:var(--leading-normal); }
-  .dropzone-browse {
-    background:none; border:0; padding:0; color:var(--accent); font:inherit; font-weight:var(--font-semibold);
-    cursor:pointer; text-decoration:none;
-  }
-  .dropzone-browse:hover { color:var(--accent2); text-decoration:underline; text-underline-offset:2px; }
-  .file-preview { margin-top:var(--space-5); padding-top:var(--space-5); border-top:1px solid var(--line); }
-  .file-preview[hidden] { display:none; }
-  .file-preview-name { font:var(--text-sm)/var(--leading-snug) ui-monospace,SFMono-Regular,Menlo,monospace;
-    font-weight:var(--font-semibold); word-break:break-all; color:var(--fg); }
-  .file-preview-meta { display:flex; flex-wrap:wrap; align-items:center; gap:var(--space-4); margin-top:var(--space-2);
-    font-size:var(--text-xs); color:var(--muted); }
-  .file-preview-meta .os-tag { font-size:var(--text-2xs); color:var(--accent); background:var(--accent-soft); border-color:color-mix(in srgb, var(--accent) 30%, transparent); }
+  .filebox input[type=file]::file-selector-button:hover { background:var(--accent2); }
 
-  /* === Snackbar === */
+  /* Snackbar */
   .snackbar {
-    position:fixed; left:50%; bottom:var(--space-11); transform:translate(-50%,140%);
-    z-index:60; min-width:300px; max-width:min(560px,calc(100vw - var(--space-12)));
+    position:fixed; left:50%; bottom:24px; transform:translate(-50%,140%);
+    z-index:60; min-width:300px; max-width:min(560px,calc(100vw - 32px));
     background:var(--snack-bg); color:var(--snack-fg);
-    border:1px solid var(--line); border-left:4px solid var(--accent);
+    border:1px solid var(--line); border-left:3px solid var(--accent);
     border-radius:var(--radius-md); box-shadow:var(--shadow-lg);
-    padding:13px var(--space-6) 13px var(--space-8); display:flex; align-items:center; gap:var(--space-6);
+    padding:13px 12px 13px 16px; display:flex; align-items:center; gap:12px;
     opacity:0; visibility:hidden;
     transition:transform .3s cubic-bezier(.2,.7,.3,1), opacity .3s, box-shadow .3s;
   }
   .snackbar.show { transform:translate(-50%,0); opacity:1; visibility:visible; }
-  .snackbar.ok {
-    border-left-color:var(--ok-bd);
-    background:color-mix(in srgb, var(--snack-bg) 82%, var(--ok-bg));
-    color:var(--snack-fg);
-  }
-  .snackbar.err {
-    border-left-color:var(--err-bd);
-    background:color-mix(in srgb, var(--snack-bg) 82%, var(--err-bg));
-    color:var(--snack-fg);
-  }
-  .snackbar.loading, .snackbar.info {
-    border-left-color:var(--info-bd);
-    background:color-mix(in srgb, var(--snack-bg) 82%, var(--info-bg));
-    color:var(--snack-fg);
-  }
-  .snackbar .stext { flex:1; font-size:var(--text-base); line-height:var(--leading-snug); word-break:break-word; }
+  .snackbar.ok { border-left-color:var(--ok-bd); background:color-mix(in srgb, var(--snack-bg) 78%, var(--ok-bg)); }
+  .snackbar.err { border-left-color:var(--err-bd); background:color-mix(in srgb, var(--snack-bg) 78%, var(--err-bg)); }
+  .snackbar.loading, .snackbar.info { border-left-color:var(--info-bd); background:color-mix(in srgb, var(--snack-bg) 78%, var(--info-bg)); }
+  .snackbar .stext { flex:1; font-size:13px; line-height:1.45; word-break:break-word; }
   .snackbar .sdot { width:8px; height:8px; border-radius:50%; flex:none; background:var(--muted); }
   .snackbar.ok .sdot { background:var(--ok-fg); }
   .snackbar.err .sdot { background:var(--err-fg); }
@@ -642,18 +563,18 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .status-grid { display:grid; gap:16px; }
   @media (min-width:900px){ .status-grid { grid-template-columns:1fr; } }
 
-  /* === KPI overview cards === */
+  /* KPI overview cards */
   .kpi-grid {
-    display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:var(--space-7); margin-bottom:var(--space-10);
+    display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin-bottom:20px;
   }
   @media (max-width:900px){ .kpi-grid { grid-template-columns:repeat(2, minmax(0,1fr)); } }
   @media (max-width:480px){ .kpi-grid { grid-template-columns:1fr; } }
   .kpi-card {
-    display:flex; align-items:center; gap:var(--space-6); padding:var(--space-7) var(--space-8);
+    display:flex; align-items:center; gap:12px; padding:14px 16px;
     background:var(--panel); border:1px solid var(--line); border-radius:var(--radius-lg);
     box-shadow:var(--shadow-sm); transition:border-color var(--transition), transform var(--transition), box-shadow var(--transition);
   }
-  .kpi-card:hover { border-color:color-mix(in srgb,var(--line) 60%, var(--accent)); transform:translateY(-1px); }
+  .kpi-card:hover { border-color:color-mix(in srgb,var(--line) 75%, var(--accent)); }
   .kpi-card.kpi-failed { border-color:color-mix(in srgb, var(--err-bd) 55%, var(--line)); }
   .kpi-card.kpi-failed.kpi-hot {
     border-color:var(--err-bd);
@@ -666,21 +587,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     width:38px; height:38px; flex:none; border-radius:10px;
     display:flex; align-items:center; justify-content:center;
   }
-  .kpi-icon svg { width:19px; height:19px; }
+  .kpi-icon svg { width:19px; height:19px; display:block; }
   .kpi-icon.total { background:var(--accent-soft); color:var(--accent2); }
   .kpi-icon.ok { background:var(--ok-bg); color:var(--ok-fg); }
   .kpi-icon.info { background:var(--info-bg); color:var(--info-fg); }
   .kpi-icon.err { background:var(--err-bg); color:var(--err-fg); }
-  .kpi-val-row { display:flex; align-items:baseline; gap:var(--space-3); }
-  .kpi-val { font-size:var(--text-3xl); font-weight:var(--font-bold); line-height:var(--leading-tight); letter-spacing:-.01em;
+  .kpi-val { font-size:22px; font-weight:700; line-height:1.2; letter-spacing:-.01em;
     font-variant-numeric:tabular-nums; transition:color var(--transition); }
-  .kpi-delta {
-    font-size:var(--text-2xs); font-weight:var(--font-medium); line-height:var(--leading-tight);
-    color:var(--muted); letter-spacing:.01em;
-  }
-  .kpi-delta.up { color:color-mix(in srgb, var(--muted) 70%, var(--ok-fg)); }
-  .kpi-delta.down { color:color-mix(in srgb, var(--muted) 70%, var(--err-fg)); }
-  .kpi-label { font-size:var(--text-xs); font-weight:var(--font-semibold); color:var(--muted); text-transform:uppercase; letter-spacing:.07em; margin-top:var(--space-2); }
+  .kpi-label { font-size:11px; font-weight:600; color:var(--muted); text-transform:uppercase;
+    letter-spacing:.06em; margin-top:2px; }
   .kpi-val.bump { animation:badgePop .35s ease; }
   .detail-head { margin:6px 0 14px; padding-top:18px; border-top:1px solid var(--line); }
   .detail-label { font-size:11px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--muted); }
@@ -739,27 +654,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 <script>try{var _e=window.self!==window.top;if(_e)document.documentElement.classList.add("eda-embedded");var _s=localStorage.getItem("imagemanager-theme");var _t=_s||((window.matchMedia&&matchMedia("(prefers-color-scheme: light)").matches)?"light":"dark");document.documentElement.setAttribute("data-theme",_t);}catch(e){}</script>
 </head>
 <body>
-<svg class="icon-sprite" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-  <symbol id="icon-moon" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.5 5.5 0 0 1-4.4 2.26 5.5 5.5 0 0 1-5.45-6.19A9 9 0 0 0 12 3z"/></symbol>
-  <symbol id="icon-sun" viewBox="0 0 24 24"><path fill="currentColor" d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></symbol>
-  <symbol id="icon-images" viewBox="0 0 24 24"><path fill="currentColor" d="M12 3l8 4.4-8 4.4-8-4.4L12 3z"/><path fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".6" d="M4.4 12.6L12 16.8l7.6-4.2M4.4 16.6L12 20.8l7.6-4.2"/></symbol>
-  <symbol id="icon-images-outline" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round" d="M12 3l8 4.4-8 4.4-8-4.4L12 3z"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M4.4 12.6L12 16.8l7.6-4.2"/></symbol>
-  <symbol id="icon-check" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" d="M20 6.5L9.5 17 4 11.5"/></symbol>
-  <symbol id="icon-spinner" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" d="M12 4v4m0 8v4M4 12h4m8 0h4M6.3 6.3l2.85 2.85m5.7 5.7l2.85 2.85M6.3 17.7l2.85-2.85m5.7-5.7l2.85-2.85"/></symbol>
-  <symbol id="icon-warn" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" d="M12 8v5m0 3.4v.1M10.3 4l-8 14a2 2 0 001.7 3h16a2 2 0 001.7-3l-8-14a2 2 0 00-3.4 0z"/></symbol>
-  <symbol id="icon-server" viewBox="0 0 24 24"><rect fill="none" stroke="currentColor" stroke-width="1.8" x="4" y="5" width="16" height="6" rx="1.5"/><rect fill="none" stroke="currentColor" stroke-width="1.8" x="4" y="13" width="16" height="6" rx="1.5"/></symbol>
-  <symbol id="icon-storage" viewBox="0 0 24 24"><ellipse fill="none" stroke="currentColor" stroke-width="1.8" cx="12" cy="6" rx="7" ry="3"/><path fill="none" stroke="currentColor" stroke-width="1.8" d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6"/></symbol>
-  <symbol id="icon-sync" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M4 12a8 8 0 0113.7-5.7M20 12a8 8 0 01-13.7 5.7"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M20 4v4h-4M4 20v-4h4"/></symbol>
-  <symbol id="icon-link" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M10 13a5 5 0 007.1 0l2-2a5 5 0 00-7.1-7.1l-1 1"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M14 11a5 5 0 00-7.1 0l-2 2a5 5 0 007.1 7.1l1-1"/></symbol>
-  <symbol id="icon-status-ok" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" d="M5.2 8.1l1.8 1.8 3.8-4"/></symbol>
-  <symbol id="icon-status-progress" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M8 2.5v2.2M8 11.3v2.2M2.5 8h2.2M11.3 8h2.2M4.4 4.4l1.55 1.55M10.05 10.05l1.55 1.55M4.4 11.6l1.55-1.55M10.05 5.95l1.55-1.55"/></symbol>
-  <symbol id="icon-status-error" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M5.5 5.5l5 5M10.5 5.5l-5 5"/><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/></symbol>
-  <symbol id="icon-status-warn" viewBox="0 0 16 16"><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linejoin="round" d="M8 3.5L13.2 12H2.8L8 3.5z"/><path fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" d="M8 6.5v3"/><circle cx="8" cy="11.2" r=".55" fill="currentColor"/></symbol>
-  <symbol id="icon-status-neutral" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.5"/><path fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" d="M5.5 8h5"/></symbol>
-  <symbol id="icon-more" viewBox="0 0 24 24"><circle cx="12" cy="6" r="1.6" fill="currentColor"/><circle cx="12" cy="12" r="1.6" fill="currentColor"/><circle cx="12" cy="18" r="1.6" fill="currentColor"/></symbol>
-  <symbol id="icon-upload" viewBox="0 0 24 24"><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" d="M12 16V5m0 0l-4 4m4-4l4 4M5 19h14"/></symbol>
-  <symbol id="icon-search" viewBox="0 0 24 24"><circle fill="none" stroke="currentColor" stroke-width="1.8" cx="11" cy="11" r="6.5"/><path fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" d="M16 16l4.5 4.5"/></symbol>
-</svg>
 <noscript><div style="padding:24px 20px;background:#121c2a;color:#e6edf3;font:14px sans-serif">
   Image Manager requires JavaScript. Enable it, or open
   <a href="/core/httpproxy/v1/imagemanager/" style="color:#4d8dff">/core/httpproxy/v1/imagemanager/</a>
@@ -776,8 +670,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     </span>
     <span class="toolbar-sep" aria-hidden="true"></span>
     <button type="button" id="themeBtn" class="icon-btn" title="Toggle light / dark appearance" aria-label="Toggle theme">
-      <svg class="icon icon-moon" aria-hidden="true"><use href="#icon-moon"/></svg>
-      <svg class="icon icon-sun" aria-hidden="true"><use href="#icon-sun"/></svg>
+      <svg class="icon-moon" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.5 5.5 0 0 1-4.4 2.26 5.5 5.5 0 0 1-5.45-6.19A9 9 0 0 0 12 3z"/></svg>
+      <svg class="icon-sun" viewBox="0 0 24 24" fill="currentColor" aria-hidden="true"><path d="M12 7a5 5 0 1 0 0 10 5 5 0 0 0 0-10zm0-5h2v3h-2V2zm0 17h2v3h-2v-3zM4.22 4.22l1.42 1.42L4.22 7.06 2.8 5.64 4.22 4.22zm15.56 0 1.42 1.42-1.42 1.42-1.42-1.42 1.42-1.42zM2 12h3v2H2v-2zm17 0h3v2h-3v-2zm-2.8 6.36 1.42 1.42 1.42-1.42-1.42-1.42-1.42 1.42zM4.22 19.78l1.42-1.42 1.42 1.42-1.42 1.42-1.42-1.42z"/></svg>
     </button>
     <span id="userInfo" class="user-chip" style="display:none"><span class="avatar" id="avatar"></span><span class="uname" id="uname"></span></span>
     <a id="signoutLink" class="btn text subtle ripple" href="#" title="Sign out of Image Manager" style="display:none">Sign out</a>
@@ -805,18 +699,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       <div class="card-body">
       <div class="filefield">
         <span class="lbl">Vendor image &mdash; <span class="mono">.zip</span> (required)</span>
-        <div class="dropzone" id="uploadDropzone">
+        <div class="filebox">
           <input type="file" id="binFile" accept=".zip">
-          <div class="dropzone-pick" id="dropzonePick">
-            <p class="dropzone-prompt">Vendor <span class="mono">.zip</span> &mdash; drag here or <button type="button" class="dropzone-browse" id="dropzoneBrowse">browse files</button></p>
-          </div>
-          <div class="file-preview" id="filePreview" hidden>
-            <div class="file-preview-name" id="filePreviewName"></div>
-            <div class="file-preview-meta">
-              <span id="filePreviewSize"></span>
-              <span class="os-tag" id="filePreviewOs" hidden></span>
-            </div>
-          </div>
         </div>
         <div class="helper" id="binHint"></div>
       </div>
@@ -923,33 +807,33 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     <div class="kpi-grid" aria-label="Overview">
       <div class="kpi-card">
         <span class="kpi-icon total" aria-hidden="true">
-          <svg class="icon"><use href="#icon-images"/></svg>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 3l8 4.4-8 4.4-8-4.4L12 3z" fill="currentColor"/><path d="M4.4 12.6L12 16.8l7.6-4.2M4.4 16.6L12 20.8l7.6-4.2" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" opacity=".6"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiTotal">&mdash;</span><span class="kpi-delta" id="kpiTotalDelta" aria-live="polite"></span></div><div class="kpi-label">Images</div></div>
+        <div><div class="kpi-val" id="kpiTotal">&mdash;</div><div class="kpi-label">Images</div></div>
       </div>
       <div class="kpi-card">
         <span class="kpi-icon ok" aria-hidden="true">
-          <svg class="icon"><use href="#icon-check"/></svg>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M20 6.5L9.5 17 4 11.5" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiReady">&mdash;</span><span class="kpi-delta" id="kpiReadyDelta" aria-live="polite"></span></div><div class="kpi-label">Available</div></div>
+        <div><div class="kpi-val" id="kpiReady">&mdash;</div><div class="kpi-label">Available</div></div>
       </div>
       <div class="kpi-card">
         <span class="kpi-icon info" aria-hidden="true">
-          <svg class="icon"><use href="#icon-spinner"/></svg>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 4v4m0 8v4M4 12h4m8 0h4M6.3 6.3l2.85 2.85m5.7 5.7l2.85 2.85M6.3 17.7l2.85-2.85m5.7-5.7l2.85-2.85" stroke="currentColor" stroke-width="1.9" stroke-linecap="round"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiActive">&mdash;</span><span class="kpi-delta" id="kpiActiveDelta" aria-live="polite"></span></div><div class="kpi-label">In progress</div></div>
+        <div><div class="kpi-val" id="kpiActive">&mdash;</div><div class="kpi-label">In progress</div></div>
       </div>
       <div class="kpi-card kpi-failed" id="kpiFailedCard">
         <span class="kpi-icon err" aria-hidden="true">
-          <svg class="icon"><use href="#icon-warn"/></svg>
+          <svg viewBox="0 0 24 24" fill="none"><path d="M12 8v5m0 3.4v.1M10.3 4l-8 14a2 2 0 001.7 3h16a2 2 0 001.7-3l-8-14a2 2 0 00-3.4 0z" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round"/></svg>
         </span>
-        <div><div class="kpi-val-row"><span class="kpi-val" id="kpiFailed">&mdash;</span><span class="kpi-delta" id="kpiFailedDelta" aria-live="polite"></span></div><div class="kpi-label">Failed</div></div>
+        <div><div class="kpi-val" id="kpiFailed">&mdash;</div><div class="kpi-label">Failed</div></div>
       </div>
     </div>
     <div class="ops-grid" aria-label="Platform status">
       <div class="ops-card">
         <div class="ops-head">
-          <span class="ops-icon ctrl" aria-hidden="true"><svg class="icon"><use href="#icon-server"/></svg></span>
+          <span class="ops-icon ctrl" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><rect x="4" y="5" width="16" height="6" rx="1.5" stroke="currentColor" stroke-width="1.8"/><rect x="4" y="13" width="16" height="6" rx="1.5" stroke="currentColor" stroke-width="1.8"/></svg></span>
           Controller
         </div>
         <div class="ops-val" id="opsHealth">&mdash;</div>
@@ -957,7 +841,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       </div>
       <div class="ops-card">
         <div class="ops-head">
-          <span class="ops-icon store" aria-hidden="true"><svg class="icon"><use href="#icon-storage"/></svg></span>
+          <span class="ops-icon store" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><ellipse cx="12" cy="6" rx="7" ry="3" stroke="currentColor" stroke-width="1.8"/><path d="M5 6v6c0 1.7 3.1 3 7 3s7-1.3 7-3V6M5 12v6c0 1.7 3.1 3 7 3s7-1.3 7-3v-6" stroke="currentColor" stroke-width="1.8"/></svg></span>
           Storage
         </div>
         <div class="ops-val" id="opsStorageMode">PVC</div>
@@ -965,7 +849,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       </div>
       <div class="ops-card">
         <div class="ops-head">
-          <span class="ops-icon sync" aria-hidden="true"><svg class="icon"><use href="#icon-sync"/></svg></span>
+          <span class="ops-icon sync" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none"><path d="M4 12a8 8 0 0113.7-5.7M20 12a8 8 0 01-13.7 5.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M20 4v4h-4M4 20v-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
           Reconcile
         </div>
         <div class="ops-val" id="opsReconcile">&mdash;</div>
@@ -989,22 +873,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
           <button class="iconbtn ripple" id="refreshBtn" title="Refresh now">Refresh</button>
         </span>
       </div>
-      <div class="table-toolbar">
-        <div class="artifact-search">
-          <svg class="icon" aria-hidden="true"><use href="#icon-search"/></svg>
-          <input type="search" id="artifactFilter" placeholder="Search by name or namespace…" aria-label="Filter artifacts" autocomplete="off">
-        </div>
-        <div class="ns-filter-chips" id="nsFilterChips" role="group" aria-label="Filter by namespace"></div>
-      </div>
       <div class="table-wrap">
         <table class="mtable">
           <thead><tr>
-            <th scope="col"><button type="button" class="th-sort sortable" data-sort="displayName">Name <span class="arr"></span></button></th>
-            <th scope="col"><button type="button" class="th-sort sortable" data-sort="nosLabel">OS <span class="arr"></span></button></th>
-            <th scope="col"><button type="button" class="th-sort sortable" data-sort="namespace">Namespace <span class="arr"></span></button></th>
-            <th scope="col" class="num"><button type="button" class="th-sort sortable" data-sort="sizeBytes">Size <span class="arr"></span></button></th>
-            <th scope="col"><button type="button" class="th-sort sortable" data-sort="downloadStatus">Status <span class="arr"></span></button></th>
-            <th scope="col" aria-label="Actions"></th>
+            <th class="sortable" data-sort="displayName">Name <span class="arr"></span></th>
+            <th class="sortable" data-sort="nosLabel">OS <span class="arr"></span></th>
+            <th class="sortable" data-sort="namespace">Namespace <span class="arr"></span></th>
+            <th class="sortable num" data-sort="sizeBytes">Size <span class="arr"></span></th>
+            <th class="sortable" data-sort="downloadStatus">Status <span class="arr"></span></th>
+            <th></th>
           </tr></thead>
           <tbody id="rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
         </table>
@@ -1146,11 +1023,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
   }
   function loginRedirectUri(){
-    // keycloak.login/init use the app URL (OAuth noise stripped).
+    // Cable-map: keycloak.login/init use the app URL (OAuth noise stripped).
     return stripOAuthQueryParams(window.location.href);
   }
   function silentCheckSsoUri(){
-    // Same-origin silent-check-sso.html under the httpproxy path.
+    // Cable-map: same-origin silent-check-sso.html under the httpproxy path.
     return apiBase + "/oauth/silent-check-sso.html";
   }
   function keycloakRedirectUri(){
@@ -1347,7 +1224,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function startKeycloakLogin(){
     setAuthBanner("loading", "Signing in\u2026");
-    // keycloak.login with app redirect_uri (instant when EDA session exists).
+    // Cable-map: keycloak.login with app redirect_uri (instant when EDA session exists).
     loadKeycloakScript().then(function(){
       ensureKeycloakInstance();
       return keycloak.login({ redirectUri: loginRedirectUri() });
@@ -1369,7 +1246,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var maxBytes = 4096*1024*1024;
   var pendingUploads = {}, uploadSeq = 0;
   var el = function(id){ return document.getElementById(id); };
-  // External launcher opens the SPA in its own tab; iframe embed is an edge case.
+  // External-launcher (cable-map) opens the SPA in its own tab; iframe embed is an edge case.
   // Same-origin tabs share localStorage — kc-* watchers detect EDA logout in both modes.
   var embedded = window.self !== window.top;
   var authBootstrapComplete = false;
@@ -1929,13 +1806,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function isZip(name){ return /\.zip$/i.test(name||""); }
   function esc(s){ return String(s==null?"":s).replace(/[&<>"]/g,function(m){
     return {"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[m]; }); }
-  function iconRef(id, cls){
-    return '<svg class="icon'+(cls?' '+cls:'')+'" aria-hidden="true"><use href="#'+id+'"/></svg>';
-  }
   var EMPTY_ICONS={
-    images:iconRef("icon-images-outline"),
-    link:iconRef("icon-link"),
-    warn:iconRef("icon-warn")
+    images:'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 3l8 4.4-8 4.4-8-4.4L12 3z" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"/><path d="M4.4 12.6L12 16.8l7.6-4.2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>',
+    link:'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M10 13a5 5 0 007.1 0l2-2a5 5 0 00-7.1-7.1l-1 1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M14 11a5 5 0 00-7.1 0l-2 2a5 5 0 007.1 7.1l1-1" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>',
+    warn:'<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M12 8v5m0 3h.01M10.3 4h3.4L22 20H2L10.3 4z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'
   };
   function emptyStateHtml(cols, icon, title, hint, actions){
     return '<tr><td colspan="'+cols+'" class="empty"><div class="empty-state" role="status">'+
@@ -2124,7 +1998,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     return "Failed to load Image Manager configuration.";
   }
   function bootstrapKeycloakPrelude(){
-    // OAuth callback only: exchange code before /api/config (login-required).
+    // OAuth callback only: exchange code before /api/config (cable-map login-required).
     return loadKeycloakScript().then(function(){
       return initKeycloak({ onLoad: "login-required", force: true }).then(function(authenticated){
         if(!authenticated) return false;
@@ -2275,65 +2149,13 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   });
 
   // ---------- file selection ----------
-  var NOS_LABELS={srl:"Nokia SR Linux",sros:"Nokia SR OS",srsim:"Nokia SR OS (SIM)"};
-  var uploadDropzone=el("uploadDropzone"), dropzonePick=el("dropzonePick"), dropzoneBrowse=el("dropzoneBrowse");
-  function guessNosFromFilename(fn){
-    var base=(fn||"");
-    if(/sr[ _-]?sim/i.test(base)) return NOS_LABELS.srsim;
-    if(/sr[ _-]?linux/i.test(base)) return NOS_LABELS.srl;
-    if(/\d+\.\d+\.[Rr]\d+/.test(base)) return NOS_LABELS.sros;
-    return "";
-  }
-  function showFilePreview(f){
-    var preview=el("filePreview"), osBadge=el("filePreviewOs");
-    if(!f){
-      if(preview) preview.hidden=true;
-      if(uploadDropzone) uploadDropzone.classList.remove("has-file");
-      if(dropzonePick) dropzonePick.hidden=false;
-      return;
-    }
-    if(preview) preview.hidden=false;
-    if(uploadDropzone) uploadDropzone.classList.add("has-file");
-    if(dropzonePick) dropzonePick.hidden=true;
-    el("filePreviewName").textContent=f.name;
-    el("filePreviewSize").textContent=fmtBytes(f.size);
-    var nosLbl=guessNosFromFilename(f.name);
-    if(osBadge){
-      if(nosLbl){ osBadge.hidden=false; osBadge.textContent=nosLbl; }
-      else { osBadge.hidden=true; osBadge.textContent=""; }
-    }
-    binHint.textContent=f.name+"  ·  "+fmtBytes(f.size)+(nosLbl?("  ·  "+nosLbl):"");
-  }
-  function handleFileSelect(f){
-    if(!f) return;
-    if(!isZip(f.name)){ snack("err","Please select a vendor .zip file."); binFile.value=""; showFilePreview(null); return; }
-    imageName.value=deriveName(f.name);
-    showFilePreview(f);
-    syncUploadBtnState();
-  }
   binFile.addEventListener("change", function(){
-    handleFileSelect(binFile.files[0]||null);
+    var f=binFile.files[0];
+    if(!f) return;
+    imageName.value = deriveName(f.name);
+    binHint.textContent=f.name+"  ·  "+fmtBytes(f.size);
+    syncUploadBtnState();
   });
-  if(dropzoneBrowse){
-    dropzoneBrowse.addEventListener("click", function(e){ e.stopPropagation(); binFile.click(); });
-  }
-  if(uploadDropzone){
-    uploadDropzone.addEventListener("dragover", function(e){ e.preventDefault(); uploadDropzone.classList.add("dragover"); });
-    uploadDropzone.addEventListener("dragleave", function(){ uploadDropzone.classList.remove("dragover"); });
-    uploadDropzone.addEventListener("drop", function(e){
-      e.preventDefault(); uploadDropzone.classList.remove("dragover");
-      var f=e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0];
-      if(!f) return;
-      try{
-        var dt=new DataTransfer(); dt.items.add(f); binFile.files=dt.files;
-      }catch(err){ /* fallback: change handler may not fire on all browsers */ }
-      handleFileSelect(f);
-    });
-    uploadDropzone.addEventListener("click", function(e){
-      if(e.target.closest(".dropzone-browse") || e.target.closest("#filePreview")) return;
-      binFile.click();
-    });
-  }
   // Names are lowercased everywhere; keep the field lowercase as the user edits.
   imageName.addEventListener("input", function(ev){
     if(ev && ev.isComposing) return;   // don't disturb a mid-IME composition
@@ -2346,7 +2168,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   // ---------- upload (closes dialog; progress shown as a live table row) ----------
   function resetUploadForm(){
     binFile.value=""; imageName.value=""; ns.selectedIndex=0; licText.value="";
-    showFilePreview(null);
     binHint.textContent="Maximum upload size: "+Math.round(maxBytes/1048576)+" MiB.";
   }
 
@@ -2616,7 +2437,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   // ---------- artifacts table ----------
   var lastImports=[];   // in-flight browser->controller uploads tracked in pendingUploads
-  var artifactFilterText="", artifactNsFilter="";
+  var NOS_LABELS={srl:"Nokia SR Linux",sros:"Nokia SR OS",srsim:"Nokia SR OS (SIM)"};
   function osLabel(t){
     var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
     return l?('<span class="os-tag">'+esc(l)+'</span>'):('<span class="os-empty">&mdash;</span>');
@@ -2631,17 +2452,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     var s = (row && row.downloadStatus) || "";
     if(s === "NoArtifact" && withinUploadGrace(row && row.storedAt)) return "InProgress";
     return s || "NoArtifact";
-  }
-  function chipIcon(status){
-    var map={
-      Available:"icon-status-ok", Ready:"icon-status-ok",
-      InProgress:"icon-status-progress", Uploading:"icon-status-progress",
-      Unzipping:"icon-status-progress", Processing:"icon-status-progress", Pending:"icon-status-progress",
-      Failed:"icon-status-error", Error:"icon-status-error",
-      AsvrOnly:"icon-status-warn", NoLocalCopy:"icon-status-warn",
-      NoArtifact:"icon-status-neutral"
-    };
-    return iconRef(map[status]||"icon-status-neutral","chip-icon");
   }
   function chipLabel(c){
     var labels={
@@ -2660,11 +2470,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       if(prev && prev !== c) bump = ' bump';
       lastRowStatus[rowKey] = c;
     }
-    var inner = chipIcon(c)+esc(chipLabel(c));
-    if(c==="NoArtifact") return '<span class="chip c-NoArtifact'+bump+'" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">'+inner+'</span>';
-    if(c==="AsvrOnly") return '<span class="chip c-AsvrOnly'+bump+'" title="eda-asvr still hosts this image but Image Manager PVC has no durable copy — re-upload to restore">'+inner+'</span>';
-    if(c==="NoLocalCopy") return '<span class="chip c-NoLocalCopy'+bump+'" title="meta.json or image files missing from Image Manager PVC — re-upload to restore">'+inner+'</span>';
-    return '<span class="chip c-'+c+bump+'">'+inner+'</span>';
+    if(c==="NoArtifact") return '<span class="chip c-NoArtifact'+bump+'" title="PVC bytes present but Artifact CR missing — controller will republish on reconcile">'+chipLabel(c)+'</span>';
+    if(c==="AsvrOnly") return '<span class="chip c-AsvrOnly'+bump+'" title="eda-asvr still hosts this image but Image Manager PVC has no durable copy — re-upload to restore">'+chipLabel(c)+'</span>';
+    if(c==="NoLocalCopy") return '<span class="chip c-NoLocalCopy'+bump+'" title="meta.json or image files missing from Image Manager PVC — re-upload to restore">'+chipLabel(c)+'</span>';
+    return '<span class="chip c-'+c+bump+'">'+esc(chipLabel(c))+'</span>';
   }
   function fmtElapsed(sec){ sec=Math.max(0,Math.floor(sec)); var m=Math.floor(sec/60), s=sec%60;
     return m+":"+(s<10?"0":"")+s; }
@@ -2711,13 +2520,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
 
   // ---------- KPI overview (dashboard cards) ----------
-  var prevKpi = {};
-  function setKpiDelta(deltaEl, d){
-    if(!deltaEl) return;
-    if(d > 0){ deltaEl.textContent="+"+d; deltaEl.className="kpi-delta up"; }
-    else if(d < 0){ deltaEl.textContent=String(d); deltaEl.className="kpi-delta down"; }
-    else { deltaEl.textContent=""; deltaEl.className="kpi-delta"; }
-  }
   function setKpi(id, val){
     var n = el(id);
     if(!n) return;
@@ -2726,16 +2528,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       n.textContent = s;
       n.classList.remove("bump"); void n.offsetWidth; n.classList.add("bump");
     }
-    var deltaEl = el(id + "Delta");
-    if(deltaEl){
-      var prev = prevKpi[id];
-      if(prev !== undefined && prev !== null && prev !== val){
-        setKpiDelta(deltaEl, val - prev);
-      } else if(prev === undefined || prev === null){
-        deltaEl.textContent = ""; deltaEl.className = "kpi-delta";
-      }
-    }
-    prevKpi[id] = val;
   }
   function updateKpis(){
     var total=currentData.length, ready=0, act=Object.keys(pendingUploads).length, failed=0;
@@ -2757,15 +2549,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function pendStatusHtml(p){
     if(p.phase==="Uploading"){
       var line=p.pct.toFixed(0)+"%  \u00b7  "+fmtBytes(p.loaded)+" / "+fmtBytes(p.total)+
-               "  \u00b7  "+p.speed.toFixed(1)+" MB/s  \u00b7  ETA "+
+               "  \u00b7  "+p.speed.toFixed(1)+" MB/s  \u00b7  "+
                fmtEta(p.loaded, p.total, p.speed, p.elapsed);
-      return '<span class="chip c-Uploading">'+iconRef("icon-status-progress","chip-icon")+'Uploading</span>'+
+      return '<span class="chip c-Uploading">Uploading</span>'+
              '<div class="uprog"><div style="width:'+p.pct.toFixed(1)+'%"></div></div>'+
              '<div class="upinfo">'+esc(line)+'</div>';
     }
     var label = p.phase==="Unzipping" ? "Un-zipping" : "Finalizing";
     var sub   = p.phase==="Unzipping" ? "extracting image + reading md5" : "creating Artifact";
-    return '<span class="chip c-'+p.phase+'">'+iconRef("icon-status-progress","chip-icon")+label+'</span>'+
+    return '<span class="chip c-'+p.phase+'">'+label+'</span>'+
            '<div class="uprog indet"><div></div></div>'+
            '<div class="upinfo">'+esc(sub)+'</div>';
   }
@@ -2780,16 +2572,14 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
-    var uid=esc(t.uploadId||""), ns=esc(t.namespace||""), name=esc(t.name||"");
     var view=t.snippet
-      ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+uid+'" data-name="'+name+'">Details</button>')
+      ?('<button class="iconbtn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'" data-name="'+esc(t.name||"")+'">Details</button> ')
       :'';
-    var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+uid+'" data-ns="'+ns+'" data-name="'+name+'">Delete</button>';
-    var actions='<span class="row-actions">'+view+(view?' ':'')+del+'</span>';
+    var del='<button class="iconbtn del ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'">Delete</button>';
     return '<tr><td class="mono namecell" title="'+esc(t.displayName||t.name)+'">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
       '</td><td title="'+esc(t.namespace)+'">'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(displayStatus, rowKey)+reason+
-      '</td><td class="actions-cell">'+actions+'</td></tr>';
+      '</td><td style="white-space:nowrap">'+view+del+'</td></tr>';
   }
 
   function imDelete(uid, nsv, name){
@@ -2934,45 +2724,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
   });
 
-  function passesArtifactFilter(t){
-    if(artifactNsFilter && (t.namespace||"") !== artifactNsFilter) return false;
-    if(!artifactFilterText) return true;
-    var hay=((t.displayName||t.name||"")+" "+(t.namespace||"")+" "+(t.nosLabel||"")+" "+(t.nos||"")).toLowerCase();
-    return hay.indexOf(artifactFilterText) >= 0;
-  }
-  function buildNsFilterChips(){
-    var chipBar=el("nsFilterChips");
-    if(!chipBar) return;
-    var nsSet={}, namespaces=[];
-    currentData.forEach(function(t){
-      var n=(t.namespace||"").trim();
-      if(n && !nsSet[n]){ nsSet[n]=true; namespaces.push(n); }
-    });
-    namespaces.sort();
-    var html='<button type="button" class="ns-chip'+(artifactNsFilter===""?" active":"")+'" data-ns="">All namespaces</button>';
-    namespaces.forEach(function(n){
-      html+='<button type="button" class="ns-chip'+(artifactNsFilter===n?" active":"")+'" data-ns="'+esc(n)+'">'+esc(n)+'</button>';
-    });
-    chipBar.innerHTML=html;
-  }
-  var artifactFilterEl=el("artifactFilter");
-  if(artifactFilterEl){
-    artifactFilterEl.addEventListener("input", function(){
-      artifactFilterText=(artifactFilterEl.value||"").trim().toLowerCase();
-      render();
-    });
-  }
-  var nsFilterChipsEl=el("nsFilterChips");
-  if(nsFilterChipsEl){
-    nsFilterChipsEl.addEventListener("click", function(e){
-      var chip=e.target.closest(".ns-chip");
-      if(!chip) return;
-      artifactNsFilter=chip.getAttribute("data-ns")||"";
-      buildNsFilterChips();
-      render();
-    });
-  }
-
   // sorting
   var STATUS_RANK={Available:0,Ready:0,InProgress:1,AsvrOnly:2,NoLocalCopy:2,Error:3,Failed:4,NoArtifact:5};
   var currentData=[], sortState=null;  // null = server order (newest first)
@@ -2993,7 +2744,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     return c;
   }
   function paintHeaders(){
-    var ths=document.querySelectorAll(".mtable button.th-sort.sortable");
+    var ths=document.querySelectorAll(".mtable th.sortable");
     ths.forEach(function(th){
       var col=th.getAttribute("data-sort");
       var arr=th.querySelector(".arr");
@@ -3002,15 +2753,12 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       } else { th.classList.remove("sorted"); arr.textContent="↕"; }
     });
   }
-  function toggleSort(col){
-    if(sortState && sortState.col===col){ sortState.dir = sortState.dir==="asc"?"desc":"asc"; }
-    else { sortState={col:col, dir:"asc"}; }
-    paintHeaders(); render();
-  }
-  document.querySelectorAll(".mtable button.th-sort.sortable").forEach(function(th){
-    th.addEventListener("click", function(){ toggleSort(th.getAttribute("data-sort")); });
-    th.addEventListener("keydown", function(e){
-      if(e.key==="Enter" || e.key===" "){ e.preventDefault(); toggleSort(th.getAttribute("data-sort")); }
+  document.querySelectorAll(".mtable th.sortable").forEach(function(th){
+    th.addEventListener("click", function(){
+      var col=th.getAttribute("data-sort");
+      if(sortState && sortState.col===col){ sortState.dir = sortState.dir==="asc"?"desc":"asc"; }
+      else { sortState={col:col, dir:"asc"}; }
+      paintHeaders(); render();
     });
   });
   paintHeaders();
@@ -3028,30 +2776,16 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       pend.push(p);
     });
     var serverRows=sortData(currentData).filter(function(t){
-      return passesArtifactFilter(t) && !Object.keys(pendingUploads).some(function(k){
+      return !Object.keys(pendingUploads).some(function(k){
         return pendingMatchesServer(pendingUploads[k], t);
       });
     });
-    buildNsFilterChips();
     updateKpis();
     if(!(pend.length+serverRows.length)){
-      var filterActive=!!(artifactFilterText||artifactNsFilter);
-      rows.innerHTML=emptyStateHtml(6, "images", filterActive ? "No matching images" : "No images yet",
-        filterActive
-          ? "Try clearing the search box or namespace filter."
-          : 'Upload a vendor <span class="mono">.zip</span> or import from a URL to create your first Artifact.',
-        filterActive
-          ? '<button class="btn text ripple" id="clearArtifactFilters">Clear filters</button>'
-          : '<button class="btn contained ripple" data-goto="upload">Upload image</button>'+
-            '<button class="btn text ripple" data-goto="url-import">Import from URL</button>');
-      var clearBtn=el("clearArtifactFilters");
-      if(clearBtn){
-        clearBtn.addEventListener("click", function(){
-          artifactFilterText=""; artifactNsFilter="";
-          if(artifactFilterEl) artifactFilterEl.value="";
-          buildNsFilterChips(); render();
-        });
-      }
+      rows.innerHTML=emptyStateHtml(6, "images", "No images yet",
+        "Upload a vendor <span class=\"mono\">.zip</span> or import from a URL to create your first Artifact.",
+        '<button class="btn contained ripple" data-goto="upload">Upload image</button>'+
+        '<button class="btn text ripple" data-goto="url-import">Import from URL</button>');
       el("statusCount").style.display="none"; return;
     }
     rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
