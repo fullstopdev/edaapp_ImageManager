@@ -63,7 +63,9 @@ SR-SIM registry redirect) inside an EDA cluster.
   the resource-browser SvelteKit app) do use one. Splitting the single
   string into a few composed constants for reviewability is fine and
   encouraged; adding a JS framework/build step is not, unless explicitly
-  requested.
+  requested. UI styling uses `:root` design tokens (`--space-*`, `--text-*`)
+  and a hidden SVG icon sprite (`<use href="#icon-*">`) — extend those
+  patterns rather than adding new inline SVG blobs.
 - **EDA launcher conventions** — dashboard JSON (`flexRow` → `dashletDataView`),
   HttpProxy routing, and `imagemanager-viewer` ClusterRole should match
   current EDA catalog patterns. Check live manifests and sibling apps in

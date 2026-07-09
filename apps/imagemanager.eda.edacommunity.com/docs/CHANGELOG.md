@@ -1,5 +1,23 @@
 # Changelog
 
+## v0.1.47
+
+**UX polish phase 1 — design tokens, icon sprite, KPI deltas.**
+
+- **Design tokens:** Spacing scale (`--space-*`) and typography scale (`--text-*`,
+  `--leading-*`, `--font-*`) in `:root`; major layout/chrome/KPI/chip/snackbar
+  rules migrated to tokens; CSS grouped with section banner comments.
+- **Icon sprite:** Hidden `<svg><symbol>` block; KPI, ops strip, theme toggle,
+  empty states, and status chips use `<use href="#icon-*">` instead of scattered
+  inline SVG paths.
+- **KPI deltas:** Dashboard cards show `+N` / `-N` vs the previous poll when
+  counts change.
+- **Snackbar:** Stronger ok / err / info tint and 4px left accent bar.
+- **Status chips:** Dot replaced with semantic status icons (ok, progress, warn,
+  error, neutral).
+- **Unchanged:** Self-contained controller (no npm build), themes, auth/SSO,
+  ripple, dialogs, `eda-embedded`, concurrent uploads, URL import navigation.
+
 ## v0.1.46
 
 **Remove cable-map references from docs and comments.**
