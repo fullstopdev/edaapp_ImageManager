@@ -383,6 +383,33 @@ def bearer_token_identity(access_token):
     return user, roles
 
 
+def validate_bearer_token_active(access_token):
+    """True when Keycloak userinfo accepts the bearer token (live browser session).
+
+    JWKS signature validation alone cannot detect EDA logout — the access token may
+    still be within its exp window. A 401/403 from userinfo is definitive; other
+    errors are treated as inconclusive so a transient Keycloak blip does not block
+    sign-in when JWKS validation already succeeded.
+    """
+    if not access_token:
+        return False
+    url = f"{KC_INTERNAL_BASE}/realms/{REALM}/protocol/openid-connect/userinfo"
+    req = urllib.request.Request(url, method="GET")
+    req.add_header("Authorization", f"Bearer {access_token}")
+    req.add_header("Accept", "application/json")
+    try:
+        with urllib.request.urlopen(req, context=_kc_ssl_ctx(), timeout=_HTTP_TIMEOUT):
+            return True
+    except urllib.error.HTTPError as e:
+        if e.code in (401, 403):
+            return False
+        logger.warning("userinfo check HTTP %s — treating token as active", e.code)
+        return True
+    except Exception as e:
+        logger.warning("userinfo check failed: %s — treating token as active", e)
+        return True
+
+
 def token_identity(token_resp):
     """(username, set_of_roles) from a token response, or (None, set())."""
     at = token_resp.get("access_token", "")

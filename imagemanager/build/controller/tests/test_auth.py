@@ -124,3 +124,28 @@ def test_verify_session_without_idp_cookies():
     cookie = auth.make_session("alice")
     assert auth.verify_session(cookie, "foo=bar") == "alice"
     assert auth.verify_session(cookie, "") == "alice"
+
+
+def test_validate_bearer_token_active_rejects_401(monkeypatch):
+    import urllib.error
+
+    monkeypatch.setattr(auth, "_kc_ssl_ctx", lambda: None)
+
+    def _raise_401(*_a, **_kw):
+        raise urllib.error.HTTPError("http://x", 401, "unauthorized", {}, None)
+
+    monkeypatch.setattr(auth.urllib.request, "urlopen", _raise_401)
+    assert auth.validate_bearer_token_active("tok") is False
+
+
+def test_validate_bearer_token_active_accepts_ok(monkeypatch):
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            return False
+
+    monkeypatch.setattr(auth, "_kc_ssl_ctx", lambda: None)
+    monkeypatch.setattr(auth.urllib.request, "urlopen", lambda *_a, **_kw: _Resp())
+    assert auth.validate_bearer_token_active("tok") is True

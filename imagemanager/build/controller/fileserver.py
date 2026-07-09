@@ -310,6 +310,9 @@ class Handler(BaseHTTPRequestHandler):
         if not user:
             self._send_json({"ok": False, "error": "invalid token"}, 401)
             return
+        if not auth.validate_bearer_token_active(access):
+            self._send_json({"ok": False, "error": "session inactive"}, 401)
+            return
         if not auth.is_allowed(roles):
             logger.info("Token exchange denied: %s lacks an allowed role (have=%s need-any-of=%s)",
                         user, sorted(roles), auth.allowed_roles())

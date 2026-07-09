@@ -5,14 +5,20 @@ from __future__ import annotations
 import webui
 
 
-def test_bootstrap_trusts_config_without_identity_probe():
+def test_bootstrap_validates_keycloak_before_auth_ready():
     html = webui.INDEX_HTML
-    assert "authBootstrapComplete = true" in html
-    assert "onAuthReady(c.user" in html
-    # Bootstrap must not gate on identity probe (false-negative → OAuth loop).
+    assert "function validateBootstrapSession" in html
+    assert "ensureKeycloakSessionValid" in html
     bootstrap = html.split("function applyConfigResponse", 1)[1]
-    before_probe_fn = bootstrap.split("function probeEdaIdentitySession", 1)[0]
-    assert "probeEdaIdentitySession().then(function(idpOk)" not in before_probe_fn
+    before_auth_ready = bootstrap.split("onAuthReady", 1)[0]
+    assert "validateBootstrapSession" in before_auth_ready
+    assert "onAuthReady(c.user" not in before_auth_ready
+
+
+def test_reconcile_uses_keycloak_check():
+    html = webui.INDEX_HTML
+    reconcile = html.split("function reconcileAuthState", 1)[1].split("function stopSessionWatchers", 1)[0]
+    assert "ensureKeycloakSessionValid" in reconcile
 
 
 def test_identity_probe_gated_on_auth_ready():

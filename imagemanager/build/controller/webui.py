@@ -9,6 +9,8 @@ cable-map pattern: keycloak-js public client `auth` + same-origin silent SSO,
 token exchange to an HTTP-only `im_session` cookie, with server OIDC
 (`/oauth/login`) as fallback. Role gating via ALLOWED_ROLES (EDA ClusterRole).
 Sign out clears the local session and ends the EDA Keycloak session.
+Bootstrap with a stale `im_session` validates the live Keycloak session via
+`check-sso` before showing the logged-in UI.
 """
 
 _INDEX_HTML_RAW = r"""<!DOCTYPE html>
@@ -1042,9 +1044,32 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         .catch(function(){ return false; });
     }).catch(function(){ return false; });
   }
+  function ensureKeycloakSessionValid(){
+    return loadKeycloakScript().then(function(){
+      return initKeycloak({ onLoad: "check-sso" });
+    }).then(function(authenticated){
+      return !!(authenticated && keycloak && keycloak.token);
+    }).catch(function(){ return null; });
+  }
+  function validateBootstrapSession(config){
+    return ensureKeycloakSessionValid().then(function(kcOk){
+      if(kcOk === true){
+        return exchangeKeycloakSession().then(function(){
+          return config;
+        });
+      }
+      if(kcOk === false){
+        return clearServerSession().then(function(){ return null; });
+      }
+      return probeEdaIdentitySession().then(function(idpOk){
+        if(idpOk) return config;
+        return clearServerSession().then(function(){ return null; });
+      });
+    });
+  }
   function runSilentSsoAndExchange(){
-    return initKeycloak({ onLoad: "check-sso" }).then(function(authenticated){
-      if(!authenticated || !keycloak || !keycloak.token) return false;
+    return ensureKeycloakSessionValid().then(function(kcOk){
+      if(!kcOk) return false;
       return exchangeKeycloakSession();
     }).catch(function(){ return false; });
   }
@@ -1233,7 +1258,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(revalidateTimer) clearTimeout(revalidateTimer);
     revalidateTimer = setTimeout(function(){
       revalidateTimer = null;
-      if(!authBootstrapComplete || !authReady || document.hidden || sessionInterruptBlocked()) return;
+      if(!authBootstrapComplete || !authReady || sessionInterruptBlocked()) return;
       noteKeycloakStorage();
       if(sawKeycloakStorage && !keycloakStoragePresent()){
         scheduleSustainedKcAbsenceCheck();
@@ -1360,17 +1385,20 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     });
   }
   function reconcileAuthState(){
-    // Trust /api/config first. Identity probes run only after authReady (active
-    // session) to detect EDA logout — not on bootstrap, where a false-negative
-    // probe would clear a freshly minted im_session and loop OAuth.
     return probeConfigAuth().then(function(configOk){
       if(!configOk) return false;
       if(!authReady) return true;
-      return probeEdaIdentitySession().then(function(idpOk){
-        if(!idpOk){
+      return ensureKeycloakSessionValid().then(function(kcOk){
+        if(kcOk === false){
           return onIdentityProbeFailed().then(function(){ return false; });
         }
-        return true;
+        if(kcOk === true) return true;
+        return probeEdaIdentitySession().then(function(idpOk){
+          if(!idpOk){
+            return onIdentityProbeFailed().then(function(){ return false; });
+          }
+          return true;
+        });
       });
     });
   }
@@ -1750,25 +1778,29 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(c.version){
       var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
-    // Trust server session on bootstrap (cable-map pattern): im_session + /api/config
-    // 200 is enough to enter the app. Identity probes detect EDA logout later.
-    authBootstrapComplete = true;
-    onAuthReady(c.user || null);
-    var defaultNs=(c.defaultArtifactNamespace||"").trim();
-    fetchJson(api("/api/namespaces")).then(function(nsRes){
-      if(nsRes.status===401) return;
-      if(!nsRes.ok){
-        snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
+    setAuthBanner("loading", "Checking session\u2026");
+    validateBootstrapSession(c).then(function(validConfig){
+      if(!validConfig){
+        handleBootstrap401();
         return;
       }
-      fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
+      onAuthReady(validConfig.user || null);
+      var defaultNs=(validConfig.defaultArtifactNamespace||"").trim();
+      fetchJson(api("/api/namespaces")).then(function(nsRes){
+        if(nsRes.status===401) return;
+        if(!nsRes.ok){
+          snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
+          return;
+        }
+        fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
+      });
+      refresh();
+      refreshImports();
+      fetchJson(api("/api/settings")).then(function(sRes){
+        if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
+      });
+      syncLiveIndicator();
     });
-    refresh();
-    refreshImports();
-    fetchJson(api("/api/settings")).then(function(sRes){
-      if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
-    });
-    syncLiveIndicator();
   }
 
   // ---------- config + namespaces ----------
@@ -2751,10 +2783,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
   });
   window.addEventListener("focus", function(){
-    if(authBootstrapComplete && authReady && !document.hidden) scheduleRevalidate();
+    if(authBootstrapComplete && authReady) reconcileAuthState();
   });
   window.addEventListener("pageshow", function(){
-    if(authBootstrapComplete && authReady && !document.hidden) scheduleRevalidate();
+    if(authBootstrapComplete && authReady) reconcileAuthState();
   });
   var refreshBtn=el("refreshBtn");
   if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });

@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.37
+
+**Fix EDA logout not disconnecting Image Manager (v0.1.36 regression).**
+
+- **Root cause:** v0.1.36 trusted `/api/config` 200 + 8h `im_session` on bootstrap with
+  no live Keycloak check, so a stale app cookie outlived EDA logout. Periodic
+  `reconcileAuthState` relied on lenient identity probes (403 treated as OK) and
+  did not use `keycloak-js` `check-sso` as the primary signal.
+- **Bootstrap:** `validateBootstrapSession()` runs `keycloak-js` `check-sso` before
+  `onAuthReady`. Stale `im_session` with no EDA session → clear cookie + sign-in.
+  Inconclusive keycloak init falls back to identity probes (not probe-only, avoiding
+  the v0.1.35 OAuth loop).
+- **Reconcile:** `reconcileAuthState()` uses `ensureKeycloakSessionValid()` first;
+  focus/pageshow trigger immediate reconcile; 3s interval unchanged (runs when tab hidden).
+- **Server:** `POST /oauth/session` calls Keycloak userinfo after JWKS validation —
+  rejects inactive sessions with 401.
+- **Unchanged:** Cable-map silent SSO pattern, no IDP cookie gate on `verify_session`,
+  embedded sign-in banner, concurrent uploads, URL import empty-state.
+
 ## v0.1.36
 
 **Cable-map SSO parity: keycloak-js silent SSO + token exchange.**

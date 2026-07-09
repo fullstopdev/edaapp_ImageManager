@@ -92,20 +92,24 @@ SR-SIM registry redirect) inside an EDA cluster.
   not a prose description of the change, matching how this project has
   been worked on so far.
 
-## Auth / SSO (cable-map aligned, v0.1.36+)
+## Auth / SSO (cable-map aligned, v0.1.37+)
 
 Session model matches cable-map:
 
 1. EDA Keycloak browser session (identity proxy `/core/proxy/v1/identity`)
 2. SPA: `keycloak-js` public client `auth` + same-origin `silent-check-sso.html`
-3. `POST /oauth/session` — bearer token → JWKS validation → `im_session` cookie
+3. `POST /oauth/session` — bearer token → JWKS + Keycloak userinfo validation → `im_session` cookie
 4. `/api/*` gated on `im_session`; shell (`GET /`) loads without cookie
-5. EDA logout: client identity probes + `kc-*` watchers clear local session
-6. Server `/oauth/login` (confidential `eda` client) remains as OIDC fallback
+5. Bootstrap: when `/api/config` returns 200, `keycloak-js` `check-sso` must confirm a live
+   EDA session before `onAuthReady` (stale 8h `im_session` alone is not enough)
+6. EDA logout: periodic `reconcileAuthState` (3s, including hidden tabs) uses `check-sso`
+   plus identity probes; clears `im_session` server-side on failure
+7. Server `/oauth/login` (confidential `eda` client) remains as OIDC fallback
 
 Do **not** require identity-proxy cookies in `auth.verify_session` (scoped to
-`/core/proxy/v1/identity`, not the httpproxy path). Do **not** run identity
-probes on bootstrap when `/api/config` already returns 200 (causes OAuth loops).
+`/core/proxy/v1/identity`, not the httpproxy path). Do **not** fail bootstrap
+solely on inconclusive identity probes (403) — trust `keycloak.authenticated`
+from `check-sso` to avoid the v0.1.35 OAuth loop.
 
 ## Workflow expectations
 
