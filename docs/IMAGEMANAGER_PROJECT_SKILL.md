@@ -111,10 +111,11 @@ Session model matches cable-map:
 7. Server `/oauth/login` (confidential `eda` client) remains OIDC fallback after
    `keycloak.login()` failure
 8. Bootstrap: `GET /api/config` first on normal load; valid `im_session` → immediate
-   `onAuthReady` with keycloak validation deferred to background (v0.1.43). OAuth callback
+   `onAuthReady` with keycloak validation deferred to background (v0.1.43+). OAuth callback
    still runs keycloak `login-required` prelude. Attempt `check-sso` before config only on
    401 / stale-session paths; stale `im_session` cleared when `check-sso` returns false;
-   timeout guards prevent infinite *Checking session…*
+   timeout guards prevent infinite *Checking session…*; fresh sign-in skips redundant
+   background check-sso (v0.1.44).
 9. EDA logout: `reconcileAuthState` (3s) uses `check-sso` + identity probes
 
 Do **not** require identity-proxy cookies in `auth.verify_session`. Do **not** fail

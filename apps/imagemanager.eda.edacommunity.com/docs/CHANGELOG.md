@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.44
+
+**Fix version badge lag + faster sign-in (401 / silent SSO path).**
+
+- **Version:** `main.py` `VERSION` was still `v0.1.42` while manifests were at
+  `v0.1.43` — UI badge reads `/api/config` `c.version` from the running controller.
+  All image tags, pyproject, dashboard JSON, and manifests bumped to **v0.1.44**.
+- **Sign-in root cause:** v0.1.43 fast path skipped Keycloak only when `/api/config`
+  returned 200. On 401 (no session), `handleBootstrap401` ran silent SSO + token
+  exchange, then `finishConfigBootstrap` still called `backgroundValidateSession`
+  (second `check-sso`, up to 8s + 20s). OAuth callback path had the same redundancy.
+- **Fix:** Preload `keycloak.min.js` in `<head>`; shorter script/init/auth timeouts;
+  `markFreshSignIn()` skips `backgroundValidateSession` after successful
+  `POST /oauth/session` or OAuth callback prelude; 401 path uses a tighter silent-SSO
+  budget; slow sign-in shows actionable banner after 8s instead of indefinite
+  *Signing in…*.
+- **Unchanged:** v0.1.43 config-first fast path for valid `im_session`, cable-map
+  SSO, logout reconcile, redirect URIs, bearer fallback.
+
 ## v0.1.43
 
 **Fast bootstrap when `im_session` is already valid (v0.1.42 slow load).**

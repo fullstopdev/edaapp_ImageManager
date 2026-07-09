@@ -21,6 +21,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 <meta name="imagemanager-api-base" content="/core/httpproxy/v1/imagemanager">
 <title>EDA Image Manager</title>
 <link rel="icon" type="image/png" href="/core/httpproxy/v1/imagemanager/assets/nokia-n.png">
+<link rel="preload" href="/core/httpproxy/v1/imagemanager/assets/keycloak.min.js" as="script" crossorigin>
 <style>
   :root {
     --eda-blue-100:#e4f0ff; --eda-blue-400:#4092ff; --eda-blue-500:#005aff; --eda-blue-600:#005adf;
@@ -978,9 +979,12 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var keycloakInitPromise = null;
   var keycloakScriptPromise = null;
   var KEYCLOAK_CLIENT_ID = "auth";
-  var KC_SCRIPT_LOAD_TIMEOUT_MS = 10000;
-  var KC_INIT_TIMEOUT_MS = 8000;
-  var BOOTSTRAP_AUTH_TIMEOUT_MS = 20000;
+  var KC_SCRIPT_LOAD_TIMEOUT_MS = 6000;
+  var KC_INIT_TIMEOUT_MS = 5000;
+  var BOOTSTRAP_AUTH_TIMEOUT_MS = 12000;
+  var SIGNIN_SILENT_SSO_TIMEOUT_MS = 10000;
+  var SIGNIN_SLOW_HINT_MS = 8000;
+  var skipBackgroundSessionCheck = false;
   function promiseWithTimeout(promise, ms, label){
     return new Promise(function(resolve, reject){
       var done = false;
@@ -1070,6 +1074,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     });
     return keycloakScriptPromise;
   }
+  // Start downloading keycloak.min.js as early as possible (401 sign-in + returning users).
+  loadKeycloakScript().catch(function(){});
   function initKeycloak(opts){
     opts = opts || {};
     if(keycloakInitPromise && !opts.force) return keycloakInitPromise;
@@ -1130,18 +1136,28 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       });
     });
   }
-  function runSilentSsoAndExchange(){
+  function runSilentSsoAndExchange(timeoutMs){
     return promiseWithTimeout(
       ensureKeycloakSessionValid().then(function(kcOk){
         if(!kcOk) return false;
         return exchangeKeycloakSession();
       }),
-      BOOTSTRAP_AUTH_TIMEOUT_MS,
+      timeoutMs || BOOTSTRAP_AUTH_TIMEOUT_MS,
       "silent SSO"
     ).catch(function(err){
       console.warn("silent SSO failed:", err && err.message ? err.message : err);
       return false;
     });
+  }
+  function markFreshSignIn(){
+    skipBackgroundSessionCheck = true;
+  }
+  function maybeBackgroundValidateSession(c){
+    if(skipBackgroundSessionCheck){
+      skipBackgroundSessionCheck = false;
+      return;
+    }
+    backgroundValidateSession(c);
   }
   function authHeaders(extra){
     var h = Object.assign({}, extra || {});
@@ -1581,8 +1597,21 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function handleBootstrap401(){
     bootDone();
     setAuthBanner("loading", "Signing in\u2026");
-    runSilentSsoAndExchange().then(function(ok){
-      if(ok) return finishConfigBootstrap();
+    var signInSlowTimer = setTimeout(function(){
+      if(!authReady){
+        if(embedded){
+          showSignInBanner("Sign-in is taking longer than expected. Try again or sign in.");
+        } else {
+          setAuthBanner("loading", "Sign-in is taking longer than expected\u2026");
+        }
+      }
+    }, SIGNIN_SLOW_HINT_MS);
+    runSilentSsoAndExchange(SIGNIN_SILENT_SSO_TIMEOUT_MS).then(function(ok){
+      clearTimeout(signInSlowTimer);
+      if(ok){
+        markFreshSignIn();
+        return finishConfigBootstrap();
+      }
       if(!embedded){
         loadKeycloakScript().then(function(){
           ensureKeycloakInstance();
@@ -1594,6 +1623,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       }
       beginOAuthSignIn("Sign in to use Image Manager.");
     }).catch(function(){
+      clearTimeout(signInSlowTimer);
       beginOAuthSignIn("Sign in to use Image Manager.");
     });
   }
@@ -1888,7 +1918,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function bootstrapKeycloakPrelude(){
     // OAuth callback only: exchange code before /api/config (cable-map login-required).
     return loadKeycloakScript().then(function(){
-      return initKeycloak({ onLoad: "login-required", force: true }).then(function(){
+      return initKeycloak({ onLoad: "login-required", force: true }).then(function(authenticated){
+        if(!authenticated) return false;
         return exchangeKeycloakSession();
       });
     }).catch(function(err){
@@ -1971,7 +2002,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
       var c = res.body || {};
       applyConfigResponseFast(c);
-      backgroundValidateSession(c);
+      maybeBackgroundValidateSession(c);
     });
   }
   function handleInitialConfigResponse(res){
@@ -1982,7 +2013,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
     var c = res.body || {};
     applyConfigResponseFast(c);
-    backgroundValidateSession(c);
+    maybeBackgroundValidateSession(c);
   }
   function runConfigBootstrap(){
     var scriptPreload = loadKeycloakScript().catch(function(err){
@@ -1991,7 +2022,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       return null;
     });
     if(hasKeycloakCallback()){
-      return bootstrapKeycloakPrelude().then(function(){
+      return bootstrapKeycloakPrelude().then(function(exchanged){
+        if(exchanged) markFreshSignIn();
         return fetchJson(api("/api/config"));
       }).then(handleInitialConfigResponse);
     }

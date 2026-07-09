@@ -38,7 +38,7 @@ import k8s
 import nodeagent
 import uploads
 
-VERSION = "v0.1.42"
+VERSION = "v0.1.44"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443

@@ -48,11 +48,31 @@ def test_bootstrap_keycloak_prelude_is_non_fatal():
 def test_bootstrap_auth_has_timeouts_and_guaranteed_exit():
     html = webui.INDEX_HTML
     assert "promiseWithTimeout" in html
-    assert "KC_INIT_TIMEOUT_MS = 8000" in html
-    assert "BOOTSTRAP_AUTH_TIMEOUT_MS = 20000" in html
-    assert "KC_SCRIPT_LOAD_TIMEOUT_MS = 10000" in html
+    assert "KC_INIT_TIMEOUT_MS = 5000" in html
+    assert "BOOTSTRAP_AUTH_TIMEOUT_MS = 12000" in html
+    assert "KC_SCRIPT_LOAD_TIMEOUT_MS = 6000" in html
+    assert "SIGNIN_SILENT_SSO_TIMEOUT_MS = 10000" in html
     assert "background session validation failed" in html
     assert "handleBootstrap401()" in html
+
+
+def test_fresh_sign_in_skips_background_validate():
+    html = webui.INDEX_HTML
+    assert "function markFreshSignIn" in html
+    assert "function maybeBackgroundValidateSession" in html
+    assert "skipBackgroundSessionCheck" in html
+    h401 = html.split("function handleBootstrap401", 1)[1].split("function showFatal", 1)[0]
+    assert "markFreshSignIn()" in h401
+    oauth = html.split("function runConfigBootstrap", 1)[1].split("function handleInitialConfigResponse", 1)[0]
+    assert "if(exchanged) markFreshSignIn()" in oauth
+    finish = html.split("function finishConfigBootstrap", 1)[1].split("function handleInitialConfigResponse", 1)[0]
+    assert "maybeBackgroundValidateSession(c)" in finish
+
+
+def test_keycloak_script_preloaded_in_head():
+    html = webui.INDEX_HTML
+    assert 'rel="preload"' in html
+    assert "keycloak.min.js" in html.split("</head>", 1)[0]
 
 
 def test_reconcile_uses_keycloak_check():
@@ -74,8 +94,10 @@ def test_periodic_session_revalidation_interval():
 def test_bootstrap_401_runs_keycloak_silent_sso():
     html = webui.INDEX_HTML
     assert "function handleBootstrap401()" in html
-    assert "runSilentSsoAndExchange()" in html
+    assert "runSilentSsoAndExchange(" in html
     assert "finishConfigBootstrap()" in html
+    h401 = html.split("function handleBootstrap401", 1)[1].split("function showFatal", 1)[0]
+    assert "SIGNIN_SLOW_HINT_MS" in h401
 
 
 def test_keycloak_js_and_silent_sso_assets():
