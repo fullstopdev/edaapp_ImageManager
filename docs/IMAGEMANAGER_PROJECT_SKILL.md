@@ -115,7 +115,8 @@ Session model matches cable-map:
    still runs keycloak `login-required` prelude. Attempt `check-sso` before config only on
    401 / stale-session paths; stale `im_session` cleared when `check-sso` returns false;
    timeout guards prevent infinite *Checking session…*; fresh sign-in skips redundant
-   background check-sso (v0.1.44).
+   background check-sso (v0.1.44). Embedded iframe: immediate silent SSO on 401 when
+   `kc-*` localStorage present; sign-in banner only after SSO fails (v0.1.45).
 9. EDA logout: `reconcileAuthState` (3s) uses `check-sso` + identity probes
 
 Do **not** require identity-proxy cookies in `auth.verify_session`. Do **not** fail

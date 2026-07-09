@@ -93,11 +93,37 @@ def test_periodic_session_revalidation_interval():
 
 def test_bootstrap_401_runs_keycloak_silent_sso():
     html = webui.INDEX_HTML
-    assert "function handleBootstrap401()" in html
+    assert "function handleBootstrap401(" in html
     assert "runSilentSsoAndExchange(" in html
     assert "finishConfigBootstrap()" in html
     h401 = html.split("function handleBootstrap401", 1)[1].split("function showFatal", 1)[0]
-    assert "SIGNIN_SLOW_HINT_MS" in h401
+    assert "attemptEmbeddedSilentSignIn" in h401
+    embedded = html.split("function attemptEmbeddedSilentSignIn", 1)[1].split("function markFreshSignIn", 1)[0]
+    assert "EMBEDDED_SLOW_HINT_MS" in embedded
+    assert "showSignInBanner" in embedded
+
+
+def test_embedded_early_sso_when_eda_session_likely():
+    html = webui.INDEX_HTML
+    assert "function edaSessionLikelyPresent" in html
+    assert "function attemptEmbeddedSilentSignIn" in html
+    boot = html.split("function runConfigBootstrap", 1)[1].split("function handleInitialConfigResponse", 1)[0]
+    assert "edaSessionLikelyPresent()" in boot
+    assert "earlySso" in boot
+    assert "EMBEDDED_EARLY_SSO_TIMEOUT_MS" in boot
+    begin = html.split("function beginOAuthSignIn", 1)[1].split("function showConfirmedSessionLoss", 1)[0]
+    assert "edaSessionLikelyPresent()" in begin
+    assert "attemptEmbeddedSilentSignIn" in begin
+    loss = html.split("function showConfirmedSessionLoss", 1)[1].split("function onIdentityProbeFailed", 1)[0]
+    assert "edaSessionLikelyPresent()" in loss
+
+
+def test_embedded_sign_in_banner_only_after_sso_fails():
+    html = webui.INDEX_HTML
+    embedded = html.split("function attemptEmbeddedSilentSignIn", 1)[1].split("function markFreshSignIn", 1)[0]
+    assert 'setAuthBanner("loading", "Signing in' in embedded
+    # Sign-in banner with buttons only after SSO failure, not during attempt.
+    assert embedded.index("showSignInBanner") > embedded.index("runSilentSsoAndExchange")
 
 
 def test_keycloak_js_and_silent_sso_assets():

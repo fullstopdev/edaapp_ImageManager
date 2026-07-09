@@ -984,7 +984,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var BOOTSTRAP_AUTH_TIMEOUT_MS = 12000;
   var SIGNIN_SILENT_SSO_TIMEOUT_MS = 10000;
   var SIGNIN_SLOW_HINT_MS = 8000;
+  var EMBEDDED_EARLY_SSO_TIMEOUT_MS = 6000;
+  var EMBEDDED_SLOW_HINT_MS = 2500;
   var skipBackgroundSessionCheck = false;
+  var embeddedSsoAttempt = null;
   function promiseWithTimeout(promise, ms, label){
     return new Promise(function(resolve, reject){
       var done = false;
@@ -1078,6 +1081,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   loadKeycloakScript().catch(function(){});
   function initKeycloak(opts){
     opts = opts || {};
+    if(opts.force) keycloakInitPromise = null;
     if(keycloakInitPromise && !opts.force) return keycloakInitPromise;
     var initPromise = loadKeycloakScript().then(function(){
       ensureKeycloakInstance();
@@ -1113,9 +1117,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         .catch(function(){ return false; });
     }).catch(function(){ return false; });
   }
-  function ensureKeycloakSessionValid(){
+  function ensureKeycloakSessionValid(force){
     return loadKeycloakScript().then(function(){
-      return initKeycloak({ onLoad: "check-sso" });
+      return initKeycloak({ onLoad: "check-sso", force: !!force });
     }).then(function(authenticated){
       return !!(authenticated && keycloak && keycloak.token);
     }).catch(function(){ return null; });
@@ -1136,9 +1140,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       });
     });
   }
-  function runSilentSsoAndExchange(timeoutMs){
+  function runSilentSsoAndExchange(timeoutMs, force){
     return promiseWithTimeout(
-      ensureKeycloakSessionValid().then(function(kcOk){
+      ensureKeycloakSessionValid(force).then(function(kcOk){
         if(!kcOk) return false;
         return exchangeKeycloakSession();
       }),
@@ -1147,6 +1151,46 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     ).catch(function(err){
       console.warn("silent SSO failed:", err && err.message ? err.message : err);
       return false;
+    });
+  }
+  function edaSessionLikelyPresent(){
+    return keycloakStoragePresent();
+  }
+  function attemptEmbeddedSilentSignIn(msg, opts){
+    opts = opts || {};
+    bootDone();
+    authBootstrapComplete = true;
+    authReady = false;
+    stopSessionWatchers();
+    syncLiveIndicator();
+    hideAuthUser();
+    resetAuthFailStreak();
+    if(!opts.quiet) setAuthBanner("loading", "Signing in\u2026");
+    var likely = edaSessionLikelyPresent();
+    var slowMs = likely ? EMBEDDED_SLOW_HINT_MS : SIGNIN_SLOW_HINT_MS;
+    var ssoTimeout = likely ? EMBEDDED_EARLY_SSO_TIMEOUT_MS : SIGNIN_SILENT_SSO_TIMEOUT_MS;
+    var signInSlowTimer = setTimeout(function(){
+      if(!authReady) setAuthBanner("loading", "Signing in\u2026 still working");
+    }, slowMs);
+    var ssoPromise;
+    if(opts.reuseAttempt && embeddedSsoAttempt){
+      ssoPromise = embeddedSsoAttempt;
+    } else {
+      ssoPromise = runSilentSsoAndExchange(ssoTimeout, !!opts.force);
+      embeddedSsoAttempt = ssoPromise;
+    }
+    return ssoPromise.then(function(ok){
+      clearTimeout(signInSlowTimer);
+      embeddedSsoAttempt = null;
+      if(ok){
+        markFreshSignIn();
+        return finishConfigBootstrap();
+      }
+      showSignInBanner(msg || "Sign in to use Image Manager.");
+    }).catch(function(){
+      clearTimeout(signInSlowTimer);
+      embeddedSsoAttempt = null;
+      showSignInBanner(msg || "Sign in to use Image Manager.");
     });
   }
   function markFreshSignIn(){
@@ -1394,6 +1438,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function applyConfig401(){
     if(sessionInterruptBlocked()) return;
+    if(embedded && edaSessionLikelyPresent()){
+      attemptEmbeddedSilentSignIn("Your session has expired. Sign in again to continue.", { force: true });
+      return;
+    }
     var now = Date.now();
     if(!authFailCount) authFailFirstAt = now;
     authFailCount += 1;
@@ -1513,6 +1561,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(sustainedKcTimer){ clearTimeout(sustainedKcTimer); sustainedKcTimer = null; }
   }
   function beginOAuthSignIn(msg){
+    if(embedded && edaSessionLikelyPresent()){
+      return attemptEmbeddedSilentSignIn(msg || "Sign in to use Image Manager.", { force: true });
+    }
     bootDone();
     authBootstrapComplete = true;
     authReady = false;
@@ -1529,6 +1580,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function showConfirmedSessionLoss(msg){
     if(sessionInterruptBlocked()) return;
+    if(embedded && edaSessionLikelyPresent()){
+      attemptEmbeddedSilentSignIn(msg || "Your EDA session has ended. Sign in again to continue.", { force: true });
+      return;
+    }
     clearServerSession().then(function(){
       authReady = false;
       stopSessionWatchers();
@@ -1594,34 +1649,33 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       b.classList.add("hide");
     }
   }
-  function handleBootstrap401(){
+  function handleBootstrap401(opts){
+    opts = opts || {};
+    if(embedded){
+      return attemptEmbeddedSilentSignIn(
+        "Sign in to use Image Manager.",
+        { force: !!opts.force, reuseAttempt: !!opts.reuseAttempt, quiet: !!opts.quiet }
+      );
+    }
     bootDone();
     setAuthBanner("loading", "Signing in\u2026");
     var signInSlowTimer = setTimeout(function(){
       if(!authReady){
-        if(embedded){
-          showSignInBanner("Sign-in is taking longer than expected. Try again or sign in.");
-        } else {
-          setAuthBanner("loading", "Sign-in is taking longer than expected\u2026");
-        }
+        setAuthBanner("loading", "Sign-in is taking longer than expected\u2026");
       }
     }, SIGNIN_SLOW_HINT_MS);
-    runSilentSsoAndExchange(SIGNIN_SILENT_SSO_TIMEOUT_MS).then(function(ok){
+    runSilentSsoAndExchange(SIGNIN_SILENT_SSO_TIMEOUT_MS, !!opts.force).then(function(ok){
       clearTimeout(signInSlowTimer);
       if(ok){
         markFreshSignIn();
         return finishConfigBootstrap();
       }
-      if(!embedded){
-        loadKeycloakScript().then(function(){
-          ensureKeycloakInstance();
-          return keycloak.login({ redirectUri: loginRedirectUri() });
-        }).catch(function(){
-          beginOAuthSignIn("Sign in to use Image Manager.");
-        });
-        return;
-      }
-      beginOAuthSignIn("Sign in to use Image Manager.");
+      loadKeycloakScript().then(function(){
+        ensureKeycloakInstance();
+        return keycloak.login({ redirectUri: loginRedirectUri() });
+      }).catch(function(){
+        beginOAuthSignIn("Sign in to use Image Manager.");
+      });
     }).catch(function(){
       clearTimeout(signInSlowTimer);
       beginOAuthSignIn("Sign in to use Image Manager.");
@@ -2005,10 +2059,24 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       maybeBackgroundValidateSession(c);
     });
   }
-  function handleInitialConfigResponse(res){
+  function handleInitialConfigResponse(res, opts){
+    opts = opts || {};
     if(res.status === 401){
-      handleBootstrap401();
-      return;
+      if(opts.earlySso){
+        return opts.earlySso.then(function(ok){
+          embeddedSsoAttempt = null;
+          if(ok){
+            markFreshSignIn();
+            return finishConfigBootstrap();
+          }
+          return handleBootstrap401({ force: true });
+        });
+      }
+      return handleBootstrap401();
+    }
+    if(opts.earlySso){
+      embeddedSsoAttempt = null;
+      opts.earlySso.catch(function(){});
     }
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
     var c = res.body || {};
@@ -2021,17 +2089,24 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         err && err.message ? err.message : err);
       return null;
     });
+    var earlySso = null;
+    if(embedded && edaSessionLikelyPresent()){
+      bootDone();
+      setAuthBanner("loading", "Signing in\u2026");
+      earlySso = runSilentSsoAndExchange(EMBEDDED_EARLY_SSO_TIMEOUT_MS);
+      embeddedSsoAttempt = earlySso;
+    }
     if(hasKeycloakCallback()){
       return bootstrapKeycloakPrelude().then(function(exchanged){
         if(exchanged) markFreshSignIn();
         return fetchJson(api("/api/config"));
-      }).then(handleInitialConfigResponse);
+      }).then(function(res){ return handleInitialConfigResponse(res); });
     }
     return Promise.all([
       fetchJson(api("/api/config")),
       scriptPreload
     ]).then(function(results){
-      return handleInitialConfigResponse(results[0]);
+      return handleInitialConfigResponse(results[0], { earlySso: earlySso });
     });
   }
 

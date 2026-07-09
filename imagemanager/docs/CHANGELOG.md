@@ -1,5 +1,24 @@
 # Changelog
 
+## v0.1.45
+
+**Fix slow embedded EDA dashboard launch (iframe silent SSO).**
+
+- **Root cause:** In the EDA dashboard iframe, `beginOAuthSignIn()` and the 8s
+  `SIGNIN_SLOW_HINT_MS` timer showed an idle *Sign-in required* banner before and
+  during silent SSO. Standalone tabs auto-`keycloak.login()` on 401; embedded
+  stopped at the banner with no SSO until the user clicked. First iframe open also
+  lacked `im_session` (direct URL often had it from a prior visit), so bootstrap
+  hit the slow embedded branch every time.
+- **Fix:** New `attemptEmbeddedSilentSignIn()` runs `check-sso` + `POST /oauth/session`
+  immediately on 401 when `kc-*` localStorage signals an EDA session; keeps a
+  *Signing in…* loading state (not the idle banner) until SSO fails. Parallel
+  early SSO in `runConfigBootstrap()` when embedded + EDA session likely.
+  `beginOAuthSignIn`, `showConfirmedSessionLoss`, and `applyConfig401` use the
+  same fast path. Standalone 401 unchanged (silent SSO then `keycloak.login()`).
+- **Unchanged:** v0.1.44 config-first fast path for valid `im_session`, logout
+  reconcile, redirect URIs, bearer fallback.
+
 ## v0.1.44
 
 **Fix version badge lag + faster sign-in (401 / silent SSO path).**
