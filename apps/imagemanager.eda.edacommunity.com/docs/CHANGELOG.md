@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.1.41
+
+**Cable-map auth parity (v0.1.40 regression fix).**
+
+Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/auth.go`).
+
+- **Silent SSO:** Restore cable-map `silentCheckSsoRedirectUri` =
+  `apiBase + "/oauth/silent-check-sso.html"` (v0.1.40 wrongly used EDA `/`,
+  breaking the check-sso iframe callback).
+- **Redirect URIs:** `loginRedirectUri()` = app URL with OAuth params stripped
+  (cable-map `window.location.href` pattern) for `keycloak.init` / `keycloak.login`.
+- **Sign-in:** Interactive login uses `keycloak.login()` first; `/oauth/login`
+  (confidential `eda` client) only as fallback.
+- **Bootstrap:** Run `keycloak.init(check-sso)` before `GET /api/config`; standalone
+  tabs auto `keycloak.login()` after silent SSO fails (embedded shows banner only).
+- **checkLoginIframe:** Enabled in standalone tabs (`!embedded`), matching cable-map.
+- **Bearer fallback:** `/api/*` accepts live Keycloak bearer tokens when `im_session`
+  exchange lags (cable-map validates bearer on protected paths).
+- **Unchanged:** v0.1.39 bootstrap timeouts, v0.1.37 logout reconcile, no IDP cookie
+  gate on `verify_session`, concurrent uploads, URL import empty-state.
+
 ## v0.1.40
 
 **Fix Keycloak `redirect_uri` mismatch (invalid parameter) on sign-in.**

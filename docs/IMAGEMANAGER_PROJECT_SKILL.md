@@ -94,22 +94,29 @@ SR-SIM registry redirect) inside an EDA cluster.
 
 ## Auth / SSO (cable-map aligned, v0.1.37+)
 
+Reference: `eda-labs/catalog` cable-map (`ghcr.io/eda-labs/cable-map:v0.2.x`),
+OCI binary `internal/server/auth.go` + embedded SPA (keycloak-js 26.x).
+
 Session model matches cable-map:
 
 1. EDA Keycloak browser session (identity proxy `/core/proxy/v1/identity`)
-2. SPA: `keycloak-js` public client `auth` + same-origin `silent-check-sso.html`
-3. `POST /oauth/session` — bearer token → JWKS + Keycloak userinfo validation → `im_session` cookie
-4. `/api/*` gated on `im_session`; shell (`GET /`) loads without cookie
-5. Bootstrap: when `/api/config` returns 200, `keycloak-js` `check-sso` must confirm a live
-   EDA session before `onAuthReady` (stale 8h `im_session` alone is not enough)
-6. EDA logout: periodic `reconcileAuthState` (3s, including hidden tabs) uses `check-sso`
-   plus identity probes; clears `im_session` server-side on failure
-7. Server `/oauth/login` (confidential `eda` client) remains as OIDC fallback
+2. SPA: `keycloak-js` public client `auth`, `silentCheckSsoRedirectUri` at
+   `{apiBase}/oauth/silent-check-sso.html` (same-origin asset, CSP `script-src 'self'`)
+3. `keycloak.init` / `keycloak.login` use `loginRedirectUri()` = current app URL
+   with OAuth query noise stripped (cable-map `window.location.href` pattern)
+4. `checkLoginIframe: true` in standalone tabs; disabled in EDA iframe embed
+5. `POST /oauth/session` — bearer token → JWKS + Keycloak userinfo → `im_session` cookie
+   (IM extension; cable-map v0.2.0 validates bearer directly on `/api/*`)
+6. `/api/*` also accepts live Keycloak bearer tokens when cookie exchange lags
+7. Server `/oauth/login` (confidential `eda` client) remains OIDC fallback after
+   `keycloak.login()` failure
+8. Bootstrap: `check-sso` before `GET /api/config`; stale `im_session` cleared when
+   `check-sso` returns false; v0.1.39 timeout guards prevent infinite *Checking session…*
+9. EDA logout: `reconcileAuthState` (3s) uses `check-sso` + identity probes
 
-Do **not** require identity-proxy cookies in `auth.verify_session` (scoped to
-`/core/proxy/v1/identity`, not the httpproxy path). Do **not** fail bootstrap
-solely on inconclusive identity probes (403) — trust `keycloak.authenticated`
-from `check-sso` to avoid the v0.1.35 OAuth loop.
+Do **not** require identity-proxy cookies in `auth.verify_session`. Do **not** fail
+bootstrap solely on inconclusive identity probes (403) — trust `keycloak.authenticated`
+from `check-sso` when it returns true.
 
 ## Workflow expectations
 

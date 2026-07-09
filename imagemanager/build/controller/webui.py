@@ -1005,16 +1005,25 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function keycloakIdentityUrl(){
     return window.location.origin + "/core/proxy/v1/identity";
   }
-  function edaRootRedirectUri(){
-    // Public Keycloak client "auth" only accepts the EDA GUI root (not imagemanager
-    // paths). Same pattern as probeEdaOidcSilent (v0.1.35) and cable-map SSO.
-    return window.location.origin + "/";
+  function stripOAuthQueryParams(url){
+    try {
+      var u = new URL(url || window.location.href);
+      ["code","state","session_state","iss"].forEach(function(k){ u.searchParams.delete(k); });
+      return u.href;
+    } catch(e){
+      return window.location.origin + apiBase + "/";
+    }
+  }
+  function loginRedirectUri(){
+    // Cable-map: keycloak.login/init use the app URL (OAuth noise stripped).
+    return stripOAuthQueryParams(window.location.href);
   }
   function silentCheckSsoUri(){
-    return edaRootRedirectUri();
+    // Cable-map: same-origin silent-check-sso.html under the httpproxy path.
+    return apiBase + "/oauth/silent-check-sso.html";
   }
   function keycloakRedirectUri(){
-    return edaRootRedirectUri();
+    return loginRedirectUri();
   }
   function hasKeycloakCallback(){
     var q = window.location.search || "";
@@ -1070,7 +1079,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         keycloak.init({
           onLoad: opts.onLoad || "check-sso",
           silentCheckSsoRedirectUri: silentCheckSsoUri(),
-          checkLoginIframe: false,
+          checkLoginIframe: !embedded,
           pkceMethod: "S256",
           redirectUri: keycloakRedirectUri()
         }),
@@ -1134,16 +1143,37 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       return false;
     });
   }
+  function authHeaders(extra){
+    var h = Object.assign({}, extra || {});
+    if(keycloak && keycloak.token){
+      h["Authorization"] = "Bearer " + keycloak.token;
+    }
+    return h;
+  }
+  function withAuth(opts){
+    opts = opts || {};
+    opts.headers = authHeaders(opts.headers);
+    if(!opts.credentials) opts.credentials = "same-origin";
+    return opts;
+  }
+  function applyXhrAuth(xhr){
+    if(keycloak && keycloak.token){
+      xhr.setRequestHeader("Authorization", "Bearer " + keycloak.token);
+    }
+  }
   function startKeycloakLogin(){
     setAuthBanner("loading", "Signing in\u2026");
-    // Interactive sign-in uses the confidential "eda" client via /oauth/login
-    // (imagemanager callback). keycloak.login() with the auth client would only
-    // accept EDA-root redirect_uri and strand the user on the EDA home page.
-    redirectToOAuthLogin();
+    // Cable-map: keycloak.login with app redirect_uri (instant when EDA session exists).
+    loadKeycloakScript().then(function(){
+      ensureKeycloakInstance();
+      return keycloak.login({ redirectUri: loginRedirectUri() });
+    }).catch(function(err){
+      console.warn("keycloak.login failed:", err && err.message ? err.message : err);
+      redirectToOAuthLogin();
+    });
   }
   function fetchJson(url, opts){
-    opts = opts || {};
-    if(!opts.credentials) opts.credentials = "same-origin";
+    opts = withAuth(opts || {});
     if(!opts.cache && (!opts.method || String(opts.method).toUpperCase() === "GET")){
       opts.cache = "no-store";
     }
@@ -1514,7 +1544,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function uploadKeepaliveTick(){
     if(!uploadInFlight() || !authBootstrapComplete || document.hidden) return;
-    fetch(api("/api/config"), FETCH_OPTS).then(function(r){
+    fetch(api("/api/config"), withAuth({ cache: "no-store" })).then(function(r){
       if(r.status === 200){
         return r.json().then(function(c){ applyConfigOk(c && c.user); }).catch(function(){});
       }
@@ -1553,6 +1583,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     setAuthBanner("loading", "Signing in\u2026");
     runSilentSsoAndExchange().then(function(ok){
       if(ok) return finishConfigBootstrap();
+      if(!embedded){
+        loadKeycloakScript().then(function(){
+          ensureKeycloakInstance();
+          return keycloak.login({ redirectUri: loginRedirectUri() });
+        }).catch(function(){
+          beginOAuthSignIn("Sign in to use Image Manager.");
+        });
+        return;
+      }
       beginOAuthSignIn("Sign in to use Image Manager.");
     }).catch(function(){
       beginOAuthSignIn("Sign in to use Image Manager.");
@@ -1871,11 +1910,20 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     });
   }
 
-  // ---------- config + namespaces ----------
-  (hasKeycloakCallback()
-    ? runSilentSsoAndExchange()
-    : Promise.resolve(false)
-  ).then(function(){
+  // ---------- config + namespaces (cable-map: keycloak check-sso before API) ----------
+  loadKeycloakScript().then(function(){
+    if(hasKeycloakCallback()){
+      return initKeycloak({ onLoad: "login-required", force: true }).then(function(){
+        return exchangeKeycloakSession();
+      });
+    }
+    return initKeycloak({ onLoad: "check-sso" }).then(function(authenticated){
+      if(authenticated && keycloak && keycloak.token){
+        return exchangeKeycloakSession();
+      }
+      return null;
+    });
+  }).then(function(){
     return fetchJson(api("/api/config"));
   }).then(function(res){
     if(res.status === 401){
@@ -1924,6 +1972,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     var xhr=new XMLHttpRequest();
     xhr.open("POST", api("/api/license")+"?"+qs.toString());
     xhr.setRequestHeader("Content-Type","text/plain; charset=utf-8");
+    applyXhrAuth(xhr);
     xhr.onload=function(){ var r={}; try{ r=JSON.parse(xhr.responseText); }catch(e){}
       if(xhr.status>=200 && xhr.status<300 && r.ok){
         var warn=r.mismatch?(" Note: that key looks like a "+(r.licenseNos||"different")+
@@ -1948,6 +1997,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     var xhr=new XMLHttpRequest();
     xhr.open("POST", url);
     xhr.withCredentials = true;
+    applyXhrAuth(xhr);
     xhr.timeout = UPLOAD_XHR_TIMEOUT_MS;
     var startT=Date.now();
     xhr.upload.onprogress=function(e){
@@ -2353,7 +2403,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(t && t.license){ bullets.splice(1, 0, 'Also deletes the license ConfigMap <span class="mono">'+esc(t.license)+'</span> from <span class="mono">eda-system</span>.'); }
     askDelete(lead, bullets, function(){
       var qs=new URLSearchParams({uploadId:uid||"", namespace:nsv||"", name:name||""});
-      fetch(api("/api/delete")+"?"+qs.toString(), {method:"POST"})
+      fetch(api("/api/delete")+"?"+qs.toString(), withAuth({method:"POST"}))
         .then(function(r){return r.json();})
         .then(function(d){ if(d && d.ok){ snack("ok","Deleted "+label+"."); refresh(); }
                            else { snack("err","Delete failed: "+((d&&d.error)||"unknown"), true); } })

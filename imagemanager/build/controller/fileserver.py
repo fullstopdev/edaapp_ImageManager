@@ -219,10 +219,23 @@ class Handler(BaseHTTPRequestHandler):
         With auth disabled (local dev), returns a placeholder user."""
         if not auth.enabled():
             return "local"
-        return auth.verify_session(
+        user = auth.verify_session(
             self._cookie(auth.SESSION_COOKIE),
             self.headers.get("Cookie", ""),
         )
+        if user:
+            return user
+        # Cable-map parity: accept live Keycloak bearer tokens on /api/* when
+        # the browser has a token but im_session exchange has not completed.
+        auth_hdr = self.headers.get("Authorization", "")
+        if auth_hdr.startswith("Bearer "):
+            access = auth_hdr[7:].strip()
+            bearer_user, roles = auth.bearer_token_identity(access)
+            if (bearer_user
+                    and auth.validate_bearer_token_active(access)
+                    and auth.is_allowed(roles)):
+                return bearer_user
+        return None
 
     def _set_cookie(self, name, value, max_age):
         parts = [f"{name}={value}", f"Path={auth.APP_PROXY_PREFIX}",
