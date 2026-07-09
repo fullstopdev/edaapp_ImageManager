@@ -30,7 +30,7 @@ spec:
         fsGroupChangePolicy: OnRootMismatch
       containers:
         - name: imagemanager-controller
-          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.1.45
+          image: ghcr.io/fullstopdev/edaapp_imagemanager/imagemanager-controller:v0.1.46
           imagePullPolicy: IfNotPresent
           env:
             - name: POD_NAMESPACE
@@ -85,7 +85,7 @@ spec:
             - name: serving-cert
               mountPath: /var/run/eda/tls/serving
               readOnly: true
-            # EDK/state-aggregator mTLS (cable-map pattern) for launcher app status rows.
+            # EDK/state-aggregator mTLS for launcher app status rows.
             - name: internal-tls
               mountPath: /var/run/eda/tls/internal/client
               readOnly: true

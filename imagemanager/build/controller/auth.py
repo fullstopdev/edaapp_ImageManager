@@ -51,7 +51,7 @@ logger = logging.getLogger("auth")
 POD_NAMESPACE = os.environ.get("POD_NAMESPACE", "eda-system")
 REALM = "eda"
 CLIENT_ID = "eda"
-# Public browser client for RP-initiated logout (same as EDA GUI / cable-map).
+# Public browser client for RP-initiated logout (same as EDA GUI).
 BROWSER_CLIENT_ID = "auth"
 # Browser-facing authorize URL goes through EDA's identity proxy — the SAME
 # Keycloak base the EDA GUI logs in through — so an already-logged-in EDA user

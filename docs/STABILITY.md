@@ -1,6 +1,6 @@
 # Image Manager stability notes
 
-Research and fixes: 2026-07-01. Reference app: **cable-map** (`ghcr.io/eda-labs/cable-map:v0.2.2`).
+Research and fixes: 2026-07-01. Reference: standard EDA catalog app patterns.
 
 ## What was going wrong
 
@@ -24,7 +24,7 @@ Research and fixes: 2026-07-01. Reference app: **cable-map** (`ghcr.io/eda-labs/
 | Reconcile storm / API hammering | 30s loop + unconditional status PUT + 5s UI polling listing all Artifacts | **v0.0.7** |
 | Upload UI stalls during URL import | `imports.reconcile()` ran synchronously in main loop (large downloads) | **v0.0.7** |
 | Node-agent touches every node every 60s | DaemonSet required for SR-SIM only; frequent resync | **v0.0.7** (optional / slower) |
-| Brief proxy outage on upgrade | `Recreate` + RWO PVC (required — two pods cannot mount the claim) | Documented; cable-map uses same pattern |
+| Brief proxy outage on upgrade | `Recreate` + RWO PVC (required — two pods cannot mount the claim) | Documented; expected with RWO + Recreate |
 
 Observed on the lab cluster (2026-07-01): no OOM kills; controller reconcile ~120–250ms/cycle at v0.0.4; repeated pod `Killing` events during upgrades are expected with `Recreate`.
 
@@ -42,7 +42,7 @@ Observed on the lab cluster (2026-07-01): no OOM kills; controller reconcile ~12
    ```bash
    kubectl delete daemonset eda-imagemanager-node-agent -n eda-system --ignore-not-found
    ```
-7. **Resource limits** — unchanged from v0.0.3+ (controller 256Mi/512Mi; node-agent 32Mi/128Mi), aligned with cable-map discipline.
+7. **Resource limits** — unchanged from v0.0.3+ (controller 256Mi/512Mi; node-agent 32Mi/128Mi), aligned with EDA catalog discipline.
 
 ## v0.0.9 mitigations
 
@@ -52,21 +52,24 @@ Observed on the lab cluster (2026-07-01): no OOM kills; controller reconcile ~12
 4. **Deferred launcher sync** — skip `ImageManagerArtifact` CR sync for **5m** when there are no uploads (`LAUNCHER_SYNC_GRACE_SECONDS`).
 5. **Node-agent init** — DaemonSet init container waits for controller `/healthz` before writing containerd redirects.
 
-## Cable-map vs Image Manager (complexity)
+## Image Manager footprint (v0.0.7)
 
-| Area | Cable Map v0.2.2 | Image Manager v0.0.7 |
-|------|------------------|----------------------|
-| Controller | Go operator (single binary) | Python controller (stdlib + threads) |
-| CRDs | None | 3 (Config, Import, Artifact mirror) |
-| Extra workloads | None | Optional DaemonSet (SR-SIM registry redirect) |
-| Storage | None | 20Gi RWO PVC |
-| Pod count | 1 | 1 + 1/node (or 0 if DS scaled down) |
-| Deployment strategy | Recreate | Recreate (PVC-bound) |
-| Probes | HTTP `/healthz` 5s/10s | HTTPS `/healthz` 5s/10s |
-| Reconcile | Operator watch + periodic | Poll every 60s |
-| Host filesystem | None | `hostPath` containerd config (node-agent only) |
+| Area | Image Manager v0.0.7 |
+|------|----------------------|
+| Controller | Python controller (stdlib + threads) |
+| CRDs | 3 (Config, Import, Artifact mirror) |
+| Extra workloads | Optional DaemonSet (SR-SIM registry redirect) |
+| Storage | 20Gi RWO PVC |
+| Pod count | 1 + 1/node (or 0 if DS scaled down) |
+| Deployment strategy | Recreate (PVC-bound) |
+| Probes | HTTPS `/healthz` 5s/10s |
+| Reconcile | Poll every 60s |
+| Host filesystem | `hostPath` containerd config (node-agent only) |
 
-Image Manager is intentionally heavier (upload store + artifact orchestration + optional node registry redirect). v0.0.7 keeps that scope but reduces API churn and makes the DaemonSet optional for labs that only upload SR Linux / SR OS hardware images.
+Image Manager is intentionally heavier than minimal catalog apps (upload store +
+artifact orchestration + optional node registry redirect). v0.0.7 keeps that scope
+but reduces API churn and makes the DaemonSet optional for labs that only upload
+SR Linux / SR OS hardware images.
 
 ## Graceful shutdown (verify)
 

@@ -8,21 +8,16 @@ prefer smaller diffs.
 Context for whoever runs this: this is a Nokia EDA application (Python
 stdlib-only controller + a single-file HTML/CSS/JS web UI) that lets users
 upload SR Linux / SR OS / SR-SIM vendor images through a browser and turns
-them into EDA `Artifact` CRs. Reference sibling app for UI/UX parity is
-`cable-map` (`ghcr.io/eda-labs/cable-map:v0.2.2`). Read
-`docs/CABLE-MAP-UI-COMPARISON.md` and `docs/STABILITY.md` before starting —
-they document real incidents already fixed and should not be re-litigated.
+them into EDA `Artifact` CRs. Read `docs/STABILITY.md` before starting —
+it documents real incidents already fixed and should not be re-litigated.
 
 ---
 
 ## 0. Housekeeping before touching code
 
-1. `docs/CABLE-MAP-UI-COMPARISON.md` section 4/6 still says the
-   `imagemanager-viewer` ClusterRole and the cable-map-style dashboard JSON
-   are "missing." Both now exist (`imagemanager/manifests/eda_viewer_role.yaml`,
-   `imagemanager/ui/imagemanager-dashboard.json`). Update that doc to say
-   "done in vX.Y.Z" instead of "missing," so it stops reading as an open
-   action item to the next person/session.
+1. Confirm `imagemanager-viewer` ClusterRole and `imagemanager-dashboard.json`
+   match current EDA launcher conventions (`imagemanager/manifests/eda_viewer_role.yaml`,
+   `imagemanager/ui/imagemanager-dashboard.json`).
 2. Confirm `imagemanager/manifest.yaml` `spec.image` tag, `pyproject.toml`
    version, and the dashboard JSON's `version`/`lastChanged` are all bumped
    together before any release — add a one-line pre-publish checklist item
@@ -169,8 +164,7 @@ do *after* section 1's tests exist, so the refactor has a safety net.
 
 1. Once section 1 lands, add a "Running the tests" section to `README.md`
    (`pip install -e . --group dev && pytest imagemanager/build/controller`).
-2. Update `docs/CABLE-MAP-UI-COMPARISON.md` per item 0.1 above.
-3. `CHANGES-imageimport.md` and `imagemanager/docs/CHANGELOG.md` — confirm
+2. `CHANGES-imageimport.md` and `imagemanager/docs/CHANGELOG.md` — confirm
    there's exactly one changelog of record; having both risks drift. If
    `CHANGES-imageimport.md` is legacy, fold its still-relevant history into
    the CHANGELOG and mark it archived at the top rather than deleting

@@ -38,7 +38,7 @@ import k8s
 import nodeagent
 import uploads
 
-VERSION = "v0.1.45"
+VERSION = "v0.1.46"
 UPLOAD_DIR = "/data/uploads"
 TLS_CRT = "/var/run/eda/tls/serving/tls.crt"
 PORT = 8443
@@ -316,11 +316,10 @@ def _update_status(health, message, tracked):
 
 
 def _artifact_watch_loop():
-    """Event-driven dashboard sync (cable-map/EDK parity).
+    """Event-driven dashboard sync (EDK parity).
 
-    EDK apps like cable-map never poll: the runtime streams CR changes to
-    them and they publish state DB rows the moment something changes. Our
-    stdlib equivalent is a cluster-wide K8s watch on the Artifact CRs this
+    EDK catalog apps stream CR changes from the runtime and publish state DB
+    rows the moment something changes. Our stdlib equivalent is a cluster-wide K8s watch on the Artifact CRs this
     app manages — the API server pushes ADDED/MODIFIED/DELETED the instant
     eda-asvr updates a download status or a CR is created/removed (from the
     app, kubectl, anywhere). Each event drops the tracked-list cache and

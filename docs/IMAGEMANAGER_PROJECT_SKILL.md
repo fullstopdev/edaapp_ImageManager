@@ -43,11 +43,6 @@ SR-SIM registry redirect) inside an EDA cluster.
   Nokia EDA app repos (not imagemanager-specific), with real
   `test_*.py` unit test coverage already in place. This is the style to
   match when adding tests under `imagemanager/build/controller/`.
-- `docs/CABLE-MAP-UI-COMPARISON.md` — a point-in-time (2026-07-01)
-  research doc comparing this app's launcher/dashboard/HttpProxy pattern
-  against the reference sibling app `cable-map`. Treat it as history, not
-  a live spec — check current manifests before assuming something in it
-  is still true.
 - `docs/STABILITY.md` — incident log + fixes (install/uninstall races,
   reconcile storms, node-agent teardown). Read before touching
   `main.py`'s reconcile loop, `nodeagent.py`, or any RBAC/manifest file —
@@ -69,11 +64,10 @@ SR-SIM registry redirect) inside an EDA cluster.
   string into a few composed constants for reviewability is fine and
   encouraged; adding a JS framework/build step is not, unless explicitly
   requested.
-- **Cable-map is the UI/UX and manifest reference**, not a library to
-  import from. When something looks inconsistent between this app and
-  cable-map (dashboard JSON shape, HttpProxy setup, ClusterRole shape),
-  check the *current* cable-map OCI image/catalog before assuming the
-  comparison doc is still accurate — it may already have been reconciled.
+- **EDA launcher conventions** — dashboard JSON (`flexRow` → `dashletDataView`),
+  HttpProxy routing, and `imagemanager-viewer` ClusterRole should match
+  current EDA catalog patterns. Check live manifests and sibling apps in
+  the catalog before changing launcher shape.
 - **`edabuilder create`/`generate` own `imagemanager/api/**/pysrc/`.**
   Regenerate, don't hand-edit, when the underlying `_types.go` changes.
 - **Versioning discipline on release:** `imagemanager/manifest.yaml`
@@ -92,21 +86,20 @@ SR-SIM registry redirect) inside an EDA cluster.
   not a prose description of the change, matching how this project has
   been worked on so far.
 
-## Auth / SSO (cable-map aligned, v0.1.37+)
+## Auth / SSO (v0.1.37+)
 
-Reference: `eda-labs/catalog` cable-map (`ghcr.io/eda-labs/cable-map:v0.2.x`),
-OCI binary `internal/server/auth.go` + embedded SPA (keycloak-js 26.x).
+Image Manager uses the standard EDA silent SSO stack: embedded SPA with
+`keycloak-js` 26.x, public browser client `auth`, and server-side OIDC fallback.
 
-Session model matches cable-map:
+Session model:
 
 1. EDA Keycloak browser session (identity proxy `/core/proxy/v1/identity`)
 2. SPA: `keycloak-js` public client `auth`, `silentCheckSsoRedirectUri` at
    `{apiBase}/oauth/silent-check-sso.html` (same-origin asset, CSP `script-src 'self'`)
 3. `keycloak.init` / `keycloak.login` use `loginRedirectUri()` = current app URL
-   with OAuth query noise stripped (cable-map `window.location.href` pattern)
+   with OAuth query noise stripped
 4. `checkLoginIframe: true` in standalone tabs; disabled in EDA iframe embed
 5. `POST /oauth/session` — bearer token → JWKS + Keycloak userinfo → `im_session` cookie
-   (IM extension; cable-map v0.2.0 validates bearer directly on `/api/*`)
 6. `/api/*` also accepts live Keycloak bearer tokens when cookie exchange lags
 7. Server `/oauth/login` (confidential `eda` client) remains OIDC fallback after
    `keycloak.login()` failure

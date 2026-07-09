@@ -131,8 +131,7 @@ spec:
                       description: Namespace is the Artifact CR namespace.
                       type: string
                     open:
-                      description: Open is the launcher dashlet View link label (cable-map
-                        parity).
+                      description: Open is the launcher dashlet View link label.
                       type: string
                     repo:
                       description: Repo is the artifact repo.
@@ -170,8 +169,7 @@ spec:
                   health state.
                 type: string
               open:
-                description: Open is the launcher dashlet View link label (cable-map
-                  parity).
+                description: Open is the launcher dashlet View link label.
                 type: string
               uploadsStored:
                 description: UploadsStored is the number of upload files currently

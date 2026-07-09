@@ -1,11 +1,11 @@
 """Self-contained Image Manager web UI (no external assets), served at GET /.
 
 Unified single-page app, dashboard-first: Dashboard (KPIs + live artifact
-status) | Upload | URL Import | Settings. Cable-map / Nokia EDA design
+status) | Upload | URL Import | Settings. Nokia EDA design
 language: dark/light theme, Nokia logo + single EDA-style app bar, KPI overview cards,
 adaptive live polling (2s burst for 2 min after upload, 4s while work is in
 flight, 12s at rest, paused when the tab is hidden). Sign-in follows the
-cable-map pattern: keycloak-js public client `auth` + same-origin silent SSO,
+EDA silent SSO pattern: keycloak-js public client `auth` + same-origin silent SSO,
 token exchange to an HTTP-only `im_session` cookie, with server OIDC
 (`/oauth/login`) as fallback. Role gating via ALLOWED_ROLES (EDA ClusterRole).
 Sign out clears the local session and ends the EDA Keycloak session.
@@ -106,7 +106,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   @keyframes tabIn { from { opacity:.88; } to { opacity:1; } }
   @keyframes chipPulse { 0%,100%{transform:scale(1)} 50%{transform:scale(1.04)} }
 
-  /* AppBar — single EDA / cable-map style top bar */
+  /* AppBar — single EDA-style top bar */
   .appbar {
     position:sticky; top:0; z-index:30; height:52px; padding:0 20px;
     background:color-mix(in srgb, var(--chrome-top-bg) 92%, transparent);
@@ -563,7 +563,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .status-grid { display:grid; gap:16px; }
   @media (min-width:900px){ .status-grid { grid-template-columns:1fr; } }
 
-  /* KPI overview cards (dashboard-first, cable-map style) */
+  /* KPI overview cards (dashboard-first, EDA style) */
   .kpi-grid {
     display:grid; grid-template-columns:repeat(4, minmax(0,1fr)); gap:14px; margin-bottom:20px;
   }
@@ -1022,11 +1022,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
   }
   function loginRedirectUri(){
-    // Cable-map: keycloak.login/init use the app URL (OAuth noise stripped).
+    // keycloak.login/init use the app URL (OAuth noise stripped).
     return stripOAuthQueryParams(window.location.href);
   }
   function silentCheckSsoUri(){
-    // Cable-map: same-origin silent-check-sso.html under the httpproxy path.
+    // Same-origin silent-check-sso.html under the httpproxy path.
     return apiBase + "/oauth/silent-check-sso.html";
   }
   function keycloakRedirectUri(){
@@ -1223,7 +1223,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function startKeycloakLogin(){
     setAuthBanner("loading", "Signing in\u2026");
-    // Cable-map: keycloak.login with app redirect_uri (instant when EDA session exists).
+    // keycloak.login with app redirect_uri (instant when EDA session exists).
     loadKeycloakScript().then(function(){
       ensureKeycloakInstance();
       return keycloak.login({ redirectUri: loginRedirectUri() });
@@ -1245,7 +1245,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var maxBytes = 4096*1024*1024;
   var pendingUploads = {}, uploadSeq = 0;
   var el = function(id){ return document.getElementById(id); };
-  // External-launcher (cable-map) opens the SPA in its own tab; iframe embed is an edge case.
+  // External launcher opens the SPA in its own tab; iframe embed is an edge case.
   // Same-origin tabs share localStorage — kc-* watchers detect EDA logout in both modes.
   var embedded = window.self !== window.top;
   var authBootstrapComplete = false;
@@ -1970,7 +1970,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     return "Failed to load Image Manager configuration.";
   }
   function bootstrapKeycloakPrelude(){
-    // OAuth callback only: exchange code before /api/config (cable-map login-required).
+    // OAuth callback only: exchange code before /api/config (login-required).
     return loadKeycloakScript().then(function(){
       return initKeycloak({ onLoad: "login-required", force: true }).then(function(authenticated){
         if(!authenticated) return false;

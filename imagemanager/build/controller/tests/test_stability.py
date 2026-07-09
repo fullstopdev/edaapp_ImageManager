@@ -71,7 +71,7 @@ def test_node_agent_daemonset_labels_and_teardown():
 
 
 def test_imagemanager_viewer_clusterrole_exists():
-    """Cable-map parity: imagemanager-viewer ClusterRole with HttpProxy urlRules."""
+    """imagemanager-viewer ClusterRole with HttpProxy urlRules."""
     repo_root = Path(__file__).resolve().parents[4]
     text = (repo_root / "imagemanager" / "manifests" / "eda_viewer_role.yaml").read_text()
     assert "name: imagemanager-viewer" in text

@@ -1,6 +1,6 @@
 // status-publisher writes Image Manager launcher rows to the EDA state DB
 // (.cluster.apps.imagemanager.{app,status}) over a persistent StateDbUpdate
-// stream, matching cable-map / EDK dbStreamHandler.
+// stream, matching EDK dbStreamHandler.
 //
 // KEY AGGREGATOR SEMANTICS (verified against a live eda-sa):
 //   - Rows are EPHEMERAL, scoped to the publishing stream: when the stream

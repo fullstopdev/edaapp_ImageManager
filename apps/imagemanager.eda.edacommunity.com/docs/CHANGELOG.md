@@ -1,5 +1,15 @@
 # Changelog
 
+## v0.1.46
+
+**Remove cable-map references from docs and comments.**
+
+- Docs, code comments, CRD/OpenAPI descriptions, and stability notes no longer
+  cite cable-map; auth behavior unchanged (keycloak-js silent SSO, token
+  exchange, embedded launcher).
+- Deleted `docs/CABLE-MAP-UI-COMPARISON.md` and `docs/CABLE-MAP-ARCHITECTURE.md`.
+- Rewrote `IMAGEMANAGER_PROJECT_SKILL.md` auth section for Image Manager only.
+
 ## v0.1.45
 
 **Fix slow embedded EDA dashboard launch (iframe silent SSO).**
@@ -35,7 +45,7 @@
   `POST /oauth/session` or OAuth callback prelude; 401 path uses a tighter silent-SSO
   budget; slow sign-in shows actionable banner after 8s instead of indefinite
   *Signing in…*.
-- **Unchanged:** v0.1.43 config-first fast path for valid `im_session`, cable-map
+- **Unchanged:** v0.1.43 config-first fast path for valid `im_session`, EDA catalog
   SSO, logout reconcile, redirect URIs, bearer fallback.
 
 ## v0.1.43
@@ -52,7 +62,7 @@
   `validateBootstrapSession()` runs in background (brief *Checking session…* only after
   600ms). Keycloak prelude limited to OAuth callback (`login-required`) only. 401 path
   unchanged (`handleBootstrap401` silent SSO). Keycloak init failure still non-fatal.
-- **Unchanged:** cable-map SSO on no session, logout reconcile (v0.1.37+), redirect URIs,
+- **Unchanged:** keycloak-js SSO on no session, logout reconcile (v0.1.37+), redirect URIs,
   bearer fallback, embedded sign-in banner.
 
 ## v0.1.42
@@ -64,7 +74,7 @@
   `redirect_uri` errors rejected the chain before `/api/config` ran, showing
   *Failed to load Image Manager configuration.* via `showFatal()` — the shell never
   reached `bootDone()` + sign-in banner or `onAuthReady`.
-- **Fix:** New `bootstrapKeycloakPrelude()` attempts cable-map check-sso + token
+- **Fix:** New `bootstrapKeycloakPrelude()` attempts keycloak-js check-sso + token
   exchange first but catches all failures and continues to `/api/config`. OAuth /
   silent-SSO fallback (`handleBootstrap401`) still runs on 401. HTTP 5xx / network
   errors now show actionable messages instead of the generic fatal string.
@@ -73,22 +83,20 @@
 
 ## v0.1.41
 
-**Cable-map auth parity (v0.1.40 regression fix).**
+**Fix auth regression (v0.1.40).**
 
-Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/auth.go`).
-
-- **Silent SSO:** Restore cable-map `silentCheckSsoRedirectUri` =
+- **Silent SSO:** Restore `silentCheckSsoRedirectUri` =
   `apiBase + "/oauth/silent-check-sso.html"` (v0.1.40 wrongly used EDA `/`,
   breaking the check-sso iframe callback).
 - **Redirect URIs:** `loginRedirectUri()` = app URL with OAuth params stripped
-  (cable-map `window.location.href` pattern) for `keycloak.init` / `keycloak.login`.
+  (app URL with OAuth params stripped) for `keycloak.init` / `keycloak.login`.
 - **Sign-in:** Interactive login uses `keycloak.login()` first; `/oauth/login`
   (confidential `eda` client) only as fallback.
 - **Bootstrap:** Run `keycloak.init(check-sso)` before `GET /api/config`; standalone
   tabs auto `keycloak.login()` after silent SSO fails (embedded shows banner only).
-- **checkLoginIframe:** Enabled in standalone tabs (`!embedded`), matching cable-map.
+- **checkLoginIframe:** Enabled in standalone tabs (`!embedded`), enabled in standalone tabs.
 - **Bearer fallback:** `/api/*` accepts live Keycloak bearer tokens when `im_session`
-  exchange lags (cable-map validates bearer on protected paths).
+  exchange lags (validates bearer on protected paths).
 - **Unchanged:** v0.1.39 bootstrap timeouts, v0.1.37 logout reconcile, no IDP cookie
   gate on `verify_session`, concurrent uploads, URL import empty-state.
 
@@ -123,7 +131,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
   verify `window.Keycloak` after load, log failures to console. On timeout or
   `authenticated === false`: fall through identity-probe fallback (v0.1.37) then
   `handleBootstrap401()` / embedded sign-in banner (never infinite spinner).
-- **Unchanged:** Cable-map SSO when it works, v0.1.37 logout reconcile,
+- **Unchanged:** Keycloak-js SSO when it works, v0.1.37 logout reconcile,
   v0.1.38 UMD keycloak build, embedded no `window.top` hijack.
 
 ## v0.1.38
@@ -134,7 +142,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
   (`export default class Keycloak`) as `/assets/keycloak.min.js`, but `loadKeycloakScript()`
   injects a plain `<script src>` tag expecting global `window.Keycloak`.
 - **Fix:** Replace with a Rollup UMD build of `keycloak-js` 26.2.4 that exposes
-  `window.Keycloak` for the self-contained SPA. Cable-map SSO flow unchanged
+  `window.Keycloak` for the self-contained SPA. Keycloak-js SSO flow unchanged
   (silent check-sso, `POST /oauth/session`, v0.1.37 logout reconcile).
 
 ## v0.1.37
@@ -153,14 +161,14 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
   focus/pageshow trigger immediate reconcile; 3s interval unchanged (runs when tab hidden).
 - **Server:** `POST /oauth/session` calls Keycloak userinfo after JWKS validation —
   rejects inactive sessions with 401.
-- **Unchanged:** Cable-map silent SSO pattern, no IDP cookie gate on `verify_session`,
+- **Unchanged:** EDA catalog silent SSO pattern, no IDP cookie gate on `verify_session`,
   embedded sign-in banner, concurrent uploads, URL import empty-state.
 
 ## v0.1.36
 
-**Cable-map SSO parity: keycloak-js silent SSO + token exchange.**
+**keycloak-js silent SSO + token exchange.**
 
-- **Auth model (Option A):** Restore cable-map pattern — bundle `keycloak-js` 26.2.4
+- **Auth model (Option A):** Restore EDA SSO pattern — bundle `keycloak-js` 26.2.4
   as `/assets/keycloak.min.js`, serve same-origin `/oauth/silent-check-sso.html`
   (CSP `script-src 'self'`), and add `POST /oauth/session` to exchange a
   Keycloak public-client (`auth`) bearer token for the HTTP-only `im_session`
@@ -187,7 +195,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
   only for `client_id=eda`), so it often returned `false` even for logged-in EDA users.
   `onIdentityProbeFailed()` then cleared the freshly minted `im_session` and restarted
   OAuth → infinite refresh loop.
-- **Fix (kkayhan / cable-map pattern):** Bootstrap trusts server session only —
+- **Fix (kkayhan / EDA SSO pattern):** Bootstrap trusts server session only —
   `/api/config` 200 + user → `onAuthReady` with no identity probe. Identity probes
   run only in `reconcileAuthState()` when `authReady` (active session) to detect EDA
   logout. Silent OIDC probe now uses EDA `/` as `redirect_uri` for the public `auth`
@@ -234,7 +242,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
 
 ## v0.1.32
 
-**Cable-map auth parity: bootstrap identity probe, 3s revalidation, EDA login redirect.**
+**Auth: bootstrap identity probe, 3s revalidation, EDA login redirect.**
 
 - **Root cause (stale logged-in UI):** v0.1.31 added the identity-proxy session probe in
   `reconcileAuthState()` but gated it on `authReady`, and bootstrap called `onAuthReady`
@@ -242,7 +250,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
   cookie still returned 200, so refresh showed a logged-in shell until the first periodic
   check (8s later) — and session loss only showed an in-app banner instead of the EDA
   login page.
-- **Bootstrap (cable-map pattern):** On every page load/refresh with a valid
+- **Bootstrap (EDA SSO pattern):** On every page load/refresh with a valid
   `im_session`, probe the EDA identity proxy (`login-status-iframe/init` via
   `client_id=auth` on `/core/proxy/v1/identity`) **before** `onAuthReady`. Invalid
   sessions clear `im_session` and redirect to the EDA login page (`/`).
@@ -294,7 +302,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
   `authBootstrapComplete`, shows the sign-in banner with working **Sign in** /
   **Try again** buttons, and clears table loading placeholders. Standalone tabs
   still auto-redirect to `/oauth/login` after a short delay; embedded mode
-  shows the banner only (cable-map pattern, no top-frame OAuth redirect).
+  shows the banner only (EDA SSO pattern, no top-frame OAuth redirect).
 - **Additional cause (this release hotfix):** `imagemanager/build/controller/webui.py`
   reassembled `INDEX_HTML` without preserving the opening `<script>` tag around
   the `_APP_JS` payload. The browser then rendered the JavaScript as visible
@@ -419,7 +427,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
 
 ## v0.1.18
 
-**EDA nav: cable-map external-launcher pattern (no iframe embed).**
+**EDA nav: external-launcher pattern (no iframe embed).**
 
 - **Dashboard JSON:** full EDA dashboard with `flexRow` + `dashletDataView` launcher
   cards; `navigationTarget.edaRoute = "external"` opens
@@ -683,7 +691,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
 - Reset semver to **v0.1.0** after clearing all prior releases, catalog tags, and
   GHCR packages (clean slate).
 - **Bundled keycloak-js** (`/assets/keycloak.min.js`): the EDA identity proxy no
-  longer serves `keycloak.min.js` (HTTP 404); bundling matches cable-map and
+  longer serves `keycloak.min.js` (HTTP 404); bundling matches EDA catalog and
   keeps silent SSO working.
 - **Stability baseline:** retain the v0.0.51-era auth bootstrap (keycloak-js
   silent SSO + explicit Sign in / Try again) without the v0.0.52–v0.0.72 auth
@@ -698,7 +706,7 @@ Studied `ghcr.io/eda-labs/cable-map:v0.2.0` (embedded SPA + `internal/server/aut
   `/core/proxy/v1/identity/js/keycloak.min.js`, which returns HTTP 404 on this
   cluster (`Unable to find matching target resource method`). Silent SSO and
   Sign in never started — bootstrap failed with *Sign-in failed* / *could not
-  complete authentication*. Cable-map works because it bundles keycloak-js in its
+  complete authentication*. EDA catalog apps work because it bundles keycloak-js in its
   SPA bundle, not from the identity proxy.
 - **Fix:** Ship `keycloak-js` 26.2.4 as `/assets/keycloak.min.js` from the
   controller; UI loads it from `apiBase + "/assets/keycloak.min.js"`.
@@ -713,7 +721,7 @@ node agent. v0.0.70 still routed Sign in through `/oauth/login`, which hits
 that broken path.
 
 - **Sign in / Try again:** keycloak-js public client `auth` + `POST /oauth/session`
-  (cable-map pattern) — never `/oauth/login`.
+  (EDA SSO pattern) — never `/oauth/login`.
 - **Bootstrap:** silent SSO only; on failure show banner (no auto-redirect).
 - **Session:** trust `im_session` cookie in probes; no Keycloak iframe logout veto.
 - **Tab persistence** and in-place session-loss banner (no navigation on background checks).
@@ -722,7 +730,7 @@ that broken path.
 ## v0.0.70
 
 **Full rollback to v0.0.51 controller code** (`037f8cb`): reverts all auth
-experiments from v0.0.52 through v0.0.69 (cable-map fallbacks, signed state,
+experiments from v0.0.52 through v0.0.69 (OIDC fallbacks, signed state,
 keycloak.login loops, no-dashboard-reset patch, etc.). Ships as a new image tag
 so clusters can upgrade off the broken releases.
 
@@ -759,7 +767,7 @@ so clusters can upgrade off the broken releases.
   the Keycloak redirect hop (common proxy/cookie loss cause of *invalid state*).
 - **Callback errors redirect to SPA** (`/?auth_retry=1`) instead of a plain-text
   error page; bootstrap retries silent SSO.
-- **Sign in uses keycloak-js first** (cable-map `login()` to SPA root), with
+- **Sign in uses keycloak-js first** (keycloak `login()` to SPA root), with
   server `/oauth/login` only as last resort.
 - **Return-from-login**: `processKcCallbackReturn()` handles `?code=&state=` on
   the SPA URL after keycloak-js redirect.
@@ -789,7 +797,7 @@ that left version/manifest drift and did not fully reset deployable artifacts.
 **Revert auth to v0.0.51 baseline (working sign-in):** Restore `webui.py`,
 `fileserver.py`, and `auth.py` from v0.0.51 (`037f8cb`) — the last release with
 reliable sign-in before v0.0.52–v0.0.63 auth regressions. Drops v0.0.52 session
-refresh changes, v0.0.53 deep-link URL sync, and v0.0.55–v0.0.63 cable-map/OIDC
+refresh changes, v0.0.53 deep-link URL sync, and v0.0.55–v0.0.63 OIDC
 fallback experiments. **Retained from v0.0.51:** incremental artifact table DOM
 updates (no poll flicker).
 
@@ -832,7 +840,7 @@ updates (no poll flicker).
   false (no sessionStorage guard on first bootstrap); embedded retries silent SSO
   only.
 - **Bearer fallback:** Server accepts Keycloak bearer tokens on all `/api/*`
-  routes (cable-map pattern); UI attaches bearer when cookie exchange fails.
+  routes (EDA SSO pattern); UI attaches bearer when cookie exchange fails.
 - **UX:** Auth failure clears table *Loading…* placeholders with a sign-in message.
 
 ## v0.0.61
@@ -842,10 +850,10 @@ updates (no poll flicker).
 - **Root cause:** Bootstrap called `GET /api/config` first, then spent up to ~16s on
   silent-SSO retries before attempting `keycloak.login()`. With an active EDA session,
   `check-sso` often returns false in a new tab; the delay let the 20s bootstrap timeout
-  fire and showed *Sign in failed* before the cable-map auto-login redirect ran.
+  fire and showed *Sign in failed* before the auto-login redirect ran.
   `redirectUri` was rebuilt from `apiBase` instead of the full `location.href`, so
   post-login token exchange could fail after redirect.
-- **Cable-map parity:** Run `keycloak.init` (`check-sso`) **before** API calls; on
+- **EDA launcher parity:** Run `keycloak.init` (`check-sso`) **before** API calls; on
   false in standalone tabs call `keycloak.login({ redirectUri: location.href })`
   **immediately** (no error banner, no SSO retries first). After redirect back,
   `processOAuthCallback` uses `login-required` + `POST /oauth/session`.
@@ -873,7 +881,7 @@ updates (no poll flicker).
   with a permanent *Sign-in could not be completed* banner; `im_auth_settled` was set
   before `keycloak.login()` finished, so a single silent-SSO or callback failure
   prevented all further auto-login attempts in the tab.
-- **Cable-map parity:** Process keycloak-js OAuth callback before `GET /api/config`,
+- **EDA launcher parity:** Process keycloak-js OAuth callback before `GET /api/config`,
   retry silent SSO 3× with backoff, then at most one auto `keycloak.login()` in
   standalone tabs only (embedded never auto-login).
 - **`redirectUri` fix:** Always uses registered proxy base
@@ -885,7 +893,7 @@ updates (no poll flicker).
 **Fix embedded View-link reload loop (v0.0.56 regression):**
 
 - **Root cause:** v0.0.56 auto-called `keycloak.login()` inside the EDA embedded
-  iframe when silent SSO failed. Cable-map uses the same fallback in a **new tab**,
+  iframe when silent SSO failed. EDA external launcher uses the same fallback in a **new tab**,
   not an iframe — in embedded mode each `keycloak.login()` redirect reloaded the
   iframe (~1s cycle) with *Signing in…* on every pass. A premature `bootDone()`
   before `ensureAuth()` also hid then re-showed the signing-in state each reload.
@@ -904,40 +912,40 @@ updates (no poll flicker).
   failed. If the OIDC code exchange failed, the app redirected to
   `/?auth_error=callback` and immediately retried `/oauth/login`, causing a
   ~1s full-page reload loop with *Signing in…* on every cycle.
-- **Cable-map parity:** Auto-fallback now uses `keycloak.login({ redirectUri })`
+- **EDA launcher parity:** Auto-fallback now uses `keycloak.login({ redirectUri })`
   (public `auth` client) instead of the server confidential-client redirect.
 - **Loop guard:** `sessionStorage` debounce + stop auto-redirect after
   `auth_error=callback`; show recoverable **Try again** / **Sign in** banner
   instead.
-- **Embedded + standalone:** Same keycloak-js login fallback (cable-map shows
+- **Embedded + standalone:** Same keycloak-js login fallback (EDA catalog shows
   *Signing in…* briefly, then opens — no reload loop).
 
 ## v0.0.55
 
-**Fix View-link sign-in UX — match cable-map OIDC fallback (v0.0.54 gap):**
+**Fix View-link sign-in UX — OIDC fallback (v0.0.54 gap):**
 
 - **Root cause (v0.0.54):** When keycloak-js `check-sso` returned false (common even
   with a valid EDA GUI session), bootstrap called `requireSignIn()` and showed
   *Sign-in failed. Try again or use Sign in.* instead of falling through to OIDC.
-  Cable-map calls `keycloak.login()` on the same path, which completes instantly
+  Standard keycloak-js flow calls `keycloak.login()` on the same path, which completes instantly
   when the user is already signed into EDA.
-- **Cable-map parity:** Bootstrap shows **Signing in…** immediately; silent SSO
+- **EDA launcher parity:** Bootstrap shows **Signing in…** immediately; silent SSO
   retries once; standalone View links fall back to `/oauth/login` (OIDC redirect)
   before any error banner. Embedded iframe still shows **Try again** only.
 - **Keycloak init:** `pkceMethod: S256` and same-origin `silentCheckSsoRedirectUri`
-  via `new URL("oauth/silent-sso.html", location.href)` (cable-map pattern).
+  via `new URL("oauth/silent-sso.html", location.href)` (EDA SSO pattern).
 - **Deep links:** `?return=` on `/oauth/login` preserves `?details=` (and other
   query params) through the OIDC callback redirect.
 
 ## v0.0.54
 
-**Fix sign-in failure — restore cable-map auth bootstrap (v0.0.39 pattern):**
+**Fix sign-in failure — restore auth bootstrap (v0.0.39 pattern):**
 
 - **Root cause:** v0.0.40+ auto-redirected to `/oauth/login` when silent SSO failed;
   a broken OIDC callback surfaced the plain-text error *Sign-in failed: could not
   complete authentication.* instead of a recoverable in-app state. `silentSso()`
   also created a throwaway Keycloak instance (cannot re-init reliably).
-- **Cable-map parity restored:** trust `GET /api/config` 200 on bootstrap without
+- **EDA launcher parity restored:** trust `GET /api/config` 200 on bootstrap without
   Keycloak; deduped singleton `initKeycloakCheck()` with retry after iframe
   false-negatives; `loadConfigAfterExchange()` cookie-commit retries; all auth
   failures show **Try again** / **Sign in** banner (no auto redirect, no reload).
@@ -961,7 +969,7 @@ updates (no poll flicker).
 
 ## v0.0.52
 
-**Fix page refresh loop + live indicator on all tabs (cable-map pattern):**
+**Fix page refresh loop + live indicator on all tabs (EDA SSO pattern):**
 
 - **No full-page reload:** Embedded session loss shows an in-app **Try again**
   banner (silent SSO re-exchange) instead of `window.top.location.reload()`.
@@ -1095,7 +1103,7 @@ retries with `replace=true` (drops Artifact CRs only via `_ensure_replace`).
   silent SSO re-exchange before declaring session loss (restores v0.0.41 probe
   behaviour; v0.0.43 embedded early-`false` removed).
 - **Embedded EDA logout:** Clears `im_session` then reloads the EDA shell
-  (`window.top.location.reload()`) — no in-app Try again banner (cable-map
+  (`window.top.location.reload()`) — no in-app Try again banner (EDA catalog
   pattern). Standalone tabs redirect to `/oauth/login` on logout.
 - **Standalone bootstrap fallback:** When silent SSO truly fails, redirect to
   `/oauth/login` instead of the in-page **Sign in required** banner (empty KPIs
@@ -1132,7 +1140,7 @@ only checked `GET /api/config`, which returns 200 while the `im_session` cookie
 is still valid (up to 8h) even after EDA GUI logout. The separate post-auth
 `logoutKc` watcher could also fail silently without clearing the UI.
 
-- **Keycloak revalidation (cable-map pattern):** After bootstrap (`authReady`),
+- **Keycloak revalidation (EDA SSO pattern):** After bootstrap (`authReady`),
   a singleton Keycloak client runs with `checkLoginIframe: true` and
   `onAuthLogout` in the embedded iframe (not skipped). Periodic probes and
   tab-focus revalidation call `verifyKeycloakSession()` (`updateToken` +
@@ -1147,7 +1155,7 @@ is still valid (up to 8h) even after EDA GUI logout. The separate post-auth
 
 ## v0.0.41
 
-**EDA logout sync (cable-map pattern, v0.0.40-safe):** After bootstrap completes
+**EDA logout sync (EDA SSO pattern, v0.0.40-safe):** After bootstrap completes
 (`authReady`), detect EDA session loss without reintroducing v0.0.34–v0.0.39
 bootstrap polling or shared Keycloak init. A lightweight `GET /api/config` probe
 runs every 30s (plus tab-focus revalidation); when it returns 401, silent SSO
@@ -1183,7 +1191,7 @@ applied via `flushDeferredSessionLoss()` when the transfer completes.
 
 ## v0.0.39
 
-**Durable embedded EDA sign-in (cable-map parity):** Simplify auth to two clear
+**Durable embedded EDA sign-in (EDA launcher parity):** Simplify auth to two clear
 paths. Bootstrap: `GET /api/config` → 200 trusts `im_session` with no Keycloak;
 401 runs silent SSO once, exchanges the token, then retries config (with cookie
 commit retries). Periodic checks probe the server only; Keycloak runs on 401.
@@ -1194,7 +1202,7 @@ and v0.0.37 no-refresh polling unchanged.
 
 ## v0.0.38
 
-**Fix embedded EDA sign-in regression (v0.0.37):** Restore the v0.0.35 cable-map
+**Fix embedded EDA sign-in regression (v0.0.37):** Restore the v0.0.35 EDA catalog
 bootstrap pattern after silent session-check changes reintroduced embedded SSO
 failures. A valid `im_session` is still trusted on first load without Keycloak;
 `probeSession()` and `handleAuthLoss()` are skipped until bootstrap completes;
@@ -1209,7 +1217,7 @@ in-flight deferral are unchanged.
 revalidation, and API 401 recovery no longer redirect to `/oauth/login` while the
 user is still signed into EDA. Session probes use a lightweight `/api/config`
 check with silent SSO re-exchange; standalone tabs also register Keycloak
-`onAuthLogout` / `checkLoginIframe` watchers (cable-map pattern). On real session
+`onAuthLogout` / `checkLoginIframe` watchers (EDA SSO pattern). On real session
 loss the UI clears `im_session` via `POST /oauth/session/logout` and shows an
 in-page sign-in banner with **Try again** (silent SSO) and **Sign in** (explicit
 OIDC redirect only on button click). Upload in-flight deferral from v0.0.36 is
@@ -1279,12 +1287,12 @@ Light mode page background updated to **`#f7f9fd`** (EDA soft off-white).
 ## v0.0.28
 
 App bar and browser tab use the new **logo.png** mark (30×30px in the header,
-rounded corners); replaces the cable-map `eda.svg`.
+rounded corners); replaces the default `eda.svg`.
 
 ## v0.0.27
 
 Browser tab favicon uses the same **`eda.svg`** Nokia connect logo as the app bar
-(cable-map / EDA pattern).
+(EDA pattern).
 
 ## v0.0.26
 
@@ -1293,11 +1301,11 @@ Remove **Sign out** from the app bar; EDA platform sign-out stays in the main GU
 ## v0.0.25
 
 Replace the approximate Nokia wordmark with the same **`eda.svg`** connect logo
-used by cable-map (served at `/assets/eda.svg`, displayed at 26px height).
+used by EDA catalog apps (served at `/assets/eda.svg`, displayed at 26px height).
 
 ## v0.0.24
 
-Single top app bar (cable-map / EDA style) — removed the stacked two-tier header
+Single top app bar (EDA style) — removed the stacked two-tier header
 and duplicate page hero. One row: **Nokia logo | Image Manager | Live | theme |
 user | Sign out**.
 
@@ -1376,9 +1384,9 @@ good and makes every dashboard update land in under a second:
 
 ## v0.0.18
 
-Event-driven dashboard sync (EDK/cable-map parity) — no more polling lag:
+Event-driven dashboard sync (EDK parity) — no more polling lag:
 
-- **Kubernetes watch on Artifact CRs:** cable-map and other EDK catalog apps
+- **Kubernetes watch on Artifact CRs:** other EDK catalog apps
   never poll — the runtime streams CR changes to them and they publish state
   DB rows on each change. Image Manager now does the stdlib equivalent: a
   long-lived cluster-wide watch on its managed Artifact CRs. The API server
@@ -1447,7 +1455,7 @@ Two distinct dashboard tables + version surfaced everywhere:
 
 ## v0.0.14
 
-Seamless SSO from the dashboard + cable-map-style liveness columns:
+Seamless SSO from the dashboard + EDA-style liveness columns:
 
 - **No more Nokia EDA login page:** the fallback OIDC authorize URL now goes
   through the EDA **identity proxy** (`/core/proxy/v1/identity`) — the same
@@ -1455,10 +1463,10 @@ Seamless SSO from the dashboard + cable-map-style liveness columns:
   scoped to that base path, so a logged-in user is 302'd straight back with a
   code (no login form). The previous URL used the Keycloak httpproxy path,
   whose cookie path never matched the GUI session, forcing a fresh login.
-- **Dashboard shows app liveness (cable-map parity):** an always-present
+- **Dashboard shows app liveness (EDA launcher parity):** an always-present
   service summary row publishes `health` (Ready/Degraded) and `http`
   (Reachable/NoTLS/Down, self-reported by the serving thread) plus aggregate
-  image counts — visible even with zero images, like cable-map's
+  image counts — visible even with zero images, like standard EDA launcher
   `data: Ready / http: Reachable` row. Columns are now
   Service | Health | HTTP | Image | Namespace | Status | View; per-image rows
   carry the image fields and leave the app-level cells blank.
@@ -1480,7 +1488,7 @@ Real-time dashboard sync fixes + row info panel:
   Status sync loop tightened to 2s (`STATUS_SYNC_INTERVAL`).
 - **Row click shows YAML in the dashboard:** rows now publish a hidden
   `details` field carrying the NodeProfile YAML and the dashlet enables
-  `showInfoPanel`, so clicking a row opens EDA's info panel (cable-map
+  `showInfoPanel`, so clicking a row opens EDA's info panel (EDA catalog
   hidden-details pattern) instead of leaving the dashboard. The View link
   still deep-links into the app.
 - **URL re-import responds immediately:** creating an ImageImport from the UI
@@ -1508,7 +1516,7 @@ Near-instant dashboard status + richer launcher columns:
 
 ## v0.0.11
 
-UI redesign (cable-map pro look, dashboard-first):
+UI redesign (EDA pro look, dashboard-first):
 
 - New layered-image brand logo (appbar + favicon).
 - **Dashboard** is now the start tab: KPI overview cards (Images / Available /
@@ -1525,7 +1533,7 @@ UI redesign (cable-map pro look, dashboard-first):
 
 ## v0.0.10
 
-Fix empty Image Manager launcher table (cable-map app-status parity):
+Fix empty Image Manager launcher table (app-status parity):
 
 - **Root cause:** EQL on `imagemanagerconfigs` / `imagemanagerartifacts` returns no rows — CE logs
   `InvalidNamespaceOrGvk` for cluster-scoped imagemanager CRDs, and nested
@@ -1533,9 +1541,9 @@ Fix empty Image Manager launcher table (cable-map app-status parity):
 - Controller publishes per-artifact launcher rows to `.cluster.apps.imagemanager.status`
   via bundled `status-publisher` daemon (persistent bidi `StateDbUpdate` +
   `StreamingJsonSchema` to `eda-sa.eda-system.svc:51100` with internal mTLS,
-  reverse-engineered from cable-map EDK `dbStreamHandler`).
+  reverse-engineered from EDK `dbStreamHandler`).
 - Dashboard EQL switched to `.cluster.apps.imagemanager.status` with columns Name (`service`),
-  Status (`status`), View (`open`) — matches cable-map dashlet field bindings.
+  Status (`status`), View (`open`) — matches EDA dashlet field bindings.
 - Deployment: mount internal EDA mTLS certs + trust bundle for state-aggregator access.
 - `imagemanager-viewer` ClusterRole: `tableRules` for `.cluster.apps.imagemanager.**`.
 - Remove 5-minute `LAUNCHER_SYNC_GRACE_SECONDS` skip (default `0`); `artifact_launcher` still
@@ -1547,7 +1555,7 @@ controller) instead of re-downloading the URL or wiping the upload directory. Fu
 still removes PVC data via the Delete action.
 
 **Known limitation (v0.0.10):** Launcher rows require the bundled `status-publisher`
-daemon (persistent bidi `StateDbUpdate` + `StreamingJsonSchema` to `eda-sa`, cable-map
+daemon (persistent bidi `StateDbUpdate` + `StreamingJsonSchema` to `eda-sa`, EDA catalog
 EDK parity). Cluster must run controller image `v0.0.10` with internal TLS volume
 mounts from `app_deployment.yaml`.
 
@@ -1571,14 +1579,14 @@ Fix CE crash on install/upgrade and reduce API load during bootstrap:
 
 Fix missing EDA left-nav entry (regression from v0.0.6):
 
-- Revert manifest `ui.category` from **System** to **Topology** (cable-map and all
+- Revert manifest `ui.category` from **System** to **Topology** (EDA catalog apps and all
   working catalog apps use Topology; `System` is not registered for custom app views —
   same failure mode as the pre-v0.0.4 custom `Image Manager` category).
 - Revert launcher EQL to `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs`
   (always has a `default` row; empty `imagemanagerartifacts` list can prevent view
   registration on fresh installs).
 - Regenerate dashboard UUIDs and bump dashboard `version` to `0.0.8`.
-- Keep `icon: CloudUpgrade` and cable-map structural clone (`flexRow` → `dashletDataView`).
+- Keep `icon: CloudUpgrade` and catalog structural clone (`flexRow` → `dashletDataView`).
 
 ## v0.0.7
 
@@ -1599,9 +1607,9 @@ the category change.
 
 ## v0.0.5
 
-Rebuild EDA launcher dashboard from cable-map OCI reference (v0.2.2):
+Rebuild EDA launcher dashboard from catalog reference (v0.2.2):
 
-- Structural clone of `cable-map-dashboard.json` with fresh UUIDs (no reuse from cable-map or prior imagemanager).
+- Structural clone of reference dashboard JSON with fresh UUIDs (no reuse from prior imagemanager).
 - EQL on `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerartifacts` with columns Name, Size, Status, View.
 - Manifest view icon changed from `Import` to `CloudUpgrade` (`ui.category: Topology`, view component last).
 
@@ -1609,25 +1617,25 @@ Rebuild EDA launcher dashboard from cable-map OCI reference (v0.2.2):
 
 Fix missing EDA nav view (entire Image Manager panel absent):
 
-- Restructure `imagemanager-dashboard.json` as a cable-map structural clone
+- Restructure `imagemanager-dashboard.json` as a catalog structural clone
   (`flexRow` → `dashletDataView`, external HttpProxy nav target) using simpler
   EQL on `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerconfigs`
   (always has a `default` row) instead of `imagemanagerartifacts` (empty list
   may fail view registration).
-- Move manifest `view` component to last (cable-map pattern: workloads before view).
-- Register nav under `ui.category: Topology` (cable-map uses Topology; custom
+- Move manifest `view` component to last (EDA SSO pattern: workloads before view).
+- Register nav under `ui.category: Topology` (EDA catalog uses Topology; custom
   `Image Manager` category never appeared in the nav tree).
-- Match cable-map manifest view section field order (`category`, `icon`, `name`).
+- Match EDA catalog manifest view section field order (`category`, `icon`, `name`).
 - Add `status.open: View` on ImageManagerConfig for launcher View column parity.
 - Regenerate dashboard UUIDs and bump dashboard `version` to `0.0.4`.
 
 ## v0.0.3
 
-Install/uninstall reliability aligned with cable-map patterns:
+Install/uninstall reliability aligned with EDA catalog patterns:
 
 - Reorder manifest components: CRDs → RBAC → PVC → Service → Deployment → HttpProxy → DaemonSet (Deployment was previously applied before ServiceAccount/RBAC existed).
 - Remove hardcoded `ghcr-imagemanager` imagePullSecret (EDA injects `appstore-eda-apps-registry-image-pull`; the missing secret caused install warnings and pull failures).
-- Graceful controller shutdown: `preStop` sleep, `stop_file_server()` on SIGTERM, probes aligned with cable-map (`initialDelaySeconds`, no TCP startupProbe).
+- Graceful controller shutdown: `preStop` sleep, `stop_file_server()` on SIGTERM, probes aligned with EDA catalog (`initialDelaySeconds`, no TCP startupProbe).
 - DaemonSet `preStop` removes containerd registry redirect on uninstall so reinstall is not blocked by stale `hosts.toml`.
 - Fix invalid `namespace` field on cluster-scoped `imagemanager-viewer` ClusterRole.
 - Add `progressDeadlineSeconds: 600` and app labels on workloads/PVC/HttpProxy.
@@ -1636,7 +1644,7 @@ Install/uninstall reliability aligned with cable-map patterns:
 
 Fix EDA nav launcher dashboard after the v0.0.1 release reset:
 
-- Restore cable-map-style dashboard JSON (`flexRow` → `dashletDataView`, external
+- Restore EDA-style dashboard JSON (`flexRow` → `dashletDataView`, external
   HttpProxy nav target) with flat EQL on `.cluster.imagemanager.eda.edacommunity.com.v1alpha1.imagemanagerartifacts` (not broken `status.artifacts` nested paths).
 - Regenerate dashboard UUIDs so EDA re-registers the view after the semver downgrade from v0.0.7 → v0.0.1 left a stale/missing nav entry.
 - Confirm manifest bundles the `view` component and `imagemanager/ui` dependency; controller continues syncing `ImageManagerArtifact` launcher rows.

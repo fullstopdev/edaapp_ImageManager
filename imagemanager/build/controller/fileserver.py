@@ -225,7 +225,7 @@ class Handler(BaseHTTPRequestHandler):
         )
         if user:
             return user
-        # Cable-map parity: accept live Keycloak bearer tokens on /api/* when
+        # Accept live Keycloak bearer tokens on /api/* when
         # the browser has a token but im_session exchange has not completed.
         auth_hdr = self.headers.get("Authorization", "")
         if auth_hdr.startswith("Bearer "):
@@ -1569,8 +1569,8 @@ _server_scheme = [None]  # "https" | "http" | None; set by start_file_server
 
 
 def server_state():
-    """Self-reported UI reachability for the launcher dashboard (cable-map
-    'http: Reachable' parity): Reachable when serving HTTPS, NoTLS when the
+    """Self-reported UI reachability for the launcher dashboard
+    ('http: Reachable' column): Reachable when serving HTTPS, NoTLS when the
     cert never mounted, Down before the server thread starts."""
     if _server_scheme[0] == "https":
         return "Reachable"

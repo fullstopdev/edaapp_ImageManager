@@ -119,7 +119,7 @@
                 "type": "string"
               },
               "open": {
-                "description": "Open is the launcher dashlet View link label (cable-map parity).",
+                "description": "Open is the launcher dashlet View link label.",
                 "type": "string"
               },
               "repo": {

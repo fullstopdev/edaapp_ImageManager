@@ -1,6 +1,6 @@
 [project]
 name = "imagemanager"
-version = "0.1.45"
+version = "0.1.46"
 description = "EDA App Development Project"
 readme = "README.md"
 requires-python = "~=3.12"

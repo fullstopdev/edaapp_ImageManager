@@ -28,7 +28,7 @@ const (
 //
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 //
-// Matches eda.dev/edk/proto/state_aggregator (cable-map v0.2.2).
+// Matches eda.dev/edk/proto/state_aggregator.
 type StateAggregatorIfClient interface {
 	// Bidi stream used by EDK dbStreamHandler (not unary).
 	StateDbUpdate(ctx context.Context, opts ...grpc.CallOption) (grpc.BidiStreamingClient[StateDbRequest, StateDbResponse], error)
@@ -84,7 +84,7 @@ type StateAggregatorIf_StreamingJsonSchemaClient = grpc.BidiStreamingClient[Stre
 // All implementations must embed UnimplementedStateAggregatorIfServer
 // for forward compatibility.
 //
-// Matches eda.dev/edk/proto/state_aggregator (cable-map v0.2.2).
+// Matches eda.dev/edk/proto/state_aggregator.
 type StateAggregatorIfServer interface {
 	// Bidi stream used by EDK dbStreamHandler (not unary).
 	StateDbUpdate(grpc.BidiStreamingServer[StateDbRequest, StateDbResponse]) error

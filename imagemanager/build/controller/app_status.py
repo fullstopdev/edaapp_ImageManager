@@ -2,7 +2,7 @@
 Publish Image Manager launcher rows to the EDA state DB
 (.cluster.apps.imagemanager.{app,status}) via the status-publisher daemon.
 
-Cable-map writes dashboard rows via EDK gRPC to the state aggregator; CR-based EQL
+EDK apps write dashboard rows via gRPC to the state aggregator; CR-based EQL
 does not work here because CE ignores our cluster-scoped CRDs (InvalidNamespaceOrGvk)
 and nested ImageManagerConfig.status.artifacts arrays are not flat-table queryable.
 
@@ -77,9 +77,9 @@ def _http_state():
 
 
 def _app_row(tracked_rows, health, http_state):
-    """The single row of the `.app` table (cable-map parity: data=Ready,
-    http=Reachable). Always present, so the dashboard shows the app is
-    installed + live even with zero images."""
+    """The single row of the `.app` table (data=Ready, http=Reachable).
+    Always present, so the dashboard shows the app is installed + live even
+    with zero images."""
     counts = {}
     for row in tracked_rows:
         s = row.get("downloadStatus") or "Unknown"
@@ -144,8 +144,8 @@ def sync_app_status_rows(tracked_rows, health=None):
             "status": row.get("downloadStatus") or row.get("health") or "",
             "open": "View",
             "url": deep_link,
-            # Shown in the dashlet info panel when a row is clicked (cable-map
-            # hidden-details pattern): the ready-to-paste NodeProfile YAML.
+            # Shown in the dashlet info panel when a row is clicked: the
+            # ready-to-paste NodeProfile YAML.
             "details": row.get("nodeProfileExample") or row.get("snippet") or "",
         }
 

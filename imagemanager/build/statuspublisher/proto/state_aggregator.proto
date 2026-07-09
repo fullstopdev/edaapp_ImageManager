@@ -6,7 +6,7 @@ import "proto/common.proto";
 
 option go_package = "imagemanager/statuspublisher/proto";
 
-// Matches eda.dev/edk/proto/state_aggregator (cable-map v0.2.2).
+// Matches eda.dev/edk/proto/state_aggregator.
 service StateAggregatorIf {
   // Bidi stream used by EDK dbStreamHandler (not unary).
   rpc StateDbUpdate(stream StateDbRequest) returns (stream StateDbResponse);

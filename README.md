@@ -251,7 +251,7 @@ kubectl delete pod -n eda-system -l 'eda.nokia.com/app=eda-imagemanager,eda.noki
 
 ### Why two pods?
 
-Image Manager runs **two** workloads (Cable Map has only a single Deployment):
+Image Manager runs **two** workloads (controller Deployment plus optional node-agent DaemonSet):
 
 | Pod | Kind | Purpose |
 |-----|------|---------|

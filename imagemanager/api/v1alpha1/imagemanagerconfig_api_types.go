@@ -84,7 +84,7 @@ type ImageManagerConfigStatus struct {
 	// Version is the controller version string.
 	Version string `json:"version,omitempty"`
 
-	// Open is the launcher dashlet View link label (cable-map parity).
+	// Open is the launcher dashlet View link label.
 	Open string `json:"open,omitempty"`
 }
 
@@ -120,6 +120,6 @@ type TrackedArtifact struct {
 	// ExternalUrl mirrors Artifact.status.externalUrl once Available.
 	ExternalUrl string `json:"externalUrl,omitempty"`
 
-	// Open is the launcher dashlet View link label (cable-map parity).
+	// Open is the launcher dashlet View link label.
 	Open string `json:"open,omitempty"`
 }
