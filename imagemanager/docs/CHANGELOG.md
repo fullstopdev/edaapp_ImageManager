@@ -1,5 +1,26 @@
 # Changelog
 
+## v0.1.36
+
+**Cable-map SSO parity: keycloak-js silent SSO + token exchange.**
+
+- **Auth model (Option A):** Restore cable-map pattern — bundle `keycloak-js` 26.2.4
+  as `/assets/keycloak.min.js`, serve same-origin `/oauth/silent-check-sso.html`
+  (CSP `script-src 'self'`), and add `POST /oauth/session` to exchange a
+  Keycloak public-client (`auth`) bearer token for the HTTP-only `im_session`
+  cookie (JWT validated via JWKS; accepts `auth` or `eda` client `aud`/`azp`).
+- **Bootstrap:** Shell loads without session; `GET /api/config` 401 runs silent
+  `check-sso` + token exchange (no full-page `/oauth/login` redirect when EDA
+  session exists). Existing `im_session` still trusted on 200 with no identity
+  probe (v0.1.35 fix retained). OAuth callback (`?code=&state=`) processed before
+  config fetch.
+- **Sign in / Try again:** `keycloak.login()` with `/oauth/login` server OIDC
+  fallback if the script fails.
+- **EDA logout:** Dual identity probe + `kc-*` storage watchers unchanged;
+  `verify_session` still has no IDP cookie gate.
+- **Unchanged:** Embedded sign-in banner (no `window.top` hijack), concurrent
+  uploads, URL import empty-state fix.
+
 ## v0.1.35
 
 **Fix SSO login loop when opening Image Manager from the EDA dashboard.**

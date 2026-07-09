@@ -10,7 +10,7 @@ def test_bootstrap_trusts_config_without_identity_probe():
     assert "authBootstrapComplete = true" in html
     assert "onAuthReady(c.user" in html
     # Bootstrap must not gate on identity probe (false-negative → OAuth loop).
-    bootstrap = html.split("fetchJson(api(\"/api/config\"))", 1)[1]
+    bootstrap = html.split("function applyConfigResponse", 1)[1]
     before_probe_fn = bootstrap.split("function probeEdaIdentitySession", 1)[0]
     assert "probeEdaIdentitySession().then(function(idpOk)" not in before_probe_fn
 
@@ -25,11 +25,20 @@ def test_periodic_session_revalidation_interval():
     assert "SESSION_CHECK_MS = 3000" in webui.INDEX_HTML
 
 
-def test_bootstrap_401_starts_oauth_not_eda_home():
+def test_bootstrap_401_runs_keycloak_silent_sso():
     html = webui.INDEX_HTML
     assert "function handleBootstrap401()" in html
-    assert "beginOAuthSignIn(\"Sign in to use Image Manager.\")" in html
-    assert "redirectToOAuthLogin" in html
+    assert "runSilentSsoAndExchange()" in html
+    assert "finishConfigBootstrap()" in html
+
+
+def test_keycloak_js_and_silent_sso_assets():
+    html = webui.INDEX_HTML
+    assert "/assets/keycloak.min.js" in html
+    assert "/oauth/silent-check-sso.html" in html
+    assert "KEYCLOAK_CLIENT_ID = \"auth\"" in html
+    assert "exchangeKeycloakSession" in html
+    assert 'api("/oauth/session")' in html
 
 
 def test_confirmed_session_loss_redirects_standalone_to_eda_login():
@@ -39,10 +48,10 @@ def test_confirmed_session_loss_redirects_standalone_to_eda_login():
     assert 'window.location.origin + "/"' in html
 
 
-def test_embedded_sign_in_banner_includes_oauth_button():
+def test_embedded_sign_in_banner_uses_keycloak_login():
     html = webui.INDEX_HTML
     assert 'id="authSignInBtn">Sign in</button>' in html
-    assert "redirectToOAuthLogin" in html
+    assert "startKeycloakLogin" in html
 
 
 def test_navigate_to_stays_in_frame():

@@ -101,6 +101,12 @@ APP_VERSION = [""]
 _ASSETS_DIR = Path(__file__).resolve().parent / "assets"
 APP_LOGO_PNG = (_ASSETS_DIR / "nokia-logo.png").read_bytes()
 APP_N_LOGO_PNG = (_ASSETS_DIR / "nokia-n.png").read_bytes()
+KEYCLOAK_JS = (_ASSETS_DIR / "keycloak.min.js").read_bytes()
+SILENT_CHECK_SSO_HTML = (
+    b"<!DOCTYPE html><html><body><script>"
+    b"parent.postMessage(location.href, location.origin);"
+    b"</script></body></html>"
+)
 # Shared, set by main each reconcile cycle (dict assignment is atomic in CPython).
 CONFIG = {
     "defaultArtifactNamespace": "eda",
@@ -293,6 +299,34 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(json.dumps({"ok": True}).encode("utf-8"))
 
+    def _handle_oauth_session(self):
+        """Exchange a Keycloak browser access token for an HTTP-only im_session cookie."""
+        auth_hdr = self.headers.get("Authorization", "")
+        if not auth_hdr.startswith("Bearer "):
+            self._send_json({"ok": False, "error": "missing bearer token"}, 401)
+            return
+        access = auth_hdr[7:].strip()
+        user, roles = auth.bearer_token_identity(access)
+        if not user:
+            self._send_json({"ok": False, "error": "invalid token"}, 401)
+            return
+        if not auth.is_allowed(roles):
+            logger.info("Token exchange denied: %s lacks an allowed role (have=%s need-any-of=%s)",
+                        user, sorted(roles), auth.allowed_roles())
+            self._send_json({"ok": False, "error": "forbidden"}, 403)
+            return
+        tok_exp = auth.jwt_exp(access)
+        self.send_response(200)
+        self._set_cookie(
+            auth.SESSION_COOKIE,
+            auth.make_session(user, token_exp=tok_exp),
+            auth.session_cookie_max_age(tok_exp),
+        )
+        self.send_header("Content-Type", "application/json")
+        self.end_headers()
+        self.wfile.write(json.dumps({"ok": True, "user": user}).encode("utf-8"))
+        logger.info("Token exchange OK: %s", user)
+
     def _deny_page(self, user):
         roles = ", ".join(auth.allowed_roles())
         link = auth.APP_PROXY_PREFIX + "/oauth/logout"
@@ -344,6 +378,22 @@ class Handler(BaseHTTPRequestHandler):
                 return
             if path == "/assets/nokia-n.png":
                 self._send_text(APP_N_LOGO_PNG, ctype="image/png")
+                return
+            if path == "/assets/keycloak.min.js":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/javascript; charset=utf-8")
+                self.send_header("Cache-Control", "public, max-age=86400")
+                self.send_header("Content-Length", str(len(KEYCLOAK_JS)))
+                self.end_headers()
+                self.wfile.write(KEYCLOAK_JS)
+                return
+            if path == "/oauth/silent-check-sso.html":
+                self.send_response(200)
+                self.send_header("Content-Type", "text/html; charset=utf-8")
+                self.send_header("Cache-Control", "no-store")
+                self.send_header("Content-Length", str(len(SILENT_CHECK_SSO_HTML)))
+                self.end_headers()
+                self.wfile.write(SILENT_CHECK_SSO_HTML)
                 return
             # UI shell loads without a session so the SPA can bootstrap via
             # GET /api/config and redirect to /oauth/login for silent SSO.
@@ -805,6 +855,9 @@ class Handler(BaseHTTPRequestHandler):
         try:
             if path == "/oauth/session/logout":
                 self._handle_oauth_session_logout()
+                return
+            if path == "/oauth/session":
+                self._handle_oauth_session()
                 return
             # All other POSTs are user actions — require a valid EDA session.
             if auth.enabled() and not self._authed_user():

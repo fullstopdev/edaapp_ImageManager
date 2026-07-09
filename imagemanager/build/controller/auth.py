@@ -271,7 +271,7 @@ def _b64u_to_int(s):
     return int.from_bytes(raw, "big") if raw else 0
 
 
-def _validate_jwt_claims(payload):
+def _validate_jwt_claims(payload, allowed_clients=None):
     if not isinstance(payload, dict):
         return False
     exp = int(payload.get("exp") or 0)
@@ -291,18 +291,22 @@ def _validate_jwt_claims(payload):
     if iss_norm != expected_norm and not iss_norm.endswith(f"/realms/{REALM}"):
         return False
 
+    clients = allowed_clients or (CLIENT_ID,)
     aud = payload.get("aud")
     azp = payload.get("azp")
     aud_ok = False
-    if isinstance(aud, str) and aud == CLIENT_ID:
-        aud_ok = True
-    elif isinstance(aud, list) and CLIENT_ID in aud:
-        aud_ok = True
-    azp_ok = (azp == CLIENT_ID) if azp is not None else False
+    azp_ok = False
+    for cid in clients:
+        if isinstance(aud, str) and aud == cid:
+            aud_ok = True
+        elif isinstance(aud, list) and cid in aud:
+            aud_ok = True
+        if azp == cid:
+            azp_ok = True
     return bool(aud_ok or azp_ok)
 
 
-def _decode_jwt(token):
+def _decode_jwt(token, allowed_clients=None):
     """Decode and verify a Keycloak-signed JWT using the realm JWKS.
 
     Returns the verified payload dict; returns {} if signature/claims fail.
@@ -360,13 +364,23 @@ def _decode_jwt(token):
                 "verify_iat": False,
             },
         )
-        if not _validate_jwt_claims(payload):
+        if not _validate_jwt_claims(payload, allowed_clients=allowed_clients):
             return {}
         return payload
     except Exception:
         # Never log token contents; failure modes include rotated JWKS,
         # invalid signatures, or mismatched issuer/audience.
         return {}
+
+
+def bearer_token_identity(access_token):
+    """(username, roles) from a browser bearer token (public auth or eda client)."""
+    p = _decode_jwt(access_token or "", allowed_clients=(CLIENT_ID, BROWSER_CLIENT_ID))
+    if not p:
+        return None, set()
+    user = p.get("preferred_username") or p.get("sub")
+    roles = set((p.get("realm_access") or {}).get("roles") or [])
+    return user, roles
 
 
 def token_identity(token_resp):

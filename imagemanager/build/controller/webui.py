@@ -4,10 +4,11 @@ Unified single-page app, dashboard-first: Dashboard (KPIs + live artifact
 status) | Upload | URL Import | Settings. Cable-map / Nokia EDA design
 language: dark/light theme, Nokia logo + single EDA-style app bar, KPI overview cards,
 adaptive live polling (2s burst for 2 min after upload, 4s while work is in
-flight, 12s at rest, paused when the tab is hidden). Sign-in is server-side OIDC (Authorization Code flow via
-EDA's identity proxy); unauthenticated requests redirect to Keycloak. Role
-gating via ALLOWED_ROLES (EDA ClusterRole). Sign out clears the local session
-and ends the EDA Keycloak session, redirecting to the EDA login page.
+flight, 12s at rest, paused when the tab is hidden). Sign-in follows the
+cable-map pattern: keycloak-js public client `auth` + same-origin silent SSO,
+token exchange to an HTTP-only `im_session` cookie, with server OIDC
+(`/oauth/login`) as fallback. Role gating via ALLOWED_ROLES (EDA ClusterRole).
+Sign out clears the local session and ends the EDA Keycloak session.
 """
 
 _INDEX_HTML_RAW = r"""<!DOCTYPE html>
@@ -971,6 +972,91 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   var apiBase = resolveApiBase();
   function api(p){ return apiBase + p; }
+  var keycloak = null;
+  var keycloakInitPromise = null;
+  var KEYCLOAK_CLIENT_ID = "auth";
+  function keycloakIdentityUrl(){
+    return window.location.origin + "/core/proxy/v1/identity";
+  }
+  function silentCheckSsoUri(){
+    return apiBase + "/oauth/silent-check-sso.html";
+  }
+  function keycloakRedirectUri(){
+    return apiBase + "/";
+  }
+  function hasKeycloakCallback(){
+    var q = window.location.search || "";
+    return /[?&]code=/.test(q) && /[?&]state=/.test(q);
+  }
+  function ensureKeycloakInstance(){
+    if(keycloak) return keycloak;
+    keycloak = new Keycloak({
+      url: keycloakIdentityUrl(),
+      realm: "eda",
+      clientId: KEYCLOAK_CLIENT_ID
+    });
+    keycloak.onAuthLogout = function(){
+      if(authReady) showConfirmedSessionLoss();
+    };
+    return keycloak;
+  }
+  function loadKeycloakScript(){
+    if(window.Keycloak) return Promise.resolve();
+    return new Promise(function(resolve, reject){
+      var s = document.createElement("script");
+      s.src = api("/assets/keycloak.min.js");
+      s.async = true;
+      s.onload = function(){ resolve(); };
+      s.onerror = function(){ reject(new Error("keycloak script load failed")); };
+      document.head.appendChild(s);
+    });
+  }
+  function initKeycloak(opts){
+    opts = opts || {};
+    if(keycloakInitPromise && !opts.force) return keycloakInitPromise;
+    keycloakInitPromise = loadKeycloakScript().then(function(){
+      ensureKeycloakInstance();
+      return keycloak.init({
+        onLoad: opts.onLoad || "check-sso",
+        silentCheckSsoRedirectUri: silentCheckSsoUri(),
+        checkLoginIframe: false,
+        pkceMethod: "S256",
+        redirectUri: keycloakRedirectUri()
+      });
+    }).then(function(authenticated){
+      return !!authenticated;
+    }).catch(function(err){
+      keycloakInitPromise = null;
+      throw err;
+    });
+    return keycloakInitPromise;
+  }
+  function exchangeKeycloakSession(){
+    if(!keycloak || !keycloak.token) return Promise.resolve(false);
+    return fetch(api("/oauth/session"), {
+      method: "POST",
+      headers: { "Authorization": "Bearer " + keycloak.token },
+      credentials: "same-origin"
+    }).then(function(r){
+      return r.json().then(function(j){ return !!(r.ok && j && j.ok); })
+        .catch(function(){ return false; });
+    }).catch(function(){ return false; });
+  }
+  function runSilentSsoAndExchange(){
+    return initKeycloak({ onLoad: "check-sso" }).then(function(authenticated){
+      if(!authenticated || !keycloak || !keycloak.token) return false;
+      return exchangeKeycloakSession();
+    }).catch(function(){ return false; });
+  }
+  function startKeycloakLogin(){
+    setAuthBanner("loading", "Signing in\u2026");
+    return loadKeycloakScript().then(function(){
+      ensureKeycloakInstance();
+      return keycloak.login({ redirectUri: keycloakRedirectUri() });
+    }).catch(function(){
+      redirectToOAuthLogin();
+    });
+  }
   function fetchJson(url, opts){
     opts = opts || {};
     if(!opts.credentials) opts.credentials = "same-origin";
@@ -1070,7 +1156,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     var retryBtn=el("authRetryBtn");
     if(retryBtn) retryBtn.addEventListener("click", retrySignIn);
     var signInBtn=el("authSignInBtn");
-    if(signInBtn) signInBtn.addEventListener("click", function(){ redirectToOAuthLogin(); });
+    if(signInBtn) signInBtn.addEventListener("click", function(){ startKeycloakLogin(); });
   }
   function setAuthBanner(kind, text, opts){
     opts = opts || {};
@@ -1306,7 +1392,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       return;
     }
     setAuthBanner("loading", msg || "Sign-in required. Redirecting\u2026");
-    setTimeout(function(){ redirectToOAuthLogin(); }, 160);
+    setTimeout(function(){ startKeycloakLogin(); }, 160);
   }
   function showConfirmedSessionLoss(msg){
     if(sessionInterruptBlocked()) return;
@@ -1376,7 +1462,12 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
   }
   function handleBootstrap401(){
-    beginOAuthSignIn("Sign in to use Image Manager.");
+    bootDone();
+    setAuthBanner("loading", "Signing in\u2026");
+    runSilentSsoAndExchange().then(function(ok){
+      if(ok) return finishConfigBootstrap();
+      beginOAuthSignIn("Sign in to use Image Manager.");
+    });
   }
   function showFatal(msg){
     bootDone();
@@ -1423,8 +1514,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function retrySignIn(){
     resetAuthFailStreak();
-    setAuthBanner("loading", "Signing in\u2026");
-    setTimeout(function(){ redirectToOAuthLogin(); }, 160);
+    startKeycloakLogin();
   }
   var signout=el("signoutLink");
   if(signout){
@@ -1643,23 +1733,25 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     });
   }
 
-  // ---------- config + namespaces ----------
-  fetchJson(api("/api/config")).then(function(res){
-    if(res.status === 401){
-      handleBootstrap401();
-      return;
-    }
-    if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
-    var c = res.body || {};
+  function finishConfigBootstrap(){
+    return fetchJson(api("/api/config")).then(function(res){
+      if(res.status === 401){
+        handleBootstrap401();
+        return;
+      }
+      if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
+      applyConfigResponse(res.body || {});
+    });
+  }
+  function applyConfigResponse(c){
     bootDone();
     if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
     binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
     if(c.version){
       var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
-    // Trust server session on bootstrap (kkayhan / cable-map pattern): im_session
-    // + /api/config 200 is enough to enter the app. Identity probes are for
-    // detecting EDA logout during an active session (reconcileAuthState).
+    // Trust server session on bootstrap (cable-map pattern): im_session + /api/config
+    // 200 is enough to enter the app. Identity probes detect EDA logout later.
     authBootstrapComplete = true;
     onAuthReady(c.user || null);
     var defaultNs=(c.defaultArtifactNamespace||"").trim();
@@ -1677,6 +1769,21 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
     });
     syncLiveIndicator();
+  }
+
+  // ---------- config + namespaces ----------
+  (hasKeycloakCallback()
+    ? runSilentSsoAndExchange()
+    : Promise.resolve(false)
+  ).then(function(){
+    return fetchJson(api("/api/config"));
+  }).then(function(res){
+    if(res.status === 401){
+      handleBootstrap401();
+      return;
+    }
+    if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
+    applyConfigResponse(res.body || {});
   }).catch(function(err){
     var msg = (err && err.message && err.message.indexOf("config unavailable")===0)
             ? err.message : "Failed to load Image Manager configuration.";

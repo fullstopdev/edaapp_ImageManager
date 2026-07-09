@@ -61,6 +61,31 @@ def test_token_identity_rejects_wrong_audience(make_jwt):
     assert roles == set()
 
 
+def test_bearer_token_identity_accepts_auth_client(make_jwt):
+    token = make_jwt({
+        "aud": auth.BROWSER_CLIENT_ID,
+        "azp": auth.BROWSER_CLIENT_ID,
+        "exp": int(time.time()) + 3600,
+        "preferred_username": "carol",
+        "realm_access": {"roles": ["edarole_system-administrator"]},
+    })
+    user, roles = auth.bearer_token_identity(token)
+    assert user == "carol"
+    assert "edarole_system-administrator" in roles
+
+
+def test_bearer_token_identity_rejects_unknown_client(make_jwt):
+    token = make_jwt({
+        "aud": "other-client",
+        "azp": "other-client",
+        "exp": int(time.time()) + 3600,
+        "sub": "x",
+    })
+    user, roles = auth.bearer_token_identity(token)
+    assert user is None
+    assert roles == set()
+
+
 def test_token_identity_roles(make_jwt):
     token_resp = {
         "access_token": make_jwt({
