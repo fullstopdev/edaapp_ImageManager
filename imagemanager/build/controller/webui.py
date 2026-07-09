@@ -428,6 +428,12 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     color:var(--muted); background:var(--panel2); border:1px solid var(--line);
   }
   .os-empty { color:var(--muted); font-size:12px; }
+  .source-badge {
+    display:inline-block; padding:2px 8px; border-radius:999px; font-size:10px; font-weight:700;
+    letter-spacing:.04em; text-transform:uppercase; border:1px solid transparent;
+  }
+  .source-upload { color:var(--info-fg); background:var(--info-bg); border-color:var(--info-bd); }
+  .source-url { color:var(--ok-fg); background:var(--ok-bg); border-color:var(--ok-bd); }
 
   /* ================================================================== */
   /* Empty states                                                       */
@@ -599,9 +605,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   /* ================================================================== */
   /* Settings / misc                                                    */
   /* ================================================================== */
-  .imports-section { padding:var(--space-2) var(--space-3) var(--space-3); }
-  .imports-section h3 { margin:0 0 var(--space-2); font-size:11px; font-weight:700; color:var(--muted);
-    text-transform:uppercase; letter-spacing:.08em; }
   .ha-panel { margin-top:var(--space-3); padding:var(--space-2); border-radius:var(--radius-md);
     border:1px dashed var(--line); background:var(--surface); }
   .ha-panel h3 { margin:0 0 var(--space-1); font-size:13px; font-weight:600; }
@@ -823,7 +826,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       </div>
     </div>
     <div id="opsAlert" class="ops-alert" style="display:none" role="status" aria-live="polite"></div>
-    <div class="detail-head"><span class="detail-label">Inventory &amp; imports</span></div>
+    <div class="detail-head"><span class="detail-label">Inventory</span></div>
     <div class="status-grid">
     <div class="card storage-card">
       <div class="storage-row">
@@ -844,27 +847,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         <table class="mtable">
           <thead><tr>
             <th class="sortable" data-sort="displayName">Name <span class="arr"></span></th>
+            <th class="sortable" data-sort="source">Source <span class="arr"></span></th>
             <th class="sortable" data-sort="nosLabel">OS <span class="arr"></span></th>
             <th class="sortable" data-sort="namespace">Namespace <span class="arr"></span></th>
             <th class="sortable num" data-sort="sizeBytes">Size <span class="arr"></span></th>
             <th class="sortable" data-sort="downloadStatus">Status <span class="arr"></span></th>
             <th></th>
           </tr></thead>
-          <tbody id="rows"><tr><td colspan="6" class="empty">Loading&hellip;</td></tr></tbody>
+          <tbody id="rows"><tr><td colspan="7" class="empty">Loading&hellip;</td></tr></tbody>
         </table>
-      </div>
-    </div>
-    <div class="card table-card">
-      <div class="imports-section">
-      <h3>URL imports</h3>
-      <div class="table-wrap">
-        <table class="mtable">
-          <thead><tr>
-            <th>Name</th><th>Namespace</th><th>Source URL</th><th>Phase</th><th>Message</th>
-          </tr></thead>
-          <tbody id="importRows"><tr><td colspan="5" class="empty">Loading&hellip;</td></tr></tbody>
-        </table>
-      </div>
       </div>
     </div>
     </div>
@@ -1710,7 +1701,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
 
   var binFile=el("binFile"), ns=el("namespace"), urlNs=el("urlNamespace"),
       imageName=el("imageName"), btn=el("uploadBtn"), binHint=el("binHint"),
-      rows=el("rows"), importRows=el("importRows"), licText=el("licText");
+      rows=el("rows"), licText=el("licText");
 
   // Lenient structure check: does ANY single line contain a "<node-id> <key>"
   // entry? Surrounding labels / quotes / blank lines don't matter. Tested per-line
@@ -1783,7 +1774,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function rowMatchesSearch(row){
     if(!artifactSearchQuery) return true;
     var hay = [
-      row.displayName, row.name, row.namespace, row.nosLabel, row.nos, row.downloadStatus
+      row.displayName, row.name, row.namespace, row.nosLabel, row.nos,
+      row.downloadStatus, row.phase, row.source, row.sourceUrl, row.message
     ].join(" ").toLowerCase();
     return hay.indexOf(artifactSearchQuery) >= 0;
   }
@@ -2442,7 +2434,47 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   });
 
   // ---------- artifacts table ----------
-  var lastImports=[];   // in-flight browser->controller uploads tracked in pendingUploads
+  var lastImports=[];   // URL imports from /api/imports (merged into dashboard table)
+  var importsLoadError=null;
+  function sourceBadge(kind){
+    if(kind === "url") return '<span class="source-badge source-url">URL</span>';
+    return '<span class="source-badge source-upload">Upload</span>';
+  }
+  function importMatchesArtifact(i, t){
+    if(!i || !t || i.namespace !== t.namespace) return false;
+    var iname = (i.specName || i.name || "").toLowerCase();
+    var tname = (t.name || "").toLowerCase();
+    var tdisp = (t.displayName || "").toLowerCase();
+    var crName = (i.name || "").toLowerCase();
+    return !!(iname && (iname === tname || iname === tdisp)) || !!(crName && crName === tname);
+  }
+  function artifactHasUrlImport(t){
+    for(var i=0;i<lastImports.length;i++){
+      if(importMatchesArtifact(lastImports[i], t)) return true;
+    }
+    return false;
+  }
+  function isImportSettled(i){
+    var p = (i && i.phase) || "";
+    return p === "Available" || p === "Ready";
+  }
+  function importSearchRow(i){
+    return {
+      displayName: i.name, name: i.specName || i.name, namespace: i.namespace,
+      nos: i.detectedNos, nosLabel: i.detectedNos, phase: i.phase,
+      source: "url", sourceUrl: i.sourceUrl, message: i.message
+    };
+  }
+  function visibleImports(){
+    return (lastImports || []).filter(function(i){
+      if(isImportSettled(i)){
+        for(var j=0;j<currentData.length;j++){
+          if(importMatchesArtifact(i, currentData[j])) return false;
+        }
+      }
+      return rowMatchesSearch(importSearchRow(i));
+    });
+  }
   var NOS_LABELS={srl:"Nokia SR Linux",sros:"Nokia SR OS",srsim:"Nokia SR OS (SIM)"};
   function osLabel(t){
     var l=(t&&t.nosLabel)||(t&&t.nos&&NOS_LABELS[t.nos])||"";
@@ -2543,7 +2575,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       else if(isActiveStatus(s)) act++;
       else if(s==="Error"||s==="Failed") failed++;
     });
-    lastImports.forEach(function(i){ if(isActiveStatus(i.phase)) act++; });
+    lastImports.forEach(function(i){
+      if(isActiveStatus(i.phase)) act++;
+      else if(i.phase === "Failed" || i.phase === "Error") failed++;
+    });
     setKpi("kpiTotal", total);
     setKpi("kpiReady", ready);
     setKpi("kpiActive", act);
@@ -2568,7 +2603,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
            '<div class="upinfo">'+esc(sub)+'</div>';
   }
   function pendingRowHtml(p){
-    return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td><span class="os-empty">&mdash;</span></td><td>'+esc(p.namespace)+
+    return '<tr><td class="mono namecell">'+esc(p.displayName)+'</td><td>'+sourceBadge("upload")+'</td><td><span class="os-empty">&mdash;</span></td><td>'+esc(p.namespace)+
       '</td><td class="num">'+fmtBytes(p.total)+'</td><td class="upload-status-cell" id="upstat-'+p.key+'">'+pendStatusHtml(p)+
       '</td><td></td></tr>';
   }
@@ -2582,10 +2617,32 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       ?('<button class="action-btn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'" data-name="'+esc(t.name||"")+'" title="View NodeProfile details"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span class="act-label">Details</span></button>')
       :'';
     var del='<button class="action-btn danger ripple" data-act="del" data-uid="'+esc(t.uploadId||"")+'" data-ns="'+esc(t.namespace||"")+'" data-name="'+esc(t.name||"")+'" title="Delete artifact"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M6 7h12M9 7V5h6v2m-8 0l1 12h8l1-12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg><span class="act-label">Delete</span></button>';
-    return '<tr><td class="mono namecell" title="'+esc(t.displayName||t.name)+'">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+osLabel(t)+
+    var src = artifactHasUrlImport(t) ? "url" : "upload";
+    return '<tr><td class="mono namecell" title="'+esc(t.displayName||t.name)+'">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+sourceBadge(src)+'</td><td>'+osLabel(t)+
       '</td><td class="mono" title="'+esc(t.namespace)+'">'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(displayStatus, rowKey)+reason+
       '</td><td class="actions-cell">'+view+del+'</td></tr>';
+  }
+  function importOsLabel(i){
+    var nos = i.detectedNos || "";
+    return osLabel({ nos: nos, nosLabel: NOS_LABELS[nos] || nos });
+  }
+  function importRowHtml(i){
+    var rowKey = (i.name||"")+"|"+(i.namespace||"");
+    var urlHint = i.sourceUrl
+      ? ('<div class="upinfo mono url-cell" title="'+esc(i.sourceUrl)+'">'+esc(i.sourceUrl)+'</div>')
+      : "";
+    var msg = i.message ? ('<div class="reason">'+esc(i.message)+'</div>') : "";
+    var retry = isImportConflict(i)
+      ? ('<button class="action-btn primary ripple" data-act="retry-import" data-url="'+esc(i.sourceUrl)+'"'+
+         ' data-ns="'+esc(i.namespace)+'" data-name="'+esc(i.specName||"")+'">'+
+         '<svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 12a8 8 0 0113.7-5.7M20 12a8 8 0 01-13.7 5.7" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/><path d="M20 4v4h-4M4 20v-4h4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/></svg>'+
+         '<span class="act-label">Replace</span></button>')
+      : "";
+    return '<tr><td class="mono namecell" title="'+esc(i.name)+'">'+esc(i.name)+urlHint+'</td><td>'+sourceBadge("url")+'</td><td>'+
+      importOsLabel(i)+'</td><td class="mono" title="'+esc(i.namespace)+'">'+esc(i.namespace)+
+      '</td><td class="num">'+fmtBytes(i.sizeBytes)+'</td><td>'+chip(i.phase, rowKey)+msg+
+      '</td><td class="actions-cell">'+retry+'</td></tr>';
   }
 
   function imDelete(uid, nsv, name){
@@ -2702,6 +2759,24 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
 
   rows.addEventListener("click", function(e){
+    var retryBtn = e.target.closest("button[data-act='retry-import']");
+    if(retryBtn){
+      var payload={
+        url: retryBtn.getAttribute("data-url")||"",
+        namespace: retryBtn.getAttribute("data-ns")||"",
+        insecureSkipTLSVerify: !!el("urlInsecure").checked
+      };
+      var nm=(retryBtn.getAttribute("data-name")||"").trim();
+      if(nm) payload.name=nm.toLowerCase();
+      var m=/Artifact named '([^']+)' already exists in ([^.]+)/.exec(
+        (retryBtn.parentElement&&retryBtn.parentElement.textContent)||"");
+      if(m){
+        askReplace(m[1], m[2].trim(), function(){ startUrlImport(payload, true); });
+      } else {
+        startUrlImport(payload, true);
+      }
+      return;
+    }
     var b = e.target.closest("button[data-act]");
     if(!b) return;
     if(b.getAttribute("data-act")==="view"){
@@ -2711,28 +2786,52 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     }
   });
 
-  importRows.addEventListener("click", function(e){
-    var b=e.target.closest("button[data-act='retry-import']");
-    if(!b) return;
-    var payload={
-      url: b.getAttribute("data-url")||"",
-      namespace: b.getAttribute("data-ns")||"",
-      insecureSkipTLSVerify: !!el("urlInsecure").checked
-    };
-    var nm=(b.getAttribute("data-name")||"").trim();
-    if(nm) payload.name=nm.toLowerCase();
-    var m=/Artifact named '([^']+)' already exists in ([^.]+)/.exec(
-      (b.parentElement&&b.parentElement.textContent)||"");
-    if(m){
-      askReplace(m[1], m[2].trim(), function(){ startUrlImport(payload, true); });
-    } else {
-      startUrlImport(payload, true);
-    }
-  });
-
   // sorting
   var STATUS_RANK={Available:0,Ready:0,InProgress:1,AsvrOnly:2,NoLocalCopy:2,Error:3,Failed:4,NoArtifact:5};
   var currentData=[], sortState=null;  // null = server order (newest first)
+  function rowSortValue(entry){
+    var kind = entry.kind, row = entry.row;
+    var col = sortState.col;
+    if(col === "source"){
+      if(kind === "import") return "url";
+      if(kind === "pending") return "upload";
+      return artifactHasUrlImport(row) ? "url" : "upload";
+    }
+    if(col === "sizeBytes") return Number(row.sizeBytes || row.total || 0);
+    if(col === "downloadStatus"){
+      var s = kind === "pending" ? row.phase
+        : (kind === "import" ? row.phase : effectiveDownloadStatus(row));
+      return s in STATUS_RANK ? STATUS_RANK[s] : 9;
+    }
+    if(col === "displayName"){
+      return (row.displayName || row.name || "").toLowerCase();
+    }
+    if(col === "nosLabel"){
+      return String(row.nosLabel || row.nos || row.detectedNos || "").toLowerCase();
+    }
+    return String(row[col] == null ? "" : row[col]).toLowerCase();
+  }
+  function sortUnifiedRows(pend, imports, artifacts){
+    if(!sortState) return { pend: pend, imports: imports, artifacts: artifacts };
+    var dir = sortState.dir;
+    var all = [];
+    pend.forEach(function(p){ all.push({ kind: "pending", row: p }); });
+    imports.forEach(function(i){ all.push({ kind: "import", row: i }); });
+    artifacts.forEach(function(t){ all.push({ kind: "artifact", row: t }); });
+    all.sort(function(a, b){
+      var x = rowSortValue(a), y = rowSortValue(b);
+      if(x < y) return dir === "asc" ? -1 : 1;
+      if(x > y) return dir === "asc" ? 1 : -1;
+      return 0;
+    });
+    var out = { pend: [], imports: [], artifacts: [] };
+    all.forEach(function(e){
+      if(e.kind === "pending") out.pend.push(e.row);
+      else if(e.kind === "import") out.imports.push(e.row);
+      else out.artifacts.push(e.row);
+    });
+    return out;
+  }
   function sortData(arr){
     if(!sortState) return arr;
     var col=sortState.col, dir=sortState.dir, c=arr.slice();
@@ -2787,19 +2886,26 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         return pendingMatchesServer(pendingUploads[k], t);
       });
     });
+    var importRows = visibleImports();
+    var sorted = sortUnifiedRows(pend, importRows, serverRows);
+    pend = sorted.pend;
+    importRows = sorted.imports;
+    serverRows = sorted.artifacts;
     updateKpis();
-    if(!(pend.length+serverRows.length)){
+    if(!(pend.length+importRows.length+serverRows.length)){
       var emptyHint = artifactSearchQuery
         ? "No artifacts match your search."
         : "Upload a vendor <span class=\"mono\">.zip</span> or import from a URL to create your first Artifact.";
       var emptyActs = artifactSearchQuery ? "" :
         '<button class="btn contained ripple" data-goto="add-image" data-add-mode="file">Add image</button>'+
         '<button class="btn text ripple" data-goto="url-import">Import from URL</button>';
-      rows.innerHTML=emptyStateHtml(6, "images", artifactSearchQuery ? "No matches" : "No images yet",
+      rows.innerHTML=emptyStateHtml(7, "images", artifactSearchQuery ? "No matches" : "No images yet",
         emptyHint, emptyActs);
       el("statusCount").style.display="none"; return;
     }
-    rows.innerHTML = pend.map(pendingRowHtml).join("") + serverRows.map(serverRowHtml).join("");
+    rows.innerHTML = pend.map(pendingRowHtml).join("")
+      + importRows.map(importRowHtml).join("")
+      + serverRows.map(serverRowHtml).join("");
     updateStatusBadge();
   }
   document.body.addEventListener("click", function(e){
@@ -2815,23 +2921,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function renderImports(list){
     lastImports = list || [];
-    if(!list || !list.length){
-      importRows.innerHTML=emptyStateHtml(5, "link", "No URL imports yet",
-        "Remote imports appear here while the controller downloads and registers the image.",
-        '<button class="btn text ripple" data-goto="url-import">Start a URL import</button>');
-      if(activeTab === "status" && Object.keys(pendingUploads).length) render();
-      return;
-    }
-    importRows.innerHTML = list.map(function(i){
-      var retry=isImportConflict(i)
-        ? (' <button class="btn text ripple" data-act="retry-import" data-url="'+esc(i.sourceUrl)+'"'+
-           ' data-ns="'+esc(i.namespace)+'" data-name="'+esc(i.specName||"")+'">Replace</button>')
-        : "";
-      return '<tr><td class="mono namecell">'+esc(i.name)+'</td><td>'+esc(i.namespace)+'</td>'+
-        '<td class="mono url-cell" title="'+esc(i.sourceUrl)+'">'+esc(i.sourceUrl)+'</td><td>'+chip(i.phase, i.name+"|"+i.namespace)+'</td>'+
-        '<td>'+esc(i.message||"")+retry+'</td></tr>';
-    }).join("");
     if(activeTab === "status") render();
+    else updateStatusBadge();
   }
 
   function refreshImports(){
@@ -2841,14 +2932,19 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         return handleAuthLoss().then(function(expired){ if(!expired) refreshImports(); });
       }
       if(!res.ok){
-        importRows.innerHTML=emptyStateHtml(5, "warn", "Could not load URL imports",
-          esc("HTTP "+res.status+" from the controller."), "");
+        importsLoadError = "HTTP "+res.status;
+        lastImports = [];
+        if(activeTab === "status") render();
+        snack("err","Could not load URL imports (HTTP "+res.status+").", true);
         return;
       }
+      importsLoadError = null;
       renderImports((res.body||{}).imports||[]);
     }).catch(function(e){
-      importRows.innerHTML=emptyStateHtml(5, "warn", "Could not reach imports API",
-        esc((e&&e.message?e.message:"network error")+"."), "");
+      importsLoadError = (e && e.message) ? e.message : "network error";
+      lastImports = [];
+      if(activeTab === "status") render();
+      snack("err","Could not reach imports API.", true);
     });
   }
 
@@ -3020,7 +3116,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       }
       if(!res.ok){
         if(!opts.silent){
-          rows.innerHTML=emptyStateHtml(6, "warn", "Could not load artifacts",
+          rows.innerHTML=emptyStateHtml(7, "warn", "Could not load artifacts",
             esc("HTTP "+res.status+" from the controller. Try Refresh or sign in again."), "");
           snack("err","Could not load artifacts (HTTP "+res.status+").", true);
         }
@@ -3039,7 +3135,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       tryPendingDetails();
     }).catch(function(e){
       if(!opts.silent){
-        rows.innerHTML=emptyStateHtml(6, "warn", "Could not reach artifacts API",
+        rows.innerHTML=emptyStateHtml(7, "warn", "Could not reach artifacts API",
           esc((e&&e.message?e.message:"network error")+". Check your connection and try Refresh."), "");
       }
     });

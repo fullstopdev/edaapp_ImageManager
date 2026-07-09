@@ -1,5 +1,20 @@
 # Changelog
 
+## v0.1.52
+
+**Dashboard: unified artifacts table for uploads and URL imports.**
+
+- **Single inventory table:** File uploads, in-flight `pendingUploads`, and URL imports
+  (`/api/imports`) render in one Artifacts card with a **Source** badge column
+  (Upload / URL). The separate URL imports table is removed from the dashboard.
+- **Client-side merge:** No API changes — `/api/artifacts` and `/api/imports` are
+  fetched as before and normalized in the browser. Settled URL imports that already
+  appear as artifacts are de-duplicated; the artifact row shows Source **URL**.
+- **Search & sort:** `#artifactSearch` and column sort apply to the merged list.
+  Failed URL imports keep **Replace** in the actions column; file-upload rows keep
+  Details / Delete.
+- **Empty state:** "No images yet" CTA covers both Add image and Import from URL.
+
 ## v0.1.51
 
 **Full UI/UX refactor: EDA design system.**

@@ -203,6 +203,16 @@ def test_api_calls_attach_bearer_token():
 
 def test_url_import_empty_state_navigation():
     html = webui.INDEX_HTML
-    assert 'data-goto="url-import">Start a URL import' in html
+    assert 'data-goto="url-import">Import from URL' in html
     assert "document.body.addEventListener(\"click\", function(e){" in html
     assert "focusUrlImportForm" in html
+
+
+def test_dashboard_unified_artifacts_table():
+    html = webui.INDEX_HTML
+    assert 'data-sort="source">Source' in html
+    assert "source-badge" in html
+    assert "function importRowHtml" in html
+    assert "function visibleImports" in html
+    assert 'id="importRows"' not in html
+    assert "URL imports</h3>" not in html
