@@ -113,9 +113,23 @@ def test_keycloak_script_load_deduped():
 def test_bootstrap_runs_keycloak_before_config():
     html = webui.INDEX_HTML
     boot = html.split("// ---------- config + namespaces", 1)[1].split("// ---------- file selection", 1)[0]
-    assert "loadKeycloakScript()" in boot
-    assert 'initKeycloak({ onLoad: "check-sso" })' in boot
+    assert "bootstrapKeycloakPrelude()" in boot
+    assert 'initKeycloak({ onLoad: "check-sso" })' in html
     assert "fetchJson(api(\"/api/config\"))" in boot
+
+
+def test_bootstrap_keycloak_prelude_is_non_fatal():
+    html = webui.INDEX_HTML
+    prelude = html.split("function bootstrapKeycloakPrelude", 1)[1].split("function finishConfigBootstrap", 1)[0]
+    assert "keycloak bootstrap prelude failed" in prelude
+    assert "return null" in prelude
+
+
+def test_config_bootstrap_actionable_errors():
+    html = webui.INDEX_HTML
+    assert "function configBootstrapErrorMessage" in html
+    assert "controller is unreachable" in html
+    assert "configBootstrapErrorMessage(err, status)" in html
 
 
 def test_api_calls_attach_bearer_token():

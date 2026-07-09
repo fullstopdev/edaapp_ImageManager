@@ -1861,6 +1861,50 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     });
   }
 
+  function configBootstrapErrorMessage(err, status){
+    if(status){
+      if(status === 502 || status === 503 || status === 504){
+        return "Image Manager controller is unreachable (HTTP "+status+"). "
+          +"Check that the imagemanager pod is running and try again.";
+      }
+      if(status >= 500){
+        return "Image Manager server error (HTTP "+status+"). "
+          +"Check controller logs and try again.";
+      }
+      if(status === 403){
+        return "Access denied (HTTP 403). Your EDA role may not include Image Manager access.";
+      }
+      return "config unavailable (HTTP "+status+")";
+    }
+    if(err && err.message){
+      if(/Failed to fetch|NetworkError|load failed/i.test(err.message)){
+        return "Cannot reach Image Manager (network error). "
+          +"Check your connection and that the app is installed.";
+      }
+      if(err.message.indexOf("config unavailable") === 0) return err.message;
+    }
+    return "Failed to load Image Manager configuration.";
+  }
+  function bootstrapKeycloakPrelude(){
+    // Cable-map: attempt check-sso before API calls, but never brick bootstrap.
+    return loadKeycloakScript().then(function(){
+      if(hasKeycloakCallback()){
+        return initKeycloak({ onLoad: "login-required", force: true }).then(function(){
+          return exchangeKeycloakSession();
+        });
+      }
+      return initKeycloak({ onLoad: "check-sso" }).then(function(authenticated){
+        if(authenticated && keycloak && keycloak.token){
+          return exchangeKeycloakSession();
+        }
+        return null;
+      });
+    }).catch(function(err){
+      console.warn("keycloak bootstrap prelude failed:",
+        err && err.message ? err.message : err);
+      return null;
+    });
+  }
   function finishConfigBootstrap(){
     return fetchJson(api("/api/config")).then(function(res){
       if(res.status === 401){
@@ -1910,20 +1954,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     });
   }
 
-  // ---------- config + namespaces (cable-map: keycloak check-sso before API) ----------
-  loadKeycloakScript().then(function(){
-    if(hasKeycloakCallback()){
-      return initKeycloak({ onLoad: "login-required", force: true }).then(function(){
-        return exchangeKeycloakSession();
-      });
-    }
-    return initKeycloak({ onLoad: "check-sso" }).then(function(authenticated){
-      if(authenticated && keycloak && keycloak.token){
-        return exchangeKeycloakSession();
-      }
-      return null;
-    });
-  }).then(function(){
+  // ---------- config + namespaces (cable-map: keycloak prelude, resilient config) ----------
+  bootstrapKeycloakPrelude().then(function(){
     return fetchJson(api("/api/config"));
   }).then(function(res){
     if(res.status === 401){
@@ -1933,9 +1965,12 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
     applyConfigResponse(res.body || {});
   }).catch(function(err){
-    var msg = (err && err.message && err.message.indexOf("config unavailable")===0)
-            ? err.message : "Failed to load Image Manager configuration.";
-    showFatal(msg);
+    var status = null;
+    if(err && err.message){
+      var m = err.message.match(/config unavailable \(HTTP (\d+)\)/);
+      if(m) status = parseInt(m[1], 10);
+    }
+    showFatal(configBootstrapErrorMessage(err, status));
   });
 
   // ---------- file selection ----------

@@ -1,5 +1,21 @@
 # Changelog
 
+## v0.1.42
+
+**Fix bootstrap brick when Keycloak prelude fails (v0.1.41 regression).**
+
+- **Root cause:** v0.1.41 ran `keycloak.init(check-sso)` in the same promise chain as
+  `GET /api/config` without a catch. Script load timeout, init timeout, or
+  `redirect_uri` errors rejected the chain before `/api/config` ran, showing
+  *Failed to load Image Manager configuration.* via `showFatal()` — the shell never
+  reached `bootDone()` + sign-in banner or `onAuthReady`.
+- **Fix:** New `bootstrapKeycloakPrelude()` attempts cable-map check-sso + token
+  exchange first but catches all failures and continues to `/api/config`. OAuth /
+  silent-SSO fallback (`handleBootstrap401`) still runs on 401. HTTP 5xx / network
+  errors now show actionable messages instead of the generic fatal string.
+- **Unchanged:** v0.1.41 redirect URIs, bearer fallback, `validateBootstrapSession`,
+  concurrent uploads, URL import empty-state.
+
 ## v0.1.41
 
 **Cable-map auth parity (v0.1.40 regression fix).**
