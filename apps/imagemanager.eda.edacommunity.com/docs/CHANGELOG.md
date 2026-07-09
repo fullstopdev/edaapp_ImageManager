@@ -1,5 +1,19 @@
 # Changelog
 
+## v0.1.51
+
+**Full UI/UX refactor: EDA design system.**
+
+- **Design system:** `--space-*` rhythm, layered surfaces (`--bg` / `--panel`), 56px app bar
+  with logo divider and version badge, underline tabs, KPI cards with category accent lines.
+- **Dashboard:** Artifacts table in elevated card with sticky header, 48px rows, client-side
+  search (240px), compact icon+text row actions; calmer status chips.
+- **Add image:** Unified File | URL segmented panel (replaces separate Upload / URL Import tabs).
+- **Chrome:** Subtle snackbar (dark surface + 4px left stripe), integrated auth banner,
+  dialog scrim blur, `prefers-reduced-motion` respected.
+- **Unchanged:** Self-contained controller (no npm build), dark/light themes, auth/SSO,
+  `eda-embedded`, concurrent uploads, URL import deep links (`data-goto="url-import"`).
+
 ## v0.1.50
 
 **UI: restore clean baseline + professional EDA visual pass.**
