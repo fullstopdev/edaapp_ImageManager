@@ -1,11 +1,11 @@
 {
   "uuid": "c25e5490-741a-4a1c-bcb9-dee8ad964ab8",
   "name": "Image Manager",
-  "version": "0.1.38",
+  "version": "0.1.39",
   "displayName": "Image Manager",
   "description": "Upload vendor NOS images into EDA and create Artifacts for node bootstrap.",
   "showNavigationToolbar": true,
-  "lastChanged": "2026-07-09T12:00:00Z",
+  "lastChanged": "2026-07-09T14:30:00Z",
   "screens": [
     {
       "name": "Image Manager",

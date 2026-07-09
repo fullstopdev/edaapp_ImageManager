@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.39
+
+**Fix infinite "Checking session…" bootstrap hang (v0.1.37 regression).**
+
+- **Root cause:** v0.1.37 added `validateBootstrapSession()` with mandatory
+  `keycloak.init({ onLoad: 'check-sso' })` before `onAuthReady`, but removed the
+  v0.0.60 timeout guards. When silent check-sso never completes (iframe hang,
+  CSP, or identity-proxy stall), the promise chain never resolves and the SPA
+  stays on *Checking session…* forever — even though `bootDone()` already ran.
+- **Fix:** Restore bounded waits — 10s script load, 8s `keycloak.init`, 20s full
+  bootstrap/silent-SSO cap via `promiseWithTimeout`. Dedupe `loadKeycloakScript()`,
+  verify `window.Keycloak` after load, log failures to console. On timeout or
+  `authenticated === false`: fall through identity-probe fallback (v0.1.37) then
+  `handleBootstrap401()` / embedded sign-in banner (never infinite spinner).
+- **Unchanged:** Cable-map SSO when it works, v0.1.37 logout reconcile,
+  v0.1.38 UMD keycloak build, embedded no `window.top` hijack.
+
 ## v0.1.38
 
 **Fix startup crash: keycloak-js ES module loaded as classic script.**

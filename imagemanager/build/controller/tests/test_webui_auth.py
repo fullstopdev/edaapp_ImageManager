@@ -74,7 +74,23 @@ def test_identity_probe_uses_eda_proxy_not_imagemanager_origin():
     assert 'encodeURIComponent(window.location.origin + "/")' in html
 
 
-def test_url_import_empty_state_navigates_to_import_tab():
+def test_bootstrap_auth_has_timeouts_and_guaranteed_exit():
+    html = webui.INDEX_HTML
+    assert "promiseWithTimeout" in html
+    assert "KC_INIT_TIMEOUT_MS = 8000" in html
+    assert "BOOTSTRAP_AUTH_TIMEOUT_MS = 20000" in html
+    assert "KC_SCRIPT_LOAD_TIMEOUT_MS = 10000" in html
+    bootstrap = html.split("function applyConfigResponse", 1)[1]
+    assert "bootstrap session validation failed" in bootstrap
+    assert "handleBootstrap401()" in bootstrap
+
+
+def test_keycloak_script_load_deduped():
+    html = webui.INDEX_HTML
+    assert "keycloakScriptPromise" in html
+    assert "window.Keycloak missing" in html
+
+
     html = webui.INDEX_HTML
     assert 'data-goto="url-import">Start a URL import' in html
     assert "document.body.addEventListener(\"click\", function(e){" in html

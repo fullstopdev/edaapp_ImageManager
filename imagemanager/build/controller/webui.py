@@ -976,7 +976,32 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function api(p){ return apiBase + p; }
   var keycloak = null;
   var keycloakInitPromise = null;
+  var keycloakScriptPromise = null;
   var KEYCLOAK_CLIENT_ID = "auth";
+  var KC_SCRIPT_LOAD_TIMEOUT_MS = 10000;
+  var KC_INIT_TIMEOUT_MS = 8000;
+  var BOOTSTRAP_AUTH_TIMEOUT_MS = 20000;
+  function promiseWithTimeout(promise, ms, label){
+    return new Promise(function(resolve, reject){
+      var done = false;
+      var timer = setTimeout(function(){
+        if(done) return;
+        done = true;
+        reject(new Error((label || "operation") + " timed out after " + ms + "ms"));
+      }, ms);
+      Promise.resolve(promise).then(function(v){
+        if(done) return;
+        done = true;
+        clearTimeout(timer);
+        resolve(v);
+      }).catch(function(err){
+        if(done) return;
+        done = true;
+        clearTimeout(timer);
+        reject(err);
+      });
+    });
+  }
   function keycloakIdentityUrl(){
     return window.location.origin + "/core/proxy/v1/identity";
   }
@@ -1004,33 +1029,57 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   }
   function loadKeycloakScript(){
     if(window.Keycloak) return Promise.resolve();
-    return new Promise(function(resolve, reject){
+    if(keycloakScriptPromise) return keycloakScriptPromise;
+    keycloakScriptPromise = new Promise(function(resolve, reject){
       var s = document.createElement("script");
       s.src = api("/assets/keycloak.min.js");
       s.async = true;
-      s.onload = function(){ resolve(); };
-      s.onerror = function(){ reject(new Error("keycloak script load failed")); };
+      var timer = setTimeout(function(){
+        keycloakScriptPromise = null;
+        reject(new Error("keycloak script load timed out"));
+      }, KC_SCRIPT_LOAD_TIMEOUT_MS);
+      s.onload = function(){
+        clearTimeout(timer);
+        if(!window.Keycloak){
+          keycloakScriptPromise = null;
+          reject(new Error("keycloak script loaded but window.Keycloak missing"));
+          return;
+        }
+        resolve();
+      };
+      s.onerror = function(){
+        clearTimeout(timer);
+        keycloakScriptPromise = null;
+        reject(new Error("keycloak script load failed"));
+      };
       document.head.appendChild(s);
     });
+    return keycloakScriptPromise;
   }
   function initKeycloak(opts){
     opts = opts || {};
     if(keycloakInitPromise && !opts.force) return keycloakInitPromise;
-    keycloakInitPromise = loadKeycloakScript().then(function(){
+    var initPromise = loadKeycloakScript().then(function(){
       ensureKeycloakInstance();
-      return keycloak.init({
-        onLoad: opts.onLoad || "check-sso",
-        silentCheckSsoRedirectUri: silentCheckSsoUri(),
-        checkLoginIframe: false,
-        pkceMethod: "S256",
-        redirectUri: keycloakRedirectUri()
-      });
+      return promiseWithTimeout(
+        keycloak.init({
+          onLoad: opts.onLoad || "check-sso",
+          silentCheckSsoRedirectUri: silentCheckSsoUri(),
+          checkLoginIframe: false,
+          pkceMethod: "S256",
+          redirectUri: keycloakRedirectUri()
+        }),
+        KC_INIT_TIMEOUT_MS,
+        "keycloak init"
+      );
     }).then(function(authenticated){
       return !!authenticated;
     }).catch(function(err){
       keycloakInitPromise = null;
+      console.warn("keycloak init failed:", err && err.message ? err.message : err);
       throw err;
     });
+    keycloakInitPromise = initPromise;
     return keycloakInitPromise;
   }
   function exchangeKeycloakSession(){
@@ -1068,10 +1117,17 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     });
   }
   function runSilentSsoAndExchange(){
-    return ensureKeycloakSessionValid().then(function(kcOk){
-      if(!kcOk) return false;
-      return exchangeKeycloakSession();
-    }).catch(function(){ return false; });
+    return promiseWithTimeout(
+      ensureKeycloakSessionValid().then(function(kcOk){
+        if(!kcOk) return false;
+        return exchangeKeycloakSession();
+      }),
+      BOOTSTRAP_AUTH_TIMEOUT_MS,
+      "silent SSO"
+    ).catch(function(err){
+      console.warn("silent SSO failed:", err && err.message ? err.message : err);
+      return false;
+    });
   }
   function startKeycloakLogin(){
     setAuthBanner("loading", "Signing in\u2026");
@@ -1495,6 +1551,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     runSilentSsoAndExchange().then(function(ok){
       if(ok) return finishConfigBootstrap();
       beginOAuthSignIn("Sign in to use Image Manager.");
+    }).catch(function(){
+      beginOAuthSignIn("Sign in to use Image Manager.");
     });
   }
   function showFatal(msg){
@@ -1779,7 +1837,11 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
     }
     setAuthBanner("loading", "Checking session\u2026");
-    validateBootstrapSession(c).then(function(validConfig){
+    promiseWithTimeout(
+      validateBootstrapSession(c),
+      BOOTSTRAP_AUTH_TIMEOUT_MS,
+      "bootstrap session"
+    ).then(function(validConfig){
       if(!validConfig){
         handleBootstrap401();
         return;
@@ -1800,6 +1862,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
       });
       syncLiveIndicator();
+    }).catch(function(err){
+      console.warn("bootstrap session validation failed:", err && err.message ? err.message : err);
+      handleBootstrap401();
     });
   }
 
