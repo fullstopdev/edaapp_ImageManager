@@ -9,10 +9,50 @@ def test_bootstrap_validates_keycloak_before_auth_ready():
     html = webui.INDEX_HTML
     assert "function validateBootstrapSession" in html
     assert "ensureKeycloakSessionValid" in html
-    bootstrap = html.split("function applyConfigResponse", 1)[1]
-    before_auth_ready = bootstrap.split("onAuthReady", 1)[0]
-    assert "validateBootstrapSession" in before_auth_ready
-    assert "onAuthReady(c.user" not in before_auth_ready
+    fast = html.split("function applyConfigResponseFast", 1)[1].split("function ", 1)[0]
+    before_auth_ready = fast.split("onAuthReady", 1)[0]
+    assert "validateBootstrapSession" not in before_auth_ready
+    bg = html.split("function backgroundValidateSession", 1)[1].split("function ", 1)[0]
+    assert "validateBootstrapSession" in bg
+    assert "onAuthReady" not in bg.split("validateBootstrapSession", 1)[0]
+
+
+def test_bootstrap_fast_path_shows_ui_before_session_check():
+    html = webui.INDEX_HTML
+    fast = html.split("function applyConfigResponseFast", 1)[1].split("function ", 1)[0]
+    assert "bootDone()" in fast
+    assert "startDataLoads" in fast
+    bg = html.split("function backgroundValidateSession", 1)[1].split("function ", 1)[0]
+    assert "Checking session" in bg
+
+
+def test_bootstrap_runs_config_before_keycloak_prelude():
+    html = webui.INDEX_HTML
+    boot = html.split("// ---------- config + namespaces", 1)[1].split("// ---------- file selection", 1)[0]
+    assert "runConfigBootstrap()" in boot
+    run_boot = html.split("function runConfigBootstrap", 1)[1].split("function handleInitialConfigResponse", 1)[0]
+    assert 'fetchJson(api("/api/config"))' in run_boot
+    assert "hasKeycloakCallback()" in run_boot
+    prelude = html.split("function bootstrapKeycloakPrelude", 1)[1].split("function applyConfigUi", 1)[0]
+    assert "login-required" in prelude
+    assert "check-sso" not in prelude
+
+
+def test_bootstrap_keycloak_prelude_is_non_fatal():
+    html = webui.INDEX_HTML
+    prelude = html.split("function bootstrapKeycloakPrelude", 1)[1].split("function applyConfigUi", 1)[0]
+    assert "keycloak bootstrap prelude failed" in prelude
+    assert "return null" in prelude
+
+
+def test_bootstrap_auth_has_timeouts_and_guaranteed_exit():
+    html = webui.INDEX_HTML
+    assert "promiseWithTimeout" in html
+    assert "KC_INIT_TIMEOUT_MS = 8000" in html
+    assert "BOOTSTRAP_AUTH_TIMEOUT_MS = 20000" in html
+    assert "KC_SCRIPT_LOAD_TIMEOUT_MS = 10000" in html
+    assert "background session validation failed" in html
+    assert "handleBootstrap401()" in html
 
 
 def test_reconcile_uses_keycloak_check():
@@ -93,36 +133,10 @@ def test_identity_probe_uses_eda_proxy_not_imagemanager_origin():
     assert 'encodeURIComponent(window.location.origin + "/")' in html
 
 
-def test_bootstrap_auth_has_timeouts_and_guaranteed_exit():
-    html = webui.INDEX_HTML
-    assert "promiseWithTimeout" in html
-    assert "KC_INIT_TIMEOUT_MS = 8000" in html
-    assert "BOOTSTRAP_AUTH_TIMEOUT_MS = 20000" in html
-    assert "KC_SCRIPT_LOAD_TIMEOUT_MS = 10000" in html
-    bootstrap = html.split("function applyConfigResponse", 1)[1]
-    assert "bootstrap session validation failed" in bootstrap
-    assert "handleBootstrap401()" in bootstrap
-
-
 def test_keycloak_script_load_deduped():
     html = webui.INDEX_HTML
     assert "keycloakScriptPromise" in html
     assert "window.Keycloak missing" in html
-
-
-def test_bootstrap_runs_keycloak_before_config():
-    html = webui.INDEX_HTML
-    boot = html.split("// ---------- config + namespaces", 1)[1].split("// ---------- file selection", 1)[0]
-    assert "bootstrapKeycloakPrelude()" in boot
-    assert 'initKeycloak({ onLoad: "check-sso" })' in html
-    assert "fetchJson(api(\"/api/config\"))" in boot
-
-
-def test_bootstrap_keycloak_prelude_is_non_fatal():
-    html = webui.INDEX_HTML
-    prelude = html.split("function bootstrapKeycloakPrelude", 1)[1].split("function finishConfigBootstrap", 1)[0]
-    assert "keycloak bootstrap prelude failed" in prelude
-    assert "return null" in prelude
 
 
 def test_config_bootstrap_actionable_errors():

@@ -1886,23 +1886,80 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     return "Failed to load Image Manager configuration.";
   }
   function bootstrapKeycloakPrelude(){
-    // Cable-map: attempt check-sso before API calls, but never brick bootstrap.
+    // OAuth callback only: exchange code before /api/config (cable-map login-required).
     return loadKeycloakScript().then(function(){
-      if(hasKeycloakCallback()){
-        return initKeycloak({ onLoad: "login-required", force: true }).then(function(){
-          return exchangeKeycloakSession();
-        });
-      }
-      return initKeycloak({ onLoad: "check-sso" }).then(function(authenticated){
-        if(authenticated && keycloak && keycloak.token){
-          return exchangeKeycloakSession();
-        }
-        return null;
+      return initKeycloak({ onLoad: "login-required", force: true }).then(function(){
+        return exchangeKeycloakSession();
       });
     }).catch(function(err){
       console.warn("keycloak bootstrap prelude failed:",
         err && err.message ? err.message : err);
       return null;
+    });
+  }
+  function applyConfigUi(c){
+    if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
+    binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
+    if(c.version){
+      var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
+    }
+  }
+  function startDataLoads(c){
+    var defaultNs=(c.defaultArtifactNamespace||"").trim();
+    fetchJson(api("/api/namespaces")).then(function(nsRes){
+      if(nsRes.status===401) return;
+      if(!nsRes.ok){
+        snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
+        return;
+      }
+      fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
+    });
+    refresh();
+    refreshImports();
+    fetchJson(api("/api/settings")).then(function(sRes){
+      if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
+    });
+    syncLiveIndicator();
+  }
+  function applyConfigResponseFast(c){
+    bootDone();
+    applyConfigUi(c);
+    onAuthReady(c.user || null);
+    startDataLoads(c);
+  }
+  function backgroundValidateSession(c){
+    var slowBannerTimer = setTimeout(function(){
+      if(authReady && !sessionInterruptBlocked()){
+        setAuthBanner("loading", "Checking session\u2026");
+      }
+    }, 600);
+    promiseWithTimeout(
+      validateBootstrapSession(c),
+      BOOTSTRAP_AUTH_TIMEOUT_MS,
+      "bootstrap session"
+    ).then(function(validConfig){
+      clearTimeout(slowBannerTimer);
+      setAuthBanner(null);
+      if(!validConfig){
+        if(authReady){
+          showConfirmedSessionLoss();
+        } else {
+          handleBootstrap401();
+        }
+        return;
+      }
+      if(validConfig.user) showAuthUser(validConfig.user);
+    }).catch(function(err){
+      clearTimeout(slowBannerTimer);
+      setAuthBanner(null);
+      console.warn("background session validation failed:",
+        err && err.message ? err.message : err);
+      loadKeycloakScript().then(function(){
+        return initKeycloak({ onLoad: "check-sso" });
+      }).catch(function(kcErr){
+        console.warn("background keycloak init failed:",
+          kcErr && kcErr.message ? kcErr.message : kcErr);
+      });
     });
   }
   function finishConfigBootstrap(){
@@ -1912,59 +1969,42 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         return;
       }
       if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
-      applyConfigResponse(res.body || {});
+      var c = res.body || {};
+      applyConfigResponseFast(c);
+      backgroundValidateSession(c);
     });
   }
-  function applyConfigResponse(c){
-    bootDone();
-    if(c.maxUploadMiB) maxBytes=c.maxUploadMiB*1024*1024;
-    binHint.textContent="Maximum upload size: "+(c.maxUploadMiB||Math.round(maxBytes/1048576))+" MiB.";
-    if(c.version){
-      var vb=el("verBadge"); vb.style.display="inline-flex"; vb.textContent=c.version;
-    }
-    setAuthBanner("loading", "Checking session\u2026");
-    promiseWithTimeout(
-      validateBootstrapSession(c),
-      BOOTSTRAP_AUTH_TIMEOUT_MS,
-      "bootstrap session"
-    ).then(function(validConfig){
-      if(!validConfig){
-        handleBootstrap401();
-        return;
-      }
-      onAuthReady(validConfig.user || null);
-      var defaultNs=(validConfig.defaultArtifactNamespace||"").trim();
-      fetchJson(api("/api/namespaces")).then(function(nsRes){
-        if(nsRes.status===401) return;
-        if(!nsRes.ok){
-          snack("err","Could not load namespaces (HTTP "+nsRes.status+").", true);
-          return;
-        }
-        fillNamespaceSelects((nsRes.body||{}).namespaces, defaultNs);
-      });
-      refresh();
-      refreshImports();
-      fetchJson(api("/api/settings")).then(function(sRes){
-        if(sRes.ok && sRes.body) updateOpsHealth(sRes.body.health, sRes.body.message);
-      });
-      syncLiveIndicator();
-    }).catch(function(err){
-      console.warn("bootstrap session validation failed:", err && err.message ? err.message : err);
-      handleBootstrap401();
-    });
-  }
-
-  // ---------- config + namespaces (cable-map: keycloak prelude, resilient config) ----------
-  bootstrapKeycloakPrelude().then(function(){
-    return fetchJson(api("/api/config"));
-  }).then(function(res){
+  function handleInitialConfigResponse(res){
     if(res.status === 401){
       handleBootstrap401();
       return;
     }
     if(!res.ok) throw new Error("config unavailable (HTTP "+res.status+")");
-    applyConfigResponse(res.body || {});
-  }).catch(function(err){
+    var c = res.body || {};
+    applyConfigResponseFast(c);
+    backgroundValidateSession(c);
+  }
+  function runConfigBootstrap(){
+    var scriptPreload = loadKeycloakScript().catch(function(err){
+      console.warn("keycloak script preload failed:",
+        err && err.message ? err.message : err);
+      return null;
+    });
+    if(hasKeycloakCallback()){
+      return bootstrapKeycloakPrelude().then(function(){
+        return fetchJson(api("/api/config"));
+      }).then(handleInitialConfigResponse);
+    }
+    return Promise.all([
+      fetchJson(api("/api/config")),
+      scriptPreload
+    ]).then(function(results){
+      return handleInitialConfigResponse(results[0]);
+    });
+  }
+
+  // ---------- config + namespaces (fast path: config first when session valid) ----------
+  runConfigBootstrap().catch(function(err){
     var status = null;
     if(err && err.message){
       var m = err.message.match(/config unavailable \(HTTP (\d+)\)/);

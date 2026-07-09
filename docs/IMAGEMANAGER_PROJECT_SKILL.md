@@ -110,8 +110,10 @@ Session model matches cable-map:
 6. `/api/*` also accepts live Keycloak bearer tokens when cookie exchange lags
 7. Server `/oauth/login` (confidential `eda` client) remains OIDC fallback after
    `keycloak.login()` failure
-8. Bootstrap: attempt `check-sso` before `GET /api/config` (non-fatal — config fetch
-   always runs); stale `im_session` cleared when `check-sso` returns false; v0.1.39
+8. Bootstrap: `GET /api/config` first on normal load; valid `im_session` → immediate
+   `onAuthReady` with keycloak validation deferred to background (v0.1.43). OAuth callback
+   still runs keycloak `login-required` prelude. Attempt `check-sso` before config only on
+   401 / stale-session paths; stale `im_session` cleared when `check-sso` returns false;
    timeout guards prevent infinite *Checking session…*
 9. EDA logout: `reconcileAuthState` (3s) uses `check-sso` + identity probes
 

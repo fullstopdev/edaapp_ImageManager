@@ -1,5 +1,22 @@
 # Changelog
 
+## v0.1.43
+
+**Fast bootstrap when `im_session` is already valid (v0.1.42 slow load).**
+
+- **Root cause:** v0.1.42 ran `bootstrapKeycloakPrelude()` (keycloak script + `check-sso` +
+  token exchange) *before* `GET /api/config`, then blocked on `validateBootstrapSession()`
+  (second `check-sso`) with a mandatory *Checking session…* banner before `onAuthReady`.
+  Sequential 10s + 8s + 20s timeouts added up even on success — common dashboard
+  open-with-session felt slow.
+- **Fix:** `runConfigBootstrap()` fetches `/api/config` first (parallel keycloak script
+  preload). On HTTP 200: `bootDone()` + `onAuthReady` + data loads immediately;
+  `validateBootstrapSession()` runs in background (brief *Checking session…* only after
+  600ms). Keycloak prelude limited to OAuth callback (`login-required`) only. 401 path
+  unchanged (`handleBootstrap401` silent SSO). Keycloak init failure still non-fatal.
+- **Unchanged:** cable-map SSO on no session, logout reconcile (v0.1.37+), redirect URIs,
+  bearer fallback, embedded sign-in banner.
+
 ## v0.1.42
 
 **Fix bootstrap brick when Keycloak prelude fails (v0.1.41 regression).**
