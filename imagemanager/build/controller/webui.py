@@ -533,6 +533,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   .dialog-actions { display:flex; justify-content:flex-end; gap:var(--space-1); padding:var(--space-2) var(--space-3) var(--space-3);
     border-top:1px solid var(--line); margin-top:var(--space-2); }
   .dialog-title.danger-title { color:var(--err-fg); }
+  .edit-sec { margin-top:var(--space-2); padding-top:var(--space-2); border-top:1px solid var(--line); }
+  .edit-sec:first-of-type { margin-top:0; padding-top:0; border-top:none; }
+  .edit-sec h3 { margin:0 0 var(--space-1); font-size:13px; font-weight:600; color:var(--text); }
   .np-sec { margin-top:var(--space-2); }
   .np-head { display:flex; align-items:center; justify-content:space-between; margin-bottom:6px; }
   .np-label { font-size:12px; font-weight:600; color:var(--muted); }
@@ -884,6 +887,43 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   <div class="dialog-actions">
     <button class="btn text danger ripple" id="npDelete">Delete image</button>
     <button class="btn text subtle ripple" id="npClose">Close</button>
+  </div>
+</div>
+
+<!-- post-upload edit dialog (license, schema profile, LLM) -->
+<div class="dialog" id="editDialog" role="dialog" aria-modal="true" aria-labelledby="editTitle">
+  <h2 class="dialog-title" id="editTitle">Edit image</h2>
+  <div class="dialog-body">
+    <p id="editIntro">Configure license, schema profile and LLM embedding for NodeProfile generation.</p>
+    <div class="edit-sec" id="editLicSec">
+      <h3>License</h3>
+      <div class="tf">
+        <textarea id="editLicText" placeholder=" " rows="4" spellcheck="false" autocapitalize="off" autocomplete="off"></textarea>
+        <label for="editLicText">License key</label>
+        <div class="helper" id="editLicHint">Paste a new key to attach or replace. Leave empty to keep the current license.</div>
+      </div>
+    </div>
+    <div class="edit-sec" id="editYangSec">
+      <h3>Schema profile (yang)</h3>
+      <p class="status-meta" id="editYangStatus">&mdash;</p>
+      <div class="tf">
+        <input type="text" id="editYangOverride" placeholder=" " autocomplete="off" spellcheck="false">
+        <label for="editYangOverride">Override URL (optional)</label>
+        <div class="helper">Full eda-asvr URL. Leave empty to use the auto-attached profile.</div>
+      </div>
+    </div>
+    <div class="edit-sec" id="editLlmSec">
+      <h3>LLM embedding (llmDb)</h3>
+      <div class="tf">
+        <input type="text" id="editLlmDb" placeholder=" " autocomplete="off" spellcheck="false">
+        <label for="editLlmDb">LLM database URL (optional)</label>
+        <div class="helper">eda-asvr <span class="mono">llm-dbs</span> URL referenced in NodeProfile <span class="mono">spec.llmDb</span>.</div>
+      </div>
+    </div>
+  </div>
+  <div class="dialog-actions">
+    <button class="btn text subtle ripple" id="editCancel">Cancel</button>
+    <button class="btn contained ripple" id="editSave">Save</button>
   </div>
 </div>
 
@@ -2613,6 +2653,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     var reason=t.statusReason?('<div class="reason">'+esc(t.statusReason)+'</div>'):'';
     var fcount=(t.nos==="sros" && t.fileCount)?('<div class="upinfo">'+t.fileCount+' image files'+(t.yangStatus?' + yang':'')+'</div>'):'';
     var lic=t.license?('<div class="upinfo">+ license &middot; '+esc(t.licenseNos||'key')+'</div>'):'';
+    var edit='<button class="action-btn ripple" data-act="edit" data-uid="'+esc(t.uploadId||"")+'" data-name="'+esc(t.name||"")+'" title="Edit license, schema profile, LLM"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 20h4l10.5-10.5a2.1 2.1 0 10-3-3L5 17v3z" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M13.5 6.5l3 3" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span class="act-label">Edit</span></button>';
     var view=t.snippet
       ?('<button class="action-btn primary ripple" data-act="view" data-uid="'+esc(t.uploadId||"")+'" data-name="'+esc(t.name||"")+'" title="View NodeProfile details"><svg viewBox="0 0 24 24" fill="none" aria-hidden="true"><path d="M4 7h16M4 12h10M4 17h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg><span class="act-label">Details</span></button>')
       :'';
@@ -2621,7 +2662,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     return '<tr><td class="mono namecell" title="'+esc(t.displayName||t.name)+'">'+esc(t.displayName||t.name)+fcount+lic+'</td><td>'+sourceBadge(src)+'</td><td>'+osLabel(t)+
       '</td><td class="mono" title="'+esc(t.namespace)+'">'+esc(t.namespace)+
       '</td><td class="num">'+fmtBytes(t.sizeBytes)+'</td><td>'+chip(displayStatus, rowKey)+reason+
-      '</td><td class="actions-cell">'+view+del+'</td></tr>';
+      '</td><td class="actions-cell">'+edit+view+del+'</td></tr>';
   }
   function importOsLabel(i){
     var nos = i.detectedNos || "";
@@ -2715,6 +2756,14 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         '<span class="mono">'+esc(t.license)+'</span> in <span class="mono">eda-system</span> '+
         'from your uploaded key and referenced it in <span class="mono">spec.license</span> below.';
     }
+    if(t.llmDb){
+      el("npIntro").innerHTML += ' <b>LLM:</b> <span class="mono">spec.llmDb</span> is set to '+
+        '<span class="mono">'+esc(t.llmDb)+'</span>.';
+    }
+    if(t.yangOverride){
+      el("npIntro").innerHTML += ' <b>Schema profile:</b> using your override URL '+
+        '<span class="mono">'+esc(t.yangOverride)+'</span>.';
+    }
     el("npSnipLabel").innerHTML = isSim
       ? 'Snippet &mdash; sim NodeProfile <span class="mono">spec</span>'
       : 'Snippet &mdash; <span class="mono">spec.images</span>';
@@ -2734,6 +2783,107 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     closeModal();
     imDelete(uid, (t&&t.namespace)||"", (t&&t.name)||"");
   });
+
+  // ---------- post-upload Edit dialog (license, yang override, llmDb) ----------
+  var editCurrentUid=null;
+  function findArtifactRow(needle){
+    needle=(needle||"").trim();
+    if(!needle) return null;
+    for(var i=0;i<currentData.length;i++){
+      var row=currentData[i];
+      var rid=(row.uploadId||"").trim();
+      var rname=(row.name||"").trim();
+      var rdisp=(row.displayName||"").trim();
+      if(needle===rid || needle===rname || needle===rdisp) return row;
+    }
+    return null;
+  }
+  function yangStatusText(t){
+    if(!t) return "No schema profile attached.";
+    if(t.yangOverride) return 'Using override URL <span class="mono">'+esc(t.yangOverride)+'</span>.';
+    if(t.yangArtifactName){
+      var st=t.yangStatus||"pending";
+      if(st==="Available" && t.yangUrl){
+        return 'Auto-attached Artifact <span class="mono">'+esc(t.yangArtifactName)+'</span> ('+esc(st)+').';
+      }
+      return 'Schema profile Artifact <span class="mono">'+esc(t.yangArtifactName)+'</span> — '+esc(st)+'.';
+    }
+    return "No schema profile attached yet.";
+  }
+  function openEdit(uid){
+    var t=findArtifactRow(uid);
+    if(!t) return false;
+    editCurrentUid=t.uploadId||t.name||uid;
+    var nos=t.nos||"srl";
+    el("editTitle").textContent="Edit — "+(t.displayName||t.name||"");
+    el("editIntro").textContent="Configure options that flow into NodeProfile YAML for "+
+      (t.nosLabel||NOS_LABELS[nos]||nos)+".";
+    el("editLicText").value="";
+    el("editLicHint").innerHTML=t.license
+      ?("License ConfigMap <span class=\"mono\">"+esc(t.license)+"</span> is attached. Paste a new key to replace, or leave empty.")
+      :"Paste a license key to attach (optional).";
+    el("editYangStatus").innerHTML=yangStatusText(t);
+    el("editYangOverride").value=t.yangOverride||"";
+    el("editLlmDb").value=t.llmDb||"";
+    var showLic=(nos==="sros"||nos==="srl"||nos==="srsim");
+    var showYang=(nos==="sros"||nos==="srl"||nos==="srsim");
+    var showLlm=(nos==="sros"||nos==="srl");
+    el("editLicSec").style.display=showLic?"":"none";
+    el("editYangSec").style.display=showYang?"":"none";
+    el("editLlmSec").style.display=showLlm?"":"none";
+    openModal(el("editDialog"));
+    return true;
+  }
+  function validOptionalUrl(val, label){
+    var v=(val||"").trim();
+    if(!v) return "";
+    if(v.length>2048){ snack("err", label+" URL is too long.", true); return null; }
+    if(!/^https?:\/\//i.test(v)){ snack("err", label+" must be an http(s) URL.", true); return null; }
+    return v;
+  }
+  function saveEdit(){
+    var uid=editCurrentUid;
+    if(!uid) return;
+    var t=findArtifactRow(uid);
+    var label=(t&&(t.displayName||t.name))||uid;
+    var nos=(t&&t.nos)||"srl";
+    var lic=(el("editLicText").value||"").trim();
+    if(lic && lic.length>262144){ snack("err","License text is too large.", true); return; }
+    if(lic && !looksLikeLicense(lic)){ snack("err","License text does not look valid.", true); return; }
+    var llmRaw=(nos==="sros"||nos==="srl") ? (el("editLlmDb").value||"") : "";
+    var yangRaw=(nos==="sros"||nos==="srl"||nos==="srsim") ? (el("editYangOverride").value||"") : "";
+    var llmDb=validOptionalUrl(llmRaw, "LLM database");
+    if(llmDb===null) return;
+    var yangOverride=validOptionalUrl(yangRaw, "Schema profile");
+    if(yangOverride===null) return;
+    var body={ llmDb: llmDb, yangOverride: yangOverride };
+    var qs=new URLSearchParams({ uploadId: uid });
+    var saveBtn=el("editSave");
+    saveBtn.disabled=true;
+    fetch(api("/api/artifacts/meta")+"?"+qs.toString(), withAuth({
+      method:"PUT",
+      headers:{"Content-Type":"application/json"},
+      body: JSON.stringify(body)
+    }))
+    .then(function(r){ return r.json().then(function(d){ return { status:r.status, data:d }; }); })
+    .then(function(res){
+      if(!(res.status>=200 && res.status<300 && res.data && res.data.ok)){
+        snack("err","Save failed: "+((res.data&&res.data.error)||("HTTP "+res.status)), true);
+        return;
+      }
+      closeModal();
+      if(lic){
+        attachLicense(uid, label, lic, "Options saved.");
+      } else {
+        snack("ok","Saved options for "+label+".");
+        refresh();
+      }
+    })
+    .catch(function(){ snack("err","Save failed (network).", true); })
+    .finally(function(){ saveBtn.disabled=false; });
+  }
+  el("editCancel").addEventListener("click", closeModal);
+  el("editSave").addEventListener("click", saveEdit);
 
   function setDetailsQuery(value){
     try{
@@ -2781,6 +2931,8 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(!b) return;
     if(b.getAttribute("data-act")==="view"){
       openNodeProfile(b.getAttribute("data-uid") || b.getAttribute("data-name"));
+    } else if(b.getAttribute("data-act")==="edit"){
+      openEdit(b.getAttribute("data-uid") || b.getAttribute("data-name"));
     } else if(b.getAttribute("data-act")==="del"){
       imDelete(b.getAttribute("data-uid"), b.getAttribute("data-ns"), b.getAttribute("data-name"));
     }

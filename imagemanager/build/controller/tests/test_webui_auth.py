@@ -216,3 +216,14 @@ def test_dashboard_unified_artifacts_table():
     assert "function visibleImports" in html
     assert 'id="importRows"' not in html
     assert "URL imports</h3>" not in html
+
+
+def test_post_upload_edit_dialog():
+    html = webui.INDEX_HTML
+    assert 'id="editDialog"' in html
+    assert 'data-act="edit"' in html
+    assert "function openEdit" in html
+    assert 'api("/api/artifacts/meta")' in html
+    assert 'id="editLicSec"' in html
+    assert 'id="editYangSec"' in html
+    assert 'id="editLlmSec"' in html

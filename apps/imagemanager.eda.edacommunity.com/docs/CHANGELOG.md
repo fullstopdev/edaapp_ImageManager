@@ -1,5 +1,14 @@
 # Changelog
 
+## v0.1.53
+
+**Post-upload Edit: license, schema profile, LLM embedding.**
+
+- **Edit action:** Artifacts table rows get a separate **Edit** button (distinct from Details/Delete) to configure an image after upload completes.
+- **Edit dialog:** Per NOS type — license key (SR OS / SR Linux / SR-SIM), schema profile override URL (`yangOverride`), and LLM database URL (`llmDb` for SR Linux / SR OS). Values flow into NodeProfile snippet and complete example.
+- **API:** `PUT /api/artifacts/meta?uploadId=…` with JSON `{ llmDb, yangOverride }` persists options on PVC `meta.json`. License continues to use existing `POST /api/license`.
+- **Tests:** `test_artifact_meta.py`, `test_webui_auth` edit-dialog assertions.
+
 ## v0.1.52
 
 **Dashboard: unified artifacts table for uploads and URL imports.**

@@ -14,6 +14,7 @@ Serves three audiences on one port:
       GET  /api/imports      ImageImport CR list (Status tab)
       POST /api/upload       raw-body file upload -> store on PVC -> create Artifact
       POST /api/url-import   create ImageImport CR from URL (URL Import tab)
+      PUT  /api/artifacts/meta  update llmDb / yangOverride on an uploaded image
   * eda-asvr, connecting directly to the Service to PULL an uploaded file:
       GET/HEAD /files/<uploadId>/<filename>[.md5]
 TLS: serving cert from the cert-manager CSI mount (issuer eda-internal-issuer),
@@ -839,7 +840,7 @@ class Handler(BaseHTTPRequestHandler):
     # --------------------------- PUT ---------------------------
 
     def do_PUT(self):
-        path, _ = self._route()
+        path, q = self._route()
         try:
             if auth.enabled() and not self._authed_user():
                 self._send_json({"ok": False, "error": "not authenticated"}, 401)
@@ -853,6 +854,15 @@ class Handler(BaseHTTPRequestHandler):
                     self._send_json({"ok": False, "error": "invalid JSON body"}, 400)
                     return
                 self._apply_settings(body)
+            elif path == "/api/artifacts/meta":
+                n = int(self.headers.get("Content-Length", 0) or 0)
+                raw = self.rfile.read(n) if n else b""
+                try:
+                    body = json.loads(raw.decode("utf-8")) if raw else {}
+                except Exception:
+                    self._send_json({"ok": False, "error": "invalid JSON body"}, 400)
+                    return
+                self._handle_artifact_meta(q, body)
             else:
                 self.send_error(405, "Method Not Allowed")
         except BrokenPipeError:
@@ -1029,6 +1039,23 @@ class Handler(BaseHTTPRequestHandler):
         result = import_common.attach_license(upload_id, raw, raw_lic_fn)
         self._send_json(result, result.get("status", 200 if result.get("ok") else 400))
 
+    def _handle_artifact_meta(self, q, body):
+        """Update NodeProfile options (llmDb, yangOverride) on an uploaded image."""
+        def one(name, default=None):
+            v = q.get(name, [default])
+            return v[0] if v else default
+
+        upload_id = (one("uploadId") or "").strip()
+        if not upload_id:
+            self._send_json({"ok": False, "error": "uploadId query param required"}, 400)
+            return
+        llm_db = body.get("llmDb") if "llmDb" in body else None
+        yang_override = body.get("yangOverride") if "yangOverride" in body else None
+        result = import_common.update_artifact_meta(upload_id, llm_db, yang_override)
+        if result.get("ok"):
+            invalidate_tracked_cache()
+        self._send_json(result, result.get("status", 200 if result.get("ok") else 400))
+
     def _handle_delete(self, q):
         def one(name):
             v = q.get(name, [None])
@@ -1121,7 +1148,7 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def _nodeprofile_yaml(nos, version, namespace, prof_name, image_entries, yang_url,
-                      license_cm=None):
+                      license_cm=None, llm_db=None):
     """A complete, copy-ready NodeProfile example for an Available image. The
     image path(s)+imageMd5, version, operatingSystem and yang are filled from the
     real artifact(s); environment-specific fields are left as <placeholders>.
@@ -1156,9 +1183,13 @@ def _nodeprofile_yaml(nos, version, namespace, prof_name, image_entries, yang_ur
     if license_cm:
         L.append(f"  license: {license_cm}   # ConfigMap (in eda-system) created by Image "
                  "Manager from your uploaded license key")
+    if llm_db:
+        L.append(f"  llmDb: {llm_db}")
+    else:
+        L.append(
+            "  # llmDb: https://eda-asvr.eda-system.svc/<ns>/llm-dbs/<db>/<db>.tar.gz"
+            "   # optional, EDA-provided per version")
     L += [
-        "  # llmDb: https://eda-asvr.eda-system.svc/<ns>/llm-dbs/<db>/<db>.tar.gz"
-        "   # optional, EDA-provided per version",
         "  nodeUser: admin",
         "  onboardingUsername: admin",
         "  onboardingPassword: NokiaSrl1!",
@@ -1255,6 +1286,22 @@ _NOS_LABELS = {
 }
 
 
+def _effective_yang_url(yang_url, yang_override):
+    """User override wins when set; otherwise use the auto-resolved Artifact URL."""
+    override = (yang_override or "").strip()
+    if override:
+        return override
+    return (yang_url or "").strip()
+
+
+def _meta_nodeprofile_options(m):
+    """Extract llmDb / yangOverride from PVC meta.json for API rows."""
+    return {
+        "llmDb": (m.get("llmDb") or "").strip() or None,
+        "yangOverride": (m.get("yangOverride") or "").strip() or None,
+    }
+
+
 def nos_label(nos):
     """Human-readable OS label for dashboard/API (meta.json nos codes)."""
     return _NOS_LABELS.get(nos or "", "")
@@ -1300,6 +1347,9 @@ def _single_row(m, status_by_key):
     display = m.get("displayName") or m.get("artifactName") or ""
     nos = m.get("nos") or "srl"
     yang_url = yst.get("internalUrl", "") if yang_ds == "Available" else ""
+    np_opts = _meta_nodeprofile_options(m)
+    llm_db = np_opts["llmDb"]
+    effective_yang = _effective_yang_url(yang_url, np_opts["yangOverride"])
     lic = m.get("license") or {}
     license_cm = lic.get("configMap") or ""
     snippet = ""
@@ -1308,14 +1358,17 @@ def _single_row(m, status_by_key):
         snippet = "images:\n  - image: " + image_path
         if md5_path:
             snippet += "\n    imageMd5: " + md5_path
-        if yang_url:
-            snippet += "\nyang: " + yang_url
+        if effective_yang:
+            snippet += "\nyang: " + effective_yang
         if license_cm:
             snippet += "\nlicense: " + license_cm
+        if llm_db:
+            snippet += "\nllmDb: " + llm_db
         vm = _VER_RE.search(display)
         example = _nodeprofile_yaml(nos, vm.group(1) if vm else "<version>", ns,
                                     uploads.to_k8s_name(display) or "my-nodeprofile",
-                                    [(image_path, md5_path)], yang_url, license_cm or None)
+                                    [(image_path, md5_path)], effective_yang,
+                                    license_cm or None, llm_db)
     return {
         "uploadId": m.get("uploadId"),
         "name": m.get("artifactName"),
@@ -1339,6 +1392,10 @@ def _single_row(m, status_by_key):
         "yangStatus": yang_ds,
         "license": license_cm or None,
         "licenseNos": lic.get("nos"),
+        "yangUrl": yang_url or None,
+        "yangArtifactName": yang.get("artifactName") or None,
+        "llmDb": llm_db,
+        "yangOverride": np_opts["yangOverride"],
     }
 
 
@@ -1395,19 +1452,25 @@ def _group_row(m, status_by_key):
 
     agg, agg_reason = _aggregate_download_status(statuses, agg_reasons)
 
+    np_opts = _meta_nodeprofile_options(m)
+    llm_db = np_opts["llmDb"]
+    effective_yang = _effective_yang_url(yang_url, np_opts["yangOverride"])
     lic = m.get("license") or {}
     license_cm = lic.get("configMap") or ""
     snippet = ""
     example = ""
     if all_images_available and image_lines:
         snippet = "images:\n" + "\n".join(image_lines)
-        if yang_url:
-            snippet += "\nyang: " + yang_url
+        if effective_yang:
+            snippet += "\nyang: " + effective_yang
         if license_cm:
             snippet += "\nlicense: " + license_cm
+        if llm_db:
+            snippet += "\nllmDb: " + llm_db
         example = _nodeprofile_yaml("sros", m.get("version") or "<version>", ns,
                                     m.get("uploadId") or "my-nodeprofile",
-                                    image_entries, yang_url, license_cm or None)
+                                    image_entries, effective_yang, license_cm or None,
+                                    llm_db)
     return {
         "uploadId": m.get("uploadId"),
         "name": m.get("uploadId"),
@@ -1428,11 +1491,15 @@ def _group_row(m, status_by_key):
         "yangStatus": yang_status,
         "license": license_cm or None,
         "licenseNos": lic.get("nos"),
+        "yangUrl": yang_url or None,
+        "yangArtifactName": (yang or {}).get("artifactName") or None,
+        "llmDb": llm_db,
+        "yangOverride": np_opts["yangOverride"],
     }
 
 
 def _sim_nodeprofile_yaml(version, namespace, prof_name, container_image, yang_url,
-                          license_cm=None):
+                          license_cm=None, llm_db=None):
     """A complete, copy-ready SR OS *simulator* NodeProfile: containerImage points
     at this app's /v2 endpoint. When `license_cm` is set (a license was pasted with
     this image) spec.license references the ConfigMap Image Manager already created
@@ -1465,6 +1532,8 @@ def _sim_nodeprofile_yaml(version, namespace, prof_name, container_image, yang_u
     else:
         L.append("  # yang: https://eda-asvr.eda-system.svc/<ns>/schemaprofiles/<p>/<p>.zip"
                  "   # add the matching SR OS schema profile")
+    if llm_db:
+        L.append(f"  llmDb: {llm_db}")
     L += [
         "  nodeUser: admin",
         "  onboardingUsername: admin",
@@ -1490,14 +1559,20 @@ def _srsim_row(m, status_by_key):
     yst = status_by_key.get((ns, yang.get("artifactName")), {}) if yang.get("artifactName") else {}
     yang_ds, _ = _resolve_download_status(local_ok, yst) if yang.get("artifactName") else (None, "")
     yang_url = yst.get("internalUrl", "") if yang_ds == "Available" else ""
+    np_opts = _meta_nodeprofile_options(m)
+    llm_db = np_opts["llmDb"]
+    effective_yang = _effective_yang_url(yang_url, np_opts["yangOverride"])
     lic = m.get("license") or {}
     license_cm = lic.get("configMap") or ""
     snippet = ("operatingSystem: sros\nversion: " + version
                + "\ncontainerImage: " + container_image
                + "\nimagePullSecret: core"
-               + ("\nlicense: " + license_cm if license_cm else ""))
+               + ("\nlicense: " + license_cm if license_cm else "")
+               + ("\nyang: " + effective_yang if effective_yang else "")
+               + ("\nllmDb: " + llm_db if llm_db else ""))
     example = _sim_nodeprofile_yaml(version, ns, artifact_name or "my-sim-nodeprofile",
-                                    container_image, yang_url, license_cm or None)
+                                    container_image, effective_yang, license_cm or None,
+                                    llm_db)
     download_status = "Ready" if local_ok else "NoLocalCopy"
     status_reason = "" if local_ok else _NO_LOCAL_REASON
     return {
@@ -1521,6 +1596,10 @@ def _srsim_row(m, status_by_key):
         "yangStatus": yang_ds,
         "license": license_cm or None,
         "licenseNos": lic.get("nos"),
+        "yangUrl": yang_url or None,
+        "yangArtifactName": yang.get("artifactName") or None,
+        "llmDb": llm_db,
+        "yangOverride": np_opts["yangOverride"],
     }
 
 

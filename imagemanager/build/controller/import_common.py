@@ -701,3 +701,63 @@ def attach_license(upload_id, raw_bytes, license_filename=""):
     return {"ok": True, "status": 200, "uploadId": upload_id, "configMap": cm_name,
             "namespace": LICENSE_NS, "licenseNos": lic_nos,
             "imageNos": image_nos, "mismatch": mismatch}
+
+
+_OPTIONAL_URL_MAX = 2048
+
+
+def _normalize_optional_url(val, field):
+    """Return stripped URL, '' to clear, or raise ValueError."""
+    if val is None:
+        return None
+    v = (val or "").strip()
+    if not v:
+        return ""
+    if len(v) > _OPTIONAL_URL_MAX:
+        raise ValueError(f"{field} is too long (max {_OPTIONAL_URL_MAX} chars)")
+    if not v.lower().startswith(("http://", "https://")):
+        raise ValueError(f"{field} must be an http(s) URL")
+    return v
+
+
+def update_artifact_meta(upload_id, llm_db=None, yang_override=None):
+    """Update NodeProfile-oriented options on an already-uploaded image's meta.json.
+    Pass None to leave a field unchanged; pass '' to clear it."""
+    if not upload_id or any(c in upload_id for c in ("/", "\\", "..")):
+        return _err(400, "valid uploadId required")
+    meta = uploads.read_meta(upload_id)
+    if not meta:
+        return _err(404, f"no image named '{upload_id}'")
+    try:
+        llm_val = _normalize_optional_url(llm_db, "llmDb")
+        yang_val = _normalize_optional_url(yang_override, "yangOverride")
+    except ValueError as e:
+        return _err(400, str(e))
+    changed = False
+    if llm_val is not None:
+        if llm_val:
+            meta["llmDb"] = llm_val
+        else:
+            meta.pop("llmDb", None)
+        changed = True
+    if yang_val is not None:
+        if yang_val:
+            meta["yangOverride"] = yang_val
+        else:
+            meta.pop("yangOverride", None)
+        changed = True
+    if not changed:
+        return _err(400, "no fields to update (provide llmDb and/or yangOverride)")
+    try:
+        uploads.rewrite_meta(upload_id, meta)
+    except OSError as e:
+        return _err(409, f"could not save metadata: {e}")
+    logger.info("Updated NodeProfile options on %s (llmDb=%s, yangOverride=%s)",
+                upload_id, bool(meta.get("llmDb")), bool(meta.get("yangOverride")))
+    return {
+        "ok": True,
+        "status": 200,
+        "uploadId": upload_id,
+        "llmDb": meta.get("llmDb") or None,
+        "yangOverride": meta.get("yangOverride") or None,
+    }
