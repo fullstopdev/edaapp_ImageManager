@@ -909,7 +909,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       <div class="tf">
         <input type="text" id="editYangOverride" placeholder=" " autocomplete="off" spellcheck="false">
         <label for="editYangOverride">Override URL (optional)</label>
-        <div class="helper">Full eda-asvr URL. Leave empty to use the auto-attached profile.</div>
+        <div class="helper">Full eda-asvr URL. Leave empty to use the auto-attached profile (or the derived <span class="mono">schemaprofiles/&lt;name&gt;/&lt;zip&gt;</span> path).</div>
       </div>
     </div>
     <div class="edit-sec" id="editLlmSec">
@@ -917,7 +917,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       <div class="tf">
         <input type="text" id="editLlmDb" placeholder=" " autocomplete="off" spellcheck="false">
         <label for="editLlmDb">LLM database URL (optional)</label>
-        <div class="helper">eda-asvr <span class="mono">llm-dbs</span> URL referenced in NodeProfile <span class="mono">spec.llmDb</span>.</div>
+        <div class="helper" id="editLlmHint">eda-asvr <span class="mono">llm-dbs</span> URL for <span class="mono">spec.llmDb</span>. Leave empty to auto-derive from the image name and version.</div>
       </div>
     </div>
   </div>
@@ -2756,13 +2756,16 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
         '<span class="mono">'+esc(t.license)+'</span> in <span class="mono">eda-system</span> '+
         'from your uploaded key and referenced it in <span class="mono">spec.license</span> below.';
     }
-    if(t.llmDb){
+    if(t.llmDbEffective){
       el("npIntro").innerHTML += ' <b>LLM:</b> <span class="mono">spec.llmDb</span> is set to '+
-        '<span class="mono">'+esc(t.llmDb)+'</span>.';
+        '<span class="mono">'+esc(t.llmDbEffective)+'</span>.';
     }
     if(t.yangOverride){
       el("npIntro").innerHTML += ' <b>Schema profile:</b> using your override URL '+
         '<span class="mono">'+esc(t.yangOverride)+'</span>.';
+    } else if(t.yangEffective){
+      el("npIntro").innerHTML += ' <b>Schema profile:</b> <span class="mono">spec.yang</span> points at '+
+        '<span class="mono">'+esc(t.yangEffective)+'</span>.';
     }
     el("npSnipLabel").innerHTML = isSim
       ? 'Snippet &mdash; sim NodeProfile <span class="mono">spec</span>'
@@ -2825,6 +2828,13 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     el("editYangStatus").innerHTML=yangStatusText(t);
     el("editYangOverride").value=t.yangOverride||"";
     el("editLlmDb").value=t.llmDb||"";
+    var llmHint=el("editLlmHint");
+    if(llmHint){
+      var sug=t.llmDbSuggested||"";
+      llmHint.innerHTML=sug
+        ?('Default when empty: <span class="mono">'+esc(sug)+'</span> (override to customize).')
+        :('eda-asvr <span class="mono">llm-dbs</span> URL for <span class="mono">spec.llmDb</span>. Leave empty to auto-derive from the image name and version.');
+    }
     var showLic=(nos==="sros"||nos==="srl"||nos==="srsim");
     var showYang=(nos==="sros"||nos==="srl"||nos==="srsim");
     var showLlm=(nos==="sros"||nos==="srl");

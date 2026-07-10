@@ -227,3 +227,6 @@ def test_post_upload_edit_dialog():
     assert 'id="editLicSec"' in html
     assert 'id="editYangSec"' in html
     assert 'id="editLlmSec"' in html
+    assert 'id="editLlmHint"' in html
+    assert "llmDbSuggested" in html
+    assert "llmDbEffective" in html

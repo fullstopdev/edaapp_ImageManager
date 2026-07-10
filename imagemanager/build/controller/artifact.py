@@ -10,6 +10,7 @@ ensure_trust_bundle); without it the pull fails x509 unknown-authority.
 """
 
 import logging
+import os
 from urllib.parse import quote, urlsplit
 
 import k8s
@@ -250,3 +251,52 @@ def asvr_path(internal_url):
         return urlsplit(internal_url).path.lstrip("/")
     except Exception:
         return ""
+
+
+ASVR_SERVICE = "eda-asvr"
+
+
+def asvr_public_base_url(artifact_namespace, pod_namespace=None):
+    """HTTPS base URL eda-asvr exposes artifacts at for NodeProfile yang:/llmDb:.
+
+    e.g. https://eda-asvr.eda-system.svc/eda-system/
+    """
+    ns = (artifact_namespace or "").strip().strip("/")
+    pod_ns = (pod_namespace or os.environ.get("POD_NAMESPACE", "eda-system")).strip()
+    if not ns:
+        return ""
+    return f"https://{ASVR_SERVICE}.{pod_ns}.svc/{ns}/"
+
+
+def yang_public_url(artifact_namespace, profile_name, zip_filename, pod_namespace=None):
+    """Full eda-asvr URL for NodeProfile spec.yang (schemaprofiles repo)."""
+    base = asvr_public_base_url(artifact_namespace, pod_namespace)
+    profile = (profile_name or "").strip().strip("/")
+    zf = (zip_filename or "").strip().lstrip("/")
+    if not base or not profile or not zf:
+        return ""
+    return f"{base}{SCHEMAPROFILE_REPO}/{profile}/{zf}"
+
+
+def _version_dashed(version):
+    return (version or "").strip().lower().replace(".", "-")
+
+
+def llm_embedding_basename(nos, version):
+    """Tarball file name under llm-dbs/llm-db-<profile>/ on eda-asvr."""
+    n = (nos or "").strip().lower()
+    token = "srlinux" if n == "srl" else "sros" if n == "sros" else n
+    vd = _version_dashed(version)
+    if not token or not vd:
+        return ""
+    return f"llm-embeddings-{token}-{vd}.tar.gz"
+
+
+def llm_db_public_url(artifact_namespace, profile_name, nos, version, pod_namespace=None):
+    """Full eda-asvr URL for NodeProfile spec.llmDb."""
+    base = asvr_public_base_url(artifact_namespace, pod_namespace)
+    profile = (profile_name or "").strip().strip("/")
+    tarball = llm_embedding_basename(nos, version)
+    if not base or not profile or not tarball:
+        return ""
+    return f"{base}llm-dbs/llm-db-{profile}/{tarball}"

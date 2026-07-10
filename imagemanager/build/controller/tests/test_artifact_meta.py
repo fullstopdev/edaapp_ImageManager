@@ -60,11 +60,15 @@ def test_effective_yang_url_prefers_override():
 def test_nodeprofile_yaml_includes_llm_db():
     import fileserver
 
+    llm = "https://llm.example/db.tar.gz"
+    yang = "https://yang.example/y.zip"
     yaml = fileserver._nodeprofile_yaml(
         "srl", "26.3.1", "eda", "prof",
         [("images/x.bin", "images/x.md5")],
-        "https://yang.example/y.zip",
-        llm_db="https://llm.example/db.tar.gz",
+        yang,
+        llm_db=llm,
     )
-    assert "llmDb: https://llm.example/db.tar.gz" in yaml
-    assert "yang: https://yang.example/y.zip" in yaml
+    assert "  llmDb: >-" in yaml
+    assert "    " + llm in yaml
+    assert "  yang: >-" in yaml
+    assert "    " + yang in yaml

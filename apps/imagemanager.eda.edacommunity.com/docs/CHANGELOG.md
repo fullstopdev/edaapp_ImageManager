@@ -1,5 +1,16 @@
 # Changelog
 
+## v0.1.54
+
+**NodeProfile YAML: correct eda-asvr URLs, folded scalars, license name.**
+
+- **yang / llmDb URLs:** Built as `https://eda-asvr.<pod-ns>.svc/<artifact-ns>/schemaprofiles/<profile>/<zip>` and `…/llm-dbs/llm-db-<profile>/llm-embeddings-<nos>-<ver>.tar.gz` (SR Linux and SR OS). Override from Edit dialog still wins; otherwise Artifact `internalUrl` or auto-derived path.
+- **YAML format:** `spec.yang` and `spec.llmDb` emit folded scalar `>-` for http(s) URLs in snippet and complete example.
+- **license:** References ConfigMap name from `meta.json` (`<uploadId>-license` via `attach_license`), not license key text.
+- **NodeProfile example:** Matches EDA structure (`images`, `license`, `llmDb`, `operatingSystem`, `version`, `yang`); drops placeholder dhcp/onboarding fields.
+- **API:** Rows expose `llmDbSuggested`, `llmDbEffective`, `yangSuggested`, `yangEffective` for Details/Edit UI hints.
+- **Tests:** `test_nodeprofile_urls.py`; updated `test_artifact_meta`, `test_webui_auth`.
+
 ## v0.1.53
 
 **Post-upload Edit: license, schema profile, LLM embedding.**
