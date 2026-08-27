@@ -9,8 +9,12 @@ EDA silent SSO pattern: keycloak-js public client `auth` + same-origin silent SS
 token exchange to an HTTP-only `im_session` cookie, with server OIDC
 (`/oauth/login`) as fallback. Role gating via ALLOWED_ROLES (EDA ClusterRole).
 Sign out clears the local session and ends the EDA Keycloak session.
-Bootstrap with a stale `im_session` validates the live Keycloak session via
-`check-sso` before showing the logged-in UI.
+
+EDA logout tracking is transparent: a quiet background poll of `GET /api/session`
+(paused while the tab is hidden, re-checked on focus) asks the controller, which
+asks Keycloak. The UI is only touched once a logout is server-confirmed, and even
+then nothing navigates or reloads — a sign-in banner appears over the page as it
+stands, and a live EDA session is picked back up silently in place.
 """
 
 _INDEX_HTML_RAW = r"""<!DOCTYPE html>
@@ -1008,6 +1012,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       });
     });
   }
+  function waitMs(ms){
+    return new Promise(function(resolve){ setTimeout(resolve, ms); });
+  }
   function keycloakIdentityUrl(){
     return window.location.origin + "/core/proxy/v1/identity";
   }
@@ -1035,15 +1042,21 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     var q = window.location.search || "";
     return /[?&]code=/.test(q) && /[?&]state=/.test(q);
   }
-  function ensureKeycloakInstance(){
-    if(keycloak) return keycloak;
+  // A keycloak-js instance rejects a second init ("A 'Keycloak' instance can only be
+  // initialized once."), so a forced re-check has to start from a new instance. Reusing
+  // one made every background re-check throw and report "inconclusive" forever, which
+  // is why an EDA logout used to stay invisible until the page reloaded.
+  function ensureKeycloakInstance(fresh){
+    if(keycloak && !fresh) return keycloak;
+    if(keycloak) keycloak.onAuthLogout = null;   // a replaced instance must not drive the UI
     keycloak = new Keycloak({
       url: keycloakIdentityUrl(),
       realm: "eda",
       clientId: KEYCLOAK_CLIENT_ID
     });
     keycloak.onAuthLogout = function(){
-      if(authReady) showConfirmedSessionLoss();
+      // keycloak's login iframe noticed first; still let the server confirm.
+      if(authReady) confirmSessionLoss();
     };
     return keycloak;
   }
@@ -1083,7 +1096,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(opts.force) keycloakInitPromise = null;
     if(keycloakInitPromise && !opts.force) return keycloakInitPromise;
     var initPromise = loadKeycloakScript().then(function(){
-      ensureKeycloakInstance();
+      ensureKeycloakInstance(!!opts.force);
       return promiseWithTimeout(
         keycloak.init({
           onLoad: opts.onLoad || "check-sso",
@@ -1130,12 +1143,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
           return config;
         });
       }
-      if(kcOk === false){
-        return clearServerSession().then(function(){ return null; });
-      }
-      return probeEdaIdentitySession().then(function(idpOk){
-        if(idpOk) return config;
-        return clearServerSession().then(function(){ return null; });
+      // check-sso said no, or could not tell (a blocked login iframe answers the
+      // same way). Never act on that alone: the server asks Keycloak directly, and
+      // the identity probes only break the tie when the server can't answer either.
+      return probeSessionLive().then(function(live){
+        if(live === true) return config;
+        if(live === false) return null;
+        return probeEdaIdentitySession().then(function(idpOk){
+          return idpOk ? config : null;
+        });
       });
     });
   }
@@ -1163,7 +1179,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     stopSessionWatchers();
     syncLiveIndicator();
     hideAuthUser();
-    resetAuthFailStreak();
     if(!opts.quiet) setAuthBanner("loading", "Signing in\u2026");
     var likely = edaSessionLikelyPresent();
     var slowMs = likely ? EMBEDDED_SLOW_HINT_MS : SIGNIN_SLOW_HINT_MS;
@@ -1253,15 +1268,22 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   var sessionCheckTimer = null;
   var revalidateTimer = null;
   var sustainedKcTimer = null;
-  var SESSION_CHECK_MS = 3000;
+  var sessionRecoveryTimer = null;
+  // Session monitoring is a quiet background poll of GET /api/session, which is
+  // authoritative: the controller asks Keycloak whether the SSO session behind the
+  // im_session cookie still exists. Nothing here touches the UI unless the answer is
+  // a definite "gone", so staying in sync with EDA never costs a reload or a flicker.
+  var SESSION_POLL_MS = 15000;
+  var SESSION_POLL_HIDDEN_MS = 60000;
+  var SESSION_CONFIRM_DELAY_MS = 1200;
+  var SESSION_RECOVERY_POLL_MS = 6000;
   var IDP_PROBE_CLIENT_ID = "auth";
   var REVALIDATE_DEBOUNCE_MS = 400;
   var KC_ABSENCE_CONFIRM_MS = 1200;
   var sawKeycloakStorage = false;
-  var AUTH_FAIL_MIN_COUNT = 2;
-  var AUTH_FAIL_MIN_SPAN_MS = 5000;
-  var authFailCount = 0;
-  var authFailFirstAt = 0;
+  var signedOut = false;
+  var sessionConfirmInFlight = false;
+  var lastKnownUser = null;
   var UPLOAD_KEEPALIVE_MS = 15000;
   var UPLOAD_XHR_TIMEOUT_MS = 45 * 60 * 1000;
   var UPLOAD_PENDING_RECONCILE_MS = 3 * 60 * 1000;
@@ -1283,15 +1305,10 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function redirectToOAuthLogin(){
     navigateTo(oauthLoginUrl());
   }
-  function edaLoginUrl(){
-    return window.location.origin + "/";
-  }
-  function redirectToEdaLogin(){
-    navigateTo(edaLoginUrl());
-  }
 
   function showAuthUser(user){
     if(!user) return;
+    lastKnownUser = user;
     var ui=el("userInfo"), so=el("signoutLink");
     if(ui){
       ui.style.display="inline-flex";
@@ -1395,10 +1412,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     sustainedKcTimer = setTimeout(function(){
       sustainedKcTimer = null;
       if(!authBootstrapComplete || !authReady || sessionInterruptBlocked()) return;
-      if(sawKeycloakStorage && !keycloakStoragePresent()){
-        showConfirmedSessionLoss();
-        return;
-      }
+      // kc-* disappearing is only a hint to look early; the server has the answer.
       reconcileAuthState();
     }, KC_ABSENCE_CONFIRM_MS);
   }
@@ -1406,7 +1420,9 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     if(revalidateTimer) clearTimeout(revalidateTimer);
     revalidateTimer = setTimeout(function(){
       revalidateTimer = null;
-      if(!authBootstrapComplete || !authReady || sessionInterruptBlocked()) return;
+      if(!authBootstrapComplete || sessionInterruptBlocked()) return;
+      if(signedOut){ attemptSilentRecovery(); return; }
+      if(!authReady) return;
       noteKeycloakStorage();
       if(sawKeycloakStorage && !keycloakStoragePresent()){
         scheduleSustainedKcAbsenceCheck();
@@ -1421,12 +1437,7 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function pollingAllowed(){
     return authReady || uploadInFlight();
   }
-  function resetAuthFailStreak(){
-    authFailCount = 0;
-    authFailFirstAt = 0;
-  }
   function onAuthRecovered(user){
-    resetAuthFailStreak();
     authReady = true;
     syncLiveIndicator();
     setAuthBanner(null);
@@ -1435,39 +1446,22 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function applyConfigOk(user){
     onAuthRecovered(user);
   }
-  function applyConfig401(){
-    if(sessionInterruptBlocked()) return;
-    if(embedded && edaSessionLikelyPresent()){
-      attemptEmbeddedSilentSignIn("Your session has expired. Sign in again to continue.", { force: true });
-      return;
-    }
-    var now = Date.now();
-    if(!authFailCount) authFailFirstAt = now;
-    authFailCount += 1;
-    if(authFailCount >= AUTH_FAIL_MIN_COUNT &&
-       (now - authFailFirstAt) >= AUTH_FAIL_MIN_SPAN_MS){
-      beginOAuthSignIn("Your session has expired. Sign in again to continue.");
-    }
-  }
-  function probeConfigAuth(){
-    if(sessionInterruptBlocked()) return Promise.resolve(true);
-    var probe = Object.assign({ cache: "no-store" }, FETCH_OPTS);
-    return fetch(api("/api/config"), probe).then(function(r){
+  // The background session probe: cheap (no config payload, no cluster reads) and
+  // authoritative, because GET /api/session only 401s once the controller has
+  // confirmed with Keycloak that the EDA session is gone. Resolves true (live),
+  // false (confirmed gone) or null (inconclusive — a proxy hiccup or dropped
+  // connection, which must never sign anyone out).
+  function probeSessionLive(){
+    return fetch(api("/api/session"), withAuth({ cache: "no-store" })).then(function(r){
       if(r.status === 200){
-        return r.json().then(function(c){
-          applyConfigOk(c && c.user);
+        return r.json().then(function(j){
+          if(j && j.user) lastKnownUser = j.user;
           return true;
-        }).catch(function(){
-          applyConfigOk(null);
-          return true;
-        });
+        }).catch(function(){ return true; });
       }
-      if(r.status === 401){
-        applyConfig401();
-        return false;
-      }
-      return true;
-    }).catch(function(){ return true; });
+      if(r.status === 401) return false;
+      return null;
+    }).catch(function(){ return null; });
   }
   function edaIdentityProbeUrl(){
     var origin = encodeURIComponent(window.location.origin);
@@ -1536,26 +1530,57 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       return iframeOk;
     });
   }
+  // On-demand reconcile (tab focus, an API 401, a kc-* storage change). Quiet by
+  // design: resolves true while the session is fine, and the only way it can change
+  // the UI is via enterSignedOutState, which needs a server-confirmed logout first.
   function reconcileAuthState(){
-    return probeConfigAuth().then(function(configOk){
-      if(!configOk) return false;
-      if(!authReady) return true;
-      return ensureKeycloakSessionValid().then(function(kcOk){
-        if(kcOk === false){
-          return onIdentityProbeFailed().then(function(){ return false; });
-        }
-        if(kcOk === true) return true;
-        return probeEdaIdentitySession().then(function(idpOk){
-          if(!idpOk){
-            return onIdentityProbeFailed().then(function(){ return false; });
-          }
-          return true;
-        });
-      });
+    if(signedOut) return attemptSilentRecovery();
+    if(sessionInterruptBlocked()) return Promise.resolve(true);
+    return probeSessionLive().then(function(live){
+      if(live !== false) return true;
+      return confirmSessionLoss().then(function(lost){ return !lost; });
     });
   }
+  // Second opinion before anything becomes visible: re-probe after a beat, then try
+  // to rebuild the session from a live EDA session (the cookie may simply have raced
+  // with a token exchange). Only when both fail does the user see a change.
+  function confirmSessionLoss(){
+    if(signedOut) return Promise.resolve(true);
+    if(sessionConfirmInFlight) return Promise.resolve(false);
+    sessionConfirmInFlight = true;
+    return waitMs(SESSION_CONFIRM_DELAY_MS).then(function(){
+      if(sessionInterruptBlocked()) return null;
+      return probeSessionLive();
+    }).then(function(live){
+      if(live !== false) return false;
+      return attemptSilentRecovery().then(function(recovered){
+        if(recovered) return false;
+        enterSignedOutState();
+        return true;
+      });
+    }).then(function(lost){
+      sessionConfirmInFlight = false;
+      return lost;
+    }).catch(function(){
+      sessionConfirmInFlight = false;
+      return false;
+    });
+  }
+  // Rebuild our session from whatever EDA session exists, without navigating: a
+  // forced keycloak check-sso, then exchange the token for a fresh im_session cookie.
+  // This is what makes signing back in (in this tab or any other) pick up in place.
+  function attemptSilentRecovery(){
+    return runSilentSsoAndExchange(SIGNIN_SILENT_SSO_TIMEOUT_MS, true).then(function(ok){
+      if(!ok) return false;
+      return probeSessionLive().then(function(live){
+        if(live !== true) return false;
+        if(signedOut) exitSignedOutState();
+        return true;
+      });
+    }).catch(function(){ return false; });
+  }
   function stopSessionWatchers(){
-    if(sessionCheckTimer){ clearInterval(sessionCheckTimer); sessionCheckTimer = null; }
+    if(sessionCheckTimer){ clearTimeout(sessionCheckTimer); sessionCheckTimer = null; }
     if(revalidateTimer){ clearTimeout(revalidateTimer); revalidateTimer = null; }
     if(sustainedKcTimer){ clearTimeout(sustainedKcTimer); sustainedKcTimer = null; }
   }
@@ -1569,7 +1594,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     stopSessionWatchers();
     syncLiveIndicator();
     hideAuthUser();
-    resetAuthFailStreak();
     if(embedded){
       showSignInBanner(msg || "Sign in to use Image Manager.");
       return;
@@ -1577,35 +1601,40 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     setAuthBanner("loading", msg || "Sign-in required. Redirecting\u2026");
     setTimeout(function(){ startKeycloakLogin(); }, 160);
   }
-  function showConfirmedSessionLoss(msg){
-    if(sessionInterruptBlocked()) return;
-    if(embedded && edaSessionLikelyPresent()){
-      attemptEmbeddedSilentSignIn(msg || "Your EDA session has ended. Sign in again to continue.", { force: true });
-      return;
-    }
-    clearServerSession().then(function(){
-      authReady = false;
-      stopSessionWatchers();
-      syncLiveIndicator();
-      hideAuthUser();
-      resetAuthFailStreak();
-      if(embedded){
-        showSignInBanner(msg || "Your EDA session has ended. Sign in again to continue.");
-        return;
-      }
-      setAuthBanner("loading", msg || "Your EDA session has ended. Redirecting to sign in\u2026");
-      setTimeout(function(){ redirectToEdaLogin(); }, 160);
-    });
+  // The one place an EDA logout becomes visible. Nothing navigates and nothing
+  // reloads: the page stays exactly as it was behind a sign-in banner, so no typed
+  // form input or scroll position is lost, and the recovery watcher keeps looking
+  // for the EDA session so signing back in resumes here.
+  function enterSignedOutState(msg){
+    if(signedOut) return;
+    signedOut = true;
+    authReady = false;
+    stopSessionWatchers();
+    syncLiveIndicator();
+    hideAuthUser();
+    showSignInBanner(msg || "Your EDA session has ended. Sign in again to continue.");
+    clearServerSession();
+    startSessionRecoveryWatcher();
   }
-  function onIdentityProbeFailed(){
-    if(sessionInterruptBlocked()) return Promise.resolve();
-    if(authBootstrapComplete){
-      showConfirmedSessionLoss();
-      return Promise.resolve();
-    }
-    return clearServerSession().then(function(){
-      beginOAuthSignIn("Sign in to continue.");
-    });
+  function exitSignedOutState(){
+    if(!signedOut) return;
+    signedOut = false;
+    stopSessionRecoveryWatcher();
+    onAuthRecovered(lastKnownUser);
+    startSessionWatchers();
+    refreshArtifacts({ silent: true });
+    refreshImports();
+    schedulePoll();
+  }
+  function startSessionRecoveryWatcher(){
+    if(sessionRecoveryTimer) return;
+    sessionRecoveryTimer = setInterval(function(){
+      if(!signedOut || document.hidden) return;
+      attemptSilentRecovery();
+    }, SESSION_RECOVERY_POLL_MS);
+  }
+  function stopSessionRecoveryWatcher(){
+    if(sessionRecoveryTimer){ clearInterval(sessionRecoveryTimer); sessionRecoveryTimer = null; }
   }
   function handleAuthLoss(){
     if(!authBootstrapComplete) return Promise.resolve(false);
@@ -1628,14 +1657,23 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       return;
     }
     if(uploadKeepaliveTimer){ clearInterval(uploadKeepaliveTimer); uploadKeepaliveTimer = null; }
-    resetAuthFailStreak();
+  }
+  function sessionPollInterval(){
+    // Slow right down while the tab is in the background — an EDA logout that
+    // happens there is picked up by the immediate check on visibilitychange.
+    return document.hidden ? SESSION_POLL_HIDDEN_MS : SESSION_POLL_MS;
   }
   function scheduleSessionCheck(){
-    if(sessionCheckTimer) clearInterval(sessionCheckTimer);
-    sessionCheckTimer = setInterval(function(){
-      if(!authBootstrapComplete || sessionInterruptBlocked()) return;
-      reconcileAuthState();
-    }, SESSION_CHECK_MS);
+    if(sessionCheckTimer) clearTimeout(sessionCheckTimer);
+    sessionCheckTimer = setTimeout(function(){
+      sessionCheckTimer = null;
+      if(authBootstrapComplete && authReady && !signedOut && !sessionInterruptBlocked()){
+        probeSessionLive().then(function(live){
+          if(live === false) confirmSessionLoss();
+        });
+      }
+      scheduleSessionCheck();
+    }, sessionPollInterval());
   }
   function startSessionWatchers(){
     noteKeycloakStorage();
@@ -1723,9 +1761,15 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
   function inPostUploadBurst(){
     return Date.now() < postUploadBurstUntil;
   }
+  // "Try again" checks quietly first — if EDA has a session, this recovers in place
+  // and the interactive redirect is never needed.
   function retrySignIn(){
-    resetAuthFailStreak();
-    startKeycloakLogin();
+    var wasSignedOut = signedOut;
+    setAuthBanner("loading", "Checking your EDA session\u2026");
+    attemptSilentRecovery().then(function(ok){
+      if(!ok){ startKeycloakLogin(); return; }
+      if(!wasSignedOut) finishConfigBootstrap();
+    });
   }
   var signout=el("signoutLink");
   if(signout){
@@ -2078,22 +2122,17 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     onAuthReady(c.user || null);
     startDataLoads(c);
   }
+  // Runs behind an already-usable UI, so it stays silent: no "Checking session"
+  // banner, no spinner, nothing to see unless the session really is gone.
   function backgroundValidateSession(c){
-    var slowBannerTimer = setTimeout(function(){
-      if(authReady && !sessionInterruptBlocked()){
-        setAuthBanner("loading", "Checking session\u2026");
-      }
-    }, 600);
     promiseWithTimeout(
       validateBootstrapSession(c),
       BOOTSTRAP_AUTH_TIMEOUT_MS,
       "bootstrap session"
     ).then(function(validConfig){
-      clearTimeout(slowBannerTimer);
-      setAuthBanner(null);
       if(!validConfig){
         if(authReady){
-          showConfirmedSessionLoss();
+          confirmSessionLoss();
         } else {
           handleBootstrap401();
         }
@@ -2101,8 +2140,6 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       }
       if(validConfig.user) showAuthUser(validConfig.user);
     }).catch(function(err){
-      clearTimeout(slowBannerTimer);
-      setAuthBanner(null);
       console.warn("background session validation failed:",
         err && err.message ? err.message : err);
       loadKeycloakScript().then(function(){
@@ -3361,13 +3398,19 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
       schedulePoll();
     }, pollInterval());
   }
+  // Coming back to the tab checks immediately, so a logout that happened while the
+  // tab was in the background surfaces on the way in rather than a poll later.
+  function reconcileOnReturn(){
+    if(!authBootstrapComplete) return;
+    if(signedOut){ attemptSilentRecovery(); return; }
+    if(!authReady) return;
+    scheduleSessionCheck();
+    reconcileAuthState();
+  }
   document.addEventListener("visibilitychange", function(){
-    if(!document.hidden && pollingAllowed() && authBootstrapComplete){
-      if(authReady){
-        reconcileAuthState();
-        scheduleRevalidate();
-      }
-      if(activeTab === "status"){
+    if(!document.hidden){
+      reconcileOnReturn();
+      if(pollingAllowed() && activeTab === "status"){
         refreshArtifacts();
         refreshImports();
       }
@@ -3375,17 +3418,13 @@ _INDEX_HTML_RAW = r"""<!DOCTYPE html>
     syncLiveIndicator();
   });
   window.addEventListener("storage", function(ev){
-    if(!authBootstrapComplete || !authReady) return;
+    if(!authBootstrapComplete) return;
     if(ev.key === null || (ev.key && ev.key.indexOf("kc-") === 0)){
       scheduleRevalidate();
     }
   });
-  window.addEventListener("focus", function(){
-    if(authBootstrapComplete && authReady) reconcileAuthState();
-  });
-  window.addEventListener("pageshow", function(){
-    if(authBootstrapComplete && authReady) reconcileAuthState();
-  });
+  window.addEventListener("focus", reconcileOnReturn);
+  window.addEventListener("pageshow", reconcileOnReturn);
   var refreshBtn=el("refreshBtn");
   if(refreshBtn) refreshBtn.addEventListener("click", function(){ refresh(); refreshImports(); });
   schedulePoll();

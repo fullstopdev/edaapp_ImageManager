@@ -22,8 +22,16 @@ def test_bootstrap_fast_path_shows_ui_before_session_check():
     fast = html.split("function applyConfigResponseFast", 1)[1].split("function ", 1)[0]
     assert "bootDone()" in fast
     assert "startDataLoads" in fast
-    bg = html.split("function backgroundValidateSession", 1)[1].split("function ", 1)[0]
-    assert "Checking session" in bg
+
+
+def test_background_session_check_is_silent():
+    """Running behind a usable UI, the check must not put a banner over it."""
+    html = webui.INDEX_HTML
+    bg = (html.split("function backgroundValidateSession", 1)[1]
+          .split("function finishConfigBootstrap", 1)[0])
+    assert "Checking session" not in bg
+    assert "setAuthBanner" not in bg
+    assert "confirmSessionLoss()" in bg
 
 
 def test_bootstrap_runs_config_before_keycloak_prelude():
@@ -75,20 +83,60 @@ def test_keycloak_script_preloaded_in_head():
     assert "keycloak.min.js" in html.split("</head>", 1)[0]
 
 
-def test_reconcile_uses_keycloak_check():
+def test_reconcile_uses_server_session_probe():
     html = webui.INDEX_HTML
-    reconcile = html.split("function reconcileAuthState", 1)[1].split("function stopSessionWatchers", 1)[0]
-    assert "ensureKeycloakSessionValid" in reconcile
+    reconcile = (html.split("function reconcileAuthState", 1)[1]
+                 .split("function confirmSessionLoss", 1)[0])
+    assert "probeSessionLive()" in reconcile
+    assert "confirmSessionLoss()" in reconcile
+    probe = html.split("function probeSessionLive", 1)[1].split("function ", 1)[0]
+    assert 'api("/api/session")' in probe
+    assert "if(r.status === 401) return false" in probe
+    # Anything other than 200/401 is inconclusive and must not sign anyone out.
+    assert "return null" in probe
 
 
-def test_identity_probe_gated_on_auth_ready():
+def test_identity_probes_only_break_ties_at_bootstrap():
     html = webui.INDEX_HTML
-    assert "if(!authReady) return true" in html
-    assert "probeEdaIdentitySession().then(function(idpOk)" in html
+    validate = (html.split("function validateBootstrapSession", 1)[1]
+                .split("function runSilentSsoAndExchange", 1)[0])
+    assert "probeSessionLive()" in validate
+    assert "probeEdaIdentitySession().then(function(idpOk)" in validate
+    # A negative check-sso alone may no longer drop the session.
+    assert "clearServerSession" not in validate
 
 
-def test_periodic_session_revalidation_interval():
-    assert "SESSION_CHECK_MS = 3000" in webui.INDEX_HTML
+def test_background_session_poll_is_calm_and_visibility_aware():
+    html = webui.INDEX_HTML
+    assert "SESSION_POLL_MS = 15000" in html
+    assert "SESSION_POLL_HIDDEN_MS = 60000" in html
+    interval = html.split("function sessionPollInterval", 1)[1].split("function ", 1)[0]
+    assert "document.hidden" in interval
+    assert "SESSION_POLL_HIDDEN_MS" in interval
+    # Returning to the tab checks straight away rather than waiting for a poll.
+    assert "function reconcileOnReturn" in html
+    assert 'window.addEventListener("focus", reconcileOnReturn)' in html
+
+
+def test_logout_needs_server_confirmation_before_ui_changes():
+    html = webui.INDEX_HTML
+    confirm = (html.split("function confirmSessionLoss", 1)[1]
+               .split("function attemptSilentRecovery", 1)[0])
+    assert "SESSION_CONFIRM_DELAY_MS" in confirm
+    assert "probeSessionLive()" in confirm
+    assert "attemptSilentRecovery()" in confirm
+    assert "enterSignedOutState()" in confirm
+    # An inconclusive re-probe (null) leaves the UI exactly as it was.
+    assert "if(live !== false) return false" in confirm
+
+
+def test_no_ui_flicker_from_transient_auth_failures():
+    """The old two-strikes-then-redirect heuristic is gone; the server decides."""
+    html = webui.INDEX_HTML
+    assert "AUTH_FAIL_MIN_COUNT" not in html
+    assert "authFailCount" not in html
+    assert "probeConfigAuth" not in html
+    assert "SESSION_CHECK_MS" not in html
 
 
 def test_bootstrap_401_runs_keycloak_silent_sso():
@@ -111,11 +159,9 @@ def test_embedded_early_sso_when_eda_session_likely():
     assert "edaSessionLikelyPresent()" in boot
     assert "earlySso" in boot
     assert "EMBEDDED_EARLY_SSO_TIMEOUT_MS" in boot
-    begin = html.split("function beginOAuthSignIn", 1)[1].split("function showConfirmedSessionLoss", 1)[0]
+    begin = html.split("function beginOAuthSignIn", 1)[1].split("function enterSignedOutState", 1)[0]
     assert "edaSessionLikelyPresent()" in begin
     assert "attemptEmbeddedSilentSignIn" in begin
-    loss = html.split("function showConfirmedSessionLoss", 1)[1].split("function onIdentityProbeFailed", 1)[0]
-    assert "edaSessionLikelyPresent()" in loss
 
 
 def test_embedded_sign_in_banner_only_after_sso_fails():
@@ -154,11 +200,40 @@ def test_interactive_sign_in_uses_keycloak_login_with_server_fallback():
     assert "redirectToOAuthLogin();" in login_fn
 
 
-def test_confirmed_session_loss_redirects_standalone_to_eda_login():
+def test_logout_updates_ui_in_place_without_navigating():
     html = webui.INDEX_HTML
-    assert "function showConfirmedSessionLoss" in html
-    assert "redirectToEdaLogin" in html
-    assert 'window.location.origin + "/"' in html
+    assert "function enterSignedOutState" in html
+    assert "redirectToEdaLogin" not in html
+    loss = (html.split("function enterSignedOutState", 1)[1]
+            .split("function exitSignedOutState", 1)[0])
+    for forbidden in ("navigateTo", "location", "reload"):
+        assert forbidden not in loss
+    assert "showSignInBanner" in loss
+    assert "startSessionRecoveryWatcher()" in loss
+
+
+def test_signed_out_state_recovers_without_reload():
+    html = webui.INDEX_HTML
+    assert "SESSION_RECOVERY_POLL_MS = 6000" in html
+    recover = (html.split("function attemptSilentRecovery", 1)[1]
+               .split("function stopSessionWatchers", 1)[0])
+    assert "runSilentSsoAndExchange(SIGNIN_SILENT_SSO_TIMEOUT_MS, true)" in recover
+    assert "exitSignedOutState()" in recover
+    exit_fn = (html.split("function exitSignedOutState", 1)[1]
+               .split("function startSessionRecoveryWatcher", 1)[0])
+    assert "onAuthRecovered(lastKnownUser)" in exit_fn
+    assert "startSessionWatchers()" in exit_fn
+    assert "location" not in exit_fn
+
+
+def test_forced_keycloak_recheck_uses_a_new_instance():
+    """keycloak-js rejects a second init, so a forced re-check needs a new instance."""
+    html = webui.INDEX_HTML
+    ensure = (html.split("function ensureKeycloakInstance", 1)[1]
+              .split("function loadKeycloakScript", 1)[0])
+    assert "if(keycloak && !fresh) return keycloak" in ensure
+    assert "keycloak.onAuthLogout = null" in ensure
+    assert "ensureKeycloakInstance(!!opts.force)" in html
 
 
 def test_embedded_sign_in_banner_uses_keycloak_login():
