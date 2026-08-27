@@ -1,5 +1,37 @@
 # Changelog
 
+## v0.1.55
+
+**EDA logout is picked up transparently, with no page refresh.**
+
+- **Root cause:** the `im_session` cookie was an independent ~8h bearer with no link to
+  the Keycloak session, so `/api/config` kept returning 200 after an EDA sign-out. The
+  3s watcher could not see that either, because `initKeycloak` memoised its promise
+  (`ensureKeycloakSessionValid()` returned the boot-time answer forever) and a forced
+  re-`init` threw *"A 'Keycloak' instance can only be initialized once."*. Only a page
+  reload rebuilt Keycloak from scratch and noticed.
+- **Cookie is bound to the SSO session:** `make_session` records `sub` + `sid`, and
+  `auth.session_idp_state` asks Keycloak (admin API, 15s cache) whether that session
+  still exists. `_session_state` enforces it on every request.
+- **`GET /api/session`:** tiny probe (no config payload, no cluster reads) returning
+  `state` = `active` / `ended` / `expired`, so the UI can poll it continuously.
+- **Background, not disruptive:** the SPA polls every 15s (60s while the tab is hidden,
+  immediate on focus/visibility) instead of a 3s full reconcile. The *Checking session…*
+  banner is gone — bootstrap validation is silent.
+- **UI changes only on logout:** a confirmed sign-out calls `enterSignedOutState` — a
+  sign-in banner over the page exactly as it stands. No navigation, no reload, no lost
+  form input. The old redirect to the EDA login page is removed.
+- **Fails open:** `IDP_UNKNOWN` (Keycloak unreachable, admin API refused, pre-upgrade
+  cookie) counts as authenticated, and an inconclusive probe never touches the UI. The
+  old "2 failures in 5s then redirect" heuristic is gone.
+- **Recovers in place:** while signed out, `attemptSilentRecovery` retries check-sso
+  every 6s, so signing back into EDA in any tab clears the banner and resumes polling
+  without a reload. *Try again* now re-checks quietly before falling back to a redirect.
+- **Keycloak instance fix:** `ensureKeycloakInstance(fresh)` builds a new instance for a
+  forced re-check instead of re-initialising a used one.
+- **Tests:** `test_auth` session-state/cache coverage, `test_fileserver` auth-gate and
+  `/api/session` coverage, `test_webui_auth` rewritten for the transparent flow.
+
 ## v0.1.54
 
 **NodeProfile YAML: correct eda-asvr URLs, folded scalars, license name.**

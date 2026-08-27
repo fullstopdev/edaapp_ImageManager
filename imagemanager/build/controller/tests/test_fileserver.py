@@ -4,7 +4,28 @@ from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
 
+import auth
 import fileserver
+import pytest
+
+
+@pytest.fixture(autouse=True)
+def _clear_idp_state_cache():
+    auth._idp_state_cache.clear()
+    yield
+    auth._idp_state_cache.clear()
+
+
+def _request(cookie="", authorization=""):
+    """Build a Handler with just enough state to exercise the auth gate (no socket)."""
+    handler = fileserver.Handler.__new__(fileserver.Handler)
+    headers = {}
+    if cookie:
+        headers["Cookie"] = cookie
+    if authorization:
+        headers["Authorization"] = authorization
+    handler.headers = headers
+    return handler
 
 
 def test_within_upload_grace_recent_timestamp(monkeypatch):
@@ -43,6 +64,54 @@ def test_aggregate_download_status_worst_case():
     assert st == "AsvrOnly"
     st, _ = fileserver._aggregate_download_status(["Available", "Available"], ["", ""])
     assert st == "Available"
+
+
+# --------------------------- EDA logout detection ---------------------------
+
+
+def _session_cookie(user="alice", sub="user-uuid", sid="sess-1"):
+    return f"{auth.SESSION_COOKIE}={auth.make_session(user, sub=sub, sid=sid)}"
+
+
+def test_session_state_active_while_eda_session_lives(monkeypatch):
+    monkeypatch.setattr(auth, "_live_session_ids", lambda sub: {"sess-1"})
+    assert _request(_session_cookie())._session_state() == ("alice", auth.IDP_ACTIVE)
+
+
+def test_session_state_ended_after_eda_logout(monkeypatch):
+    """A signed, unexpired cookie is not enough once Keycloak dropped the session."""
+    monkeypatch.setattr(auth, "_live_session_ids", lambda sub: set())
+    user, reason = _request(_session_cookie())._session_state()
+    assert user is None
+    assert reason == auth.IDP_ENDED
+
+
+def test_session_state_keeps_user_when_keycloak_is_unreachable(monkeypatch):
+    def _boom(_sub):
+        raise OSError("connection refused")
+
+    monkeypatch.setattr(auth, "_live_session_ids", _boom)
+    assert _request(_session_cookie())._session_state() == ("alice", auth.IDP_ACTIVE)
+
+
+def test_session_state_expired_without_a_cookie():
+    user, reason = _request()._session_state()
+    assert user is None
+    assert reason == "expired"
+
+
+def test_serve_session_reports_state(monkeypatch):
+    sent = {}
+    handler = _request()
+    monkeypatch.setattr(
+        type(handler), "_send_json",
+        lambda self, obj, code=200: sent.update(body=obj, code=code), raising=False)
+
+    handler._serve_session("alice", auth.IDP_ACTIVE)
+    assert sent == {"body": {"ok": True, "user": "alice", "state": "active"}, "code": 200}
+
+    handler._serve_session(None, auth.IDP_ENDED)
+    assert sent == {"body": {"ok": False, "state": "ended"}, "code": 401}
 
 
 def test_nos_label_and_infer():

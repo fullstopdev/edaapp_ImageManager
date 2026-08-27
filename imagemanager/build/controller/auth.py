@@ -24,6 +24,11 @@ Keycloak specifics on this cluster (verified):
 TLS: the in-cluster Keycloak (via eda-api) is signed by eda-api-ca, which the
 internal trust bundle does NOT cover (gotcha 3) — we read the eda-api-ca Secret
 and trust it explicitly for server-to-server calls.
+
+EDA logout: the session cookie records the Keycloak SSO session (`sub` + `sid`)
+it was minted from, so `session_idp_state` can ask Keycloak whether that session
+still exists. Without that link the cookie is an independent ~8h bearer of its
+own and an EDA sign-out stays invisible until the page happens to reload.
 """
 
 import base64
@@ -83,6 +88,21 @@ _secret_cache = [None]
 _admin_tok_cache = {"tok": None, "exp": 0}
 _jwks_cache = {"keys": None, "exp": 0.0}
 _jwks_lock = threading.Lock()
+
+# Keycloak-side state of a session cookie. ENDED is the only value that may
+# sign a user out; UNKNOWN (Keycloak unreachable, admin API refused, cookie
+# minted before this feature) always fails open.
+IDP_ACTIVE = "active"
+IDP_ENDED = "ended"
+IDP_UNKNOWN = "unknown"
+# A UI that polls every few seconds must not turn into one Keycloak admin call
+# per poll, so answers are cached; UNKNOWN gets a shorter TTL so a transient
+# failure recovers quickly.
+_IDP_STATE_TTL_SECONDS = int(os.environ.get("IDP_STATE_CACHE_TTL_SECONDS", "15"))
+_IDP_UNKNOWN_TTL_SECONDS = 5
+_IDP_STATE_CACHE_MAX = 512
+_idp_state_cache = {}
+_idp_state_lock = threading.Lock()
 
 _ISSUER_ENV = "JWT_ISSUER"
 _DEFAULT_JWT_ISSUER = f"{KC_INTERNAL_BASE}/realms/{REALM}"
@@ -421,6 +441,73 @@ def token_identity(token_resp):
     return user, roles
 
 
+def token_session_ids(access_token):
+    """(sub, sid) — the Keycloak realm user and SSO session behind an access token."""
+    p = _decode_jwt(access_token or "", allowed_clients=(CLIENT_ID, BROWSER_CLIENT_ID))
+    if not p:
+        return None, None
+    # Older Keycloak releases only expose the SSO session as `session_state`.
+    return p.get("sub"), (p.get("sid") or p.get("session_state"))
+
+
+# --------------------------- Keycloak SSO session state ---------------------------
+
+def _live_session_ids(sub):
+    """Set of Keycloak SSO session ids currently open for a realm user."""
+    url = (f"{KC_INTERNAL_BASE}/admin/realms/{REALM}"
+           f"/users/{urllib.parse.quote(str(sub), safe='')}/sessions")
+    sessions = _get_json(url, {"Authorization": f"Bearer {_kc_admin_token()}"}) or []
+    return {str(s.get("id")) for s in sessions if isinstance(s, dict) and s.get("id")}
+
+
+def _query_idp_state(sub, sid):
+    """Ask Keycloak whether an SSO session is still open (uncached)."""
+    try:
+        ids = _live_session_ids(sub)
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            # The realm user is gone, so any session it had is gone with it.
+            return IDP_ENDED
+        logger.warning("Keycloak session lookup HTTP %s — session state unknown", e.code)
+        return IDP_UNKNOWN
+    except Exception as e:
+        logger.warning("Keycloak session lookup failed: %s — session state unknown", e)
+        return IDP_UNKNOWN
+    if not ids:
+        return IDP_ENDED
+    # No sid recorded: "user has at least one live session" is the best we can do.
+    if sid and sid not in ids:
+        return IDP_ENDED
+    return IDP_ACTIVE
+
+
+def _prune_idp_state_cache(now):
+    """Drop expired cache entries once the cache grows past its bound."""
+    if len(_idp_state_cache) <= _IDP_STATE_CACHE_MAX:
+        return
+    for key, (_, exp) in list(_idp_state_cache.items()):
+        if exp <= now:
+            _idp_state_cache.pop(key, None)
+
+
+def keycloak_session_state(sub, sid=None):
+    """IDP_ACTIVE / IDP_ENDED / IDP_UNKNOWN for one Keycloak SSO session."""
+    if not sub:
+        return IDP_UNKNOWN
+    key = (str(sub), str(sid or ""))
+    now = time.time()
+    with _idp_state_lock:
+        hit = _idp_state_cache.get(key)
+        if hit and hit[1] > now:
+            return hit[0]
+    state = _query_idp_state(sub, sid)
+    ttl = _IDP_UNKNOWN_TTL_SECONDS if state == IDP_UNKNOWN else _IDP_STATE_TTL_SECONDS
+    with _idp_state_lock:
+        _idp_state_cache[key] = (state, now + ttl)
+        _prune_idp_state_cache(now)
+    return state
+
+
 def is_allowed(roles):
     allow = allowed_roles()
     for r in allow:
@@ -486,16 +573,22 @@ def _sign(body_bytes):
     return _b64u(hmac.new(_SIGNING_KEY, body_bytes, hashlib.sha256).digest())
 
 
-def make_session(username, token_exp=None):
+def make_session(username, token_exp=None, sub=None, sid=None):
     payload = {"u": username, "exp": int(time.time()) + SESSION_TTL}
     if token_exp:
         payload["te"] = int(token_exp)
+    # Remember which Keycloak SSO session minted this cookie so EDA logout can be
+    # confirmed server-side (see session_idp_state).
+    if sub:
+        payload["s"] = str(sub)
+    if sid:
+        payload["sid"] = str(sid)
     body = _b64u(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
     return f"{body}.{_sign(body.encode('ascii'))}"
 
 
-def verify_session(cookie, raw_cookie_header=""):
-    """Return the username if the session cookie is valid+unexpired, else None."""
+def session_payload(cookie):
+    """Return the signed session cookie's payload if valid+unexpired, else None."""
     if not cookie or "." not in cookie:
         return None
     body, sig = cookie.rsplit(".", 1)
@@ -507,10 +600,24 @@ def verify_session(cookie, raw_cookie_header=""):
         return None
     if int(payload.get("exp", 0)) < time.time():
         return None
+    return payload
+
+
+def verify_session(cookie, raw_cookie_header=""):
+    """Return the username if the session cookie is valid+unexpired, else None."""
     # Do not require identity-proxy Keycloak cookies here: they are scoped to
     # /core/proxy/v1/identity and are not sent on /core/httpproxy/v1/imagemanager
-    # requests. EDA logout sync is handled client-side (kc-* localStorage watchers).
-    return payload.get("u")
+    # requests. EDA logout is confirmed via session_idp_state instead.
+    payload = session_payload(cookie)
+    return payload.get("u") if payload else None
+
+
+def session_idp_state(cookie):
+    """IDP_ACTIVE / IDP_ENDED / IDP_UNKNOWN for the SSO session behind a cookie."""
+    payload = session_payload(cookie)
+    if not payload:
+        return IDP_ENDED
+    return keycloak_session_state(payload.get("s"), payload.get("sid"))
 
 
 def new_state():

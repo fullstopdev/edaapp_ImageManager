@@ -6,6 +6,7 @@ Serves three audiences on one port:
       GET  /                 the upload web UI
       GET  /healthz          liveness/readiness (also used by kubelet probes)
       GET  /api/config       defaults for the UI form
+      GET  /api/session      cheap session probe the UI polls in the background
       GET  /api/settings     ImageManagerConfig spec + status (Settings tab)
       PUT  /api/settings     update ImageManagerConfig/default
       GET  /api/namespaces   namespace names for the UI (best-effort)
@@ -215,28 +216,46 @@ class Handler(BaseHTTPRequestHandler):
         m = c.get(name)
         return m.value if m else ""
 
-    def _authed_user(self):
-        """Username if the request carries a valid session, else None.
-        With auth disabled (local dev), returns a placeholder user."""
+    def _session_state(self):
+        """(username, reason) for this request; username is None when not authenticated.
+
+        reason is "active" for a good session and otherwise says why the request is
+        anonymous: "ended" (EDA sign-out confirmed by Keycloak), "expired" (no or
+        stale cookie) or "denied" (token rejected). The UI polls this so it can tell
+        a real EDA logout apart from a transient failure.
+        """
         if not auth.enabled():
-            return "local"
-        user = auth.verify_session(
-            self._cookie(auth.SESSION_COOKIE),
-            self.headers.get("Cookie", ""),
-        )
+            return "local", auth.IDP_ACTIVE
+        cookie = self._cookie(auth.SESSION_COOKIE)
+        user = auth.verify_session(cookie, self.headers.get("Cookie", ""))
         if user:
-            return user
+            # The cookie outlives the EDA session by design (~8h), so ask Keycloak
+            # whether the SSO session it was minted from is still open. UNKNOWN
+            # fails open: a Keycloak blip must never sign anyone out.
+            state = auth.session_idp_state(cookie)
+            if state != auth.IDP_ENDED:
+                return user, auth.IDP_ACTIVE
+            logger.info("Session dropped for %s: EDA session ended", user)
+            return None, auth.IDP_ENDED
         # Accept live Keycloak bearer tokens on /api/* when
         # the browser has a token but im_session exchange has not completed.
         auth_hdr = self.headers.get("Authorization", "")
         if auth_hdr.startswith("Bearer "):
             access = auth_hdr[7:].strip()
             bearer_user, roles = auth.bearer_token_identity(access)
-            if (bearer_user
-                    and auth.validate_bearer_token_active(access)
-                    and auth.is_allowed(roles)):
-                return bearer_user
-        return None
+            if not bearer_user:
+                return None, "expired"
+            if not auth.validate_bearer_token_active(access):
+                return None, auth.IDP_ENDED
+            if auth.is_allowed(roles):
+                return bearer_user, auth.IDP_ACTIVE
+            return None, "denied"
+        return None, "expired"
+
+    def _authed_user(self):
+        """Username if the request carries a valid session, else None.
+        With auth disabled (local dev), returns a placeholder user."""
+        return self._session_state()[0]
 
     def _set_cookie(self, name, value, max_age):
         parts = [f"{name}={value}", f"Path={auth.APP_PROXY_PREFIX}",
@@ -288,9 +307,10 @@ class Handler(BaseHTTPRequestHandler):
         logger.info("Sign-in OK: %s", user)
         access = tok.get("access_token", "")
         tok_exp = auth.jwt_exp(access)
+        sub, sid = auth.token_session_ids(access)
         self._redirect(auth.APP_PROXY_PREFIX + "/", cookies=[
             (auth.SESSION_COOKIE,
-             auth.make_session(user, token_exp=tok_exp),
+             auth.make_session(user, token_exp=tok_exp, sub=sub, sid=sid),
              auth.session_cookie_max_age(tok_exp)),
             (auth.STATE_COOKIE, "", 0),
         ])
@@ -333,10 +353,11 @@ class Handler(BaseHTTPRequestHandler):
             self._send_json({"ok": False, "error": "forbidden"}, 403)
             return
         tok_exp = auth.jwt_exp(access)
+        sub, sid = auth.token_session_ids(access)
         self.send_response(200)
         self._set_cookie(
             auth.SESSION_COOKIE,
-            auth.make_session(user, token_exp=tok_exp),
+            auth.make_session(user, token_exp=tok_exp, sub=sub, sid=sid),
             auth.session_cookie_max_age(tok_exp),
         )
         self.send_header("Content-Type", "application/json")
@@ -424,9 +445,14 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(body)
                 return
             # Everything else requires a valid EDA session.
-            if auth.enabled() and not self._authed_user():
+            user, reason = self._session_state()
+            if path == "/api/session":
+                self._serve_session(user, reason)
+                return
+            if not user:
                 if path.startswith("/api/"):
-                    self._send_json({"ok": False, "error": "not authenticated"}, 401)
+                    self._send_json(
+                        {"ok": False, "error": "not authenticated", "state": reason}, 401)
                 else:
                     self._redirect_to_login()
                 return
@@ -489,6 +515,19 @@ class Handler(BaseHTTPRequestHandler):
             logger.warning("metrics generation failed: %s", e)
             payload = ""
         self._send_text(payload, ctype="text/plain; version=0.0.4; charset=utf-8")
+
+    def _serve_session(self, user, reason):
+        """Answer the UI's background probe of whether the EDA session is still live.
+
+        Deliberately tiny — no config payload, no cluster reads — so the UI can poll
+        it continuously and learn about an EDA sign-out without reloading the page.
+        `state` lets the UI tell a confirmed logout ("ended") apart from a session
+        that is merely unusable here ("expired"/"denied").
+        """
+        if user:
+            self._send_json({"ok": True, "user": user, "state": auth.IDP_ACTIVE})
+            return
+        self._send_json({"ok": False, "state": reason}, 401)
 
     def _serve_config(self):
         c = CONFIG
@@ -842,8 +881,10 @@ class Handler(BaseHTTPRequestHandler):
     def do_PUT(self):
         path, q = self._route()
         try:
-            if auth.enabled() and not self._authed_user():
-                self._send_json({"ok": False, "error": "not authenticated"}, 401)
+            user, reason = self._session_state()
+            if not user:
+                self._send_json(
+                    {"ok": False, "error": "not authenticated", "state": reason}, 401)
                 return
             if path == "/api/settings":
                 n = int(self.headers.get("Content-Length", 0) or 0)
@@ -886,8 +927,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._handle_oauth_session()
                 return
             # All other POSTs are user actions — require a valid EDA session.
-            if auth.enabled() and not self._authed_user():
-                self._send_json({"ok": False, "error": "not authenticated"}, 401)
+            user, reason = self._session_state()
+            if not user:
+                self._send_json(
+                    {"ok": False, "error": "not authenticated", "state": reason}, 401)
                 return
             if path == "/api/upload":
                 self._handle_upload(q)

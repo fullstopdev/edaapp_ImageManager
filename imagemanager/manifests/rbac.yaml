@@ -83,6 +83,7 @@ roleRef:
 ---
 # Read ONLY the two secrets needed for EDA single sign-on (scoped by name):
 #   keycloak-admin-secret -> fetch the "eda" Keycloak client secret (OIDC code exchange)
+#                            and look up SSO sessions to detect EDA logout (auth.py)
 #   eda-api-ca            -> trust the in-cluster eda-api/Keycloak TLS cert (gotcha 3)
 apiVersion: rbac.authorization.k8s.io/v1
 kind: Role
