@@ -112,11 +112,21 @@ Session model:
    timeout guards prevent infinite *Checking session…*; fresh sign-in skips redundant
    background check-sso (v0.1.44). Embedded iframe: immediate silent SSO on 401 when
    `kc-*` localStorage present; sign-in banner only after SSO fails (v0.1.45).
-9. EDA logout: `reconcileAuthState` (3s) uses `check-sso` + identity probes
+9. EDA logout (v0.1.55+): `make_session` records the Keycloak SSO session (`sub` +
+   `sid`) in the signed cookie, so `auth.session_idp_state` can ask Keycloak (admin
+   API, 15s cache) whether it still exists. `_session_state` enforces that on every
+   request and `GET /api/session` exposes it as a cheap probe. The SPA polls it every
+   15s (60s hidden, immediate on focus/visibility), and a confirmed logout calls
+   `enterSignedOutState`: sign-in banner over the page as it stands, no navigation and
+   no reload. `attemptSilentRecovery` (6s while signed out) picks a returning EDA
+   session back up in place.
 
 Do **not** require identity-proxy cookies in `auth.verify_session`. Do **not** fail
 bootstrap solely on inconclusive identity probes (403) — trust `keycloak.authenticated`
-from `check-sso` when it returns true.
+from `check-sso` when it returns true. Treat `IDP_UNKNOWN` as authenticated: a Keycloak
+blip must never sign anyone out. Do **not** reuse a `keycloak-js` instance for a forced
+re-`init` — it throws "can only be initialized once", so `ensureKeycloakInstance(fresh)`
+builds a new one.
 
 ## Workflow expectations
 
